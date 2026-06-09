@@ -28,6 +28,18 @@ import type { ActivityId, BuildingId } from '@/types/common';
 
 const DEFAULT_CAMERA: Camera = { origin: { x: 0, y: 0 }, scale: 1 };
 
+/** Compact read-only view of the engine's UI-relevant state. */
+export interface CanvasSnapshot {
+  day: number;
+  hour: number;
+  minute: number;
+  budget: number;
+  openCompanies: number;
+  totalCompanies: number;
+  population: number;
+  vehicleCount: number;
+}
+
 /**
  * Stub building list. The real city generator depends on the road
  * graph (downstream task); for now we hand-construct two buildings
@@ -48,7 +60,17 @@ const WRAPPER_STYLE: CSSProperties = {
   overflow: 'hidden',
 };
 
-export function CityCanvas(): ReactElement {
+export interface CityCanvasProps {
+  /**
+   * Optional callback invoked after every render-tick with a compact
+   * read-only view of the engine. The view uses this to bridge the
+   * canvas's internal state outward to a 2Hz-polled snapshot without
+   * taking ownership of system construction.
+   */
+  onSnapshot?: (snapshot: CanvasSnapshot) => void;
+}
+
+export function CityCanvas({ onSnapshot }: CityCanvasProps = {}): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -128,6 +150,26 @@ export function CityCanvas(): ReactElement {
     [needSystem, commuteManager, economySystem],
   );
 
+  // Bridge state outward when a consumer (e.g. CityView) is listening.
+  // Wrapped in a stable callback so the effect below can depend on it.
+  const emitSnapshot = useCallback(() => {
+    if (onSnapshot === undefined) return;
+    const citizens = needSystem.getCitizens();
+    const companies = economySystem.getCompanies();
+    const open = companies.filter((c) => c.status === 'open').length;
+    const time = needSystem.getTime();
+    onSnapshot({
+      day: time.day,
+      hour: time.hour,
+      minute: time.minute,
+      budget: economySystem.getBudget(),
+      openCompanies: open,
+      totalCompanies: companies.length,
+      population: citizens.length,
+      vehicleCount: commuteManager.getVehicles().length,
+    });
+  }, [onSnapshot, needSystem, economySystem, commuteManager]);
+
   // Mouse hover state for the tooltip.
   const [hover, setHover] = useState<{ citizen: Citizen | null; x: number; y: number }>({
     citizen: null,
@@ -153,7 +195,8 @@ export function CityCanvas(): ReactElement {
   // Re-render whenever the city clock reports a new hour.
   useEffect(() => {
     renderTick(hour);
-  }, [hour, renderTick]);
+    emitSnapshot();
+  }, [hour, renderTick, emitSnapshot]);
 
   // Pointer move / leave on the wrapper (not the canvas) so the
   // tooltip stays usable from any future host.
