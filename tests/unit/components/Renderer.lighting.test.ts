@@ -72,15 +72,19 @@ function makeCtxStub(): CanvasRenderingContext2D {
   } as unknown as CanvasRenderingContext2D;
 }
 
-function makeCanvas(): HTMLCanvasElement {
+function makeCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
   const dom = new JSDOM('<!doctype html><html><body></body></html>');
   const canvas = dom.window.document.createElement('canvas');
   canvas.width = 800;
   canvas.height = 480;
   // Inject a no-op 2D context — jsdom's HTMLCanvasElement.getContext
-  // returns null. Tests spy on `arc` to assert off-screen skipping.
-  (canvas as unknown as { getContext: (id: string) => unknown }).getContext = () => makeCtxStub();
-  return canvas;
+  // returns null. We return a *shared* ctx instance for each call so
+  // that the spy installed by the test (on the ctx returned by a
+  // subsequent getContext) actually observes the draw calls made
+  // by createRenderer (which captured the ctx on construction).
+  const sharedCtx = makeCtxStub();
+  (canvas as unknown as { getContext: (id: string) => unknown }).getContext = () => sharedCtx;
+  return { canvas, ctx: sharedCtx };
 }
 
 function makeCitizen(id: string, x: number, y: number, activity: ActivityId = 'sleep'): Citizen {
@@ -147,7 +151,7 @@ describe('Renderer lighting', () => {
 
   describe('drawLightingOverlay', () => {
     it('does not call fillRect when alpha is 0', () => {
-      const canvas = makeCanvas();
+      const { canvas } = makeCanvas();
       const renderer = createRenderer(canvas, { width: 800, height: 480, pixelRatio: 1 });
       const fillRectSpy = jest.spyOn(canvas.getContext('2d') as CanvasRenderingContext2D, 'fillRect');
       renderer.drawLightingOverlay(12, createCamera());
@@ -157,7 +161,7 @@ describe('Renderer lighting', () => {
     });
 
     it('calls fillRect with the cached gradient when alpha > 0', () => {
-      const canvas = makeCanvas();
+      const { canvas } = makeCanvas();
       const renderer = createRenderer(canvas, { width: 800, height: 480, pixelRatio: 1 });
       const fillRectSpy = jest.spyOn(canvas.getContext('2d') as CanvasRenderingContext2D, 'fillRect');
       renderer.drawLightingOverlay(0, createCamera()); // midnight => 0.55
@@ -166,7 +170,7 @@ describe('Renderer lighting', () => {
     });
 
     it('reuses the gradient across multiple frames at the same hour', () => {
-      const canvas = makeCanvas();
+      const { canvas } = makeCanvas();
       const renderer = createRenderer(canvas, { width: 800, height: 480, pixelRatio: 1 });
       const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
       const gradientSpy = jest.spyOn(ctx, 'createRadialGradient');
@@ -183,7 +187,7 @@ describe('Renderer lighting', () => {
 
 describe('Renderer culling', () => {
   it('skips citizens that are outside the visible world rect', () => {
-    const canvas = makeCanvas();
+    const { canvas } = makeCanvas();
     const camera: Camera = createCamera({ origin: { x: 0, y: 0 }, scale: 1 });
     const renderer = createRenderer(canvas, { width: 800, height: 480, pixelRatio: 1 });
     const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
@@ -202,7 +206,7 @@ describe('Renderer culling', () => {
   });
 
   it('skips vehicles that are outside the visible world rect', () => {
-    const canvas = makeCanvas();
+    const { canvas } = makeCanvas();
     const camera: Camera = createCamera({ origin: { x: 0, y: 0 }, scale: 1 });
     const renderer = createRenderer(canvas, { width: 800, height: 480, pixelRatio: 1 });
     const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
@@ -224,7 +228,7 @@ describe('Renderer culling', () => {
   });
 
   it('skips buildings that are outside the visible world rect', () => {
-    const canvas = makeCanvas();
+    const { canvas } = makeCanvas();
     const camera: Camera = createCamera({ origin: { x: 0, y: 0 }, scale: 1 });
     const renderer = createRenderer(canvas, { width: 800, height: 480, pixelRatio: 1 });
     const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;

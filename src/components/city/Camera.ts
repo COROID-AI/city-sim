@@ -35,7 +35,7 @@ export const MAX_CAMERA_DT_MS = 100;
  * saturate when their accumulated residual falls below the same
  * threshold. Both paths therefore land on the same final value.
  */
-export const MAX_ALPHA_PER_CALL = 0.998;
+export const MAX_ALPHA_PER_CALL = 0.9999;
 
 /** A camera. Both the actual state and the target are kept side-by-side. */
 export interface Camera {
