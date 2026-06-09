@@ -48,33 +48,66 @@ export class GameLoop {
   private accumulator = 0;
   private lastTimestamp = 0;
   private stepCounter = 0;
+  /** True until the first tick has been seen; used to seed lastTimestamp. */
+  private firstTick = true;
 
-  /** Source of rAF; injectable for tests. Defaults to globalThis. */
-  private readonly raf: (cb: FrameRequestCallback) => number;
-  private readonly cancelRaf: (handle: number) => void;
+  /** Override hooks for tests. When unset, rAF is resolved lazily from globalThis. */
+  private rafOverride: ((cb: FrameRequestCallback) => number) | null = null;
+  private cancelRafOverride: ((handle: number) => void) | null = null;
 
   constructor(options: GameLoopOptions = {}) {
     this.fixedStep = options.fixedStepSeconds ?? DEFAULT_FIXED_STEP;
     this.maxCatchup = options.maxCatchupSeconds ?? DEFAULT_MAX_CATCHUP;
     this.maxSteps = options.maxStepsPerFrame ?? DEFAULT_MAX_STEPS;
+  }
 
+  /**
+   * Resolve rAF/cancelRaf. Looked up lazily on each start() so that tests
+   * can monkey-patch globalThis.requestAnimationFrame before the loop
+   * actually schedules a frame. Falls back to a setTimeout-based shim
+   * (~60Hz) in non-browser environments.
+   */
+  private getRaf(): (cb: FrameRequestCallback) => number {
+    if (this.rafOverride) return this.rafOverride;
     const g = globalThis as {
       requestAnimationFrame?: (cb: FrameRequestCallback) => number;
+    };
+    if (typeof g.requestAnimationFrame === 'function') {
+      return g.requestAnimationFrame.bind(g);
+    }
+    return (cb: FrameRequestCallback): number => {
+      return setTimeout(() => cb(performance.now()), 16) as unknown as number;
+    };
+  }
+
+  private getCancelRaf(): (handle: number) => void {
+    if (this.cancelRafOverride) return this.cancelRafOverride;
+    const g = globalThis as {
       cancelAnimationFrame?: (handle: number) => void;
     };
-    this.raf =
-      typeof g.requestAnimationFrame === 'function'
-        ? g.requestAnimationFrame.bind(g)
-        : ((cb: FrameRequestCallback): number => {
-            // Fallback for non-browser env (tests). ~60Hz via setTimeout.
-            return setTimeout(() => cb(performance.now()), 16) as unknown as number;
-          });
-    this.cancelRaf =
-      typeof g.cancelAnimationFrame === 'function'
-        ? g.cancelAnimationFrame.bind(g)
-        : ((handle: number): void => {
-            clearTimeout(handle);
-          });
+    if (typeof g.cancelAnimationFrame === 'function') {
+      return g.cancelAnimationFrame.bind(g);
+    }
+    return (handle: number): void => {
+      clearTimeout(handle);
+    };
+  }
+
+  /**
+   * Test hook: install a custom rAF implementation. Returns the previous
+   * value (or null) so tests can restore it. Calling with null restores
+   * the default globalThis lookup.
+   */
+  setRaf(raf: ((cb: FrameRequestCallback) => number) | null): ((cb: FrameRequestCallback) => number) | null {
+    const prev = this.rafOverride;
+    this.rafOverride = raf;
+    return prev;
+  }
+
+  setCancelRaf(cancel: ((handle: number) => void) | null): ((handle: number) => void) | null {
+    const prev = this.cancelRafOverride;
+    this.cancelRafOverride = cancel;
+    return prev;
   }
 
   /** Register a per-fixed-step callback. Returns an unsubscribe function. */
@@ -99,7 +132,8 @@ export class GameLoop {
     this.running = true;
     this.accumulator = 0;
     this.lastTimestamp = 0;
-    this.rafHandle = this.raf(this.tick);
+    this.firstTick = true;
+    this.rafHandle = this.getRaf()(this.tick);
   }
 
   /** Stop the loop and cancel the pending rAF. */
@@ -107,7 +141,7 @@ export class GameLoop {
     if (!this.running) return;
     this.running = false;
     if (this.rafHandle !== null) {
-      this.cancelRaf(this.rafHandle);
+      this.getCancelRaf()(this.rafHandle);
       this.rafHandle = null;
     }
   }
@@ -125,9 +159,11 @@ export class GameLoop {
   private tick = (timestamp: number): void => {
     if (!this.running) return;
 
-    // Initialize on first tick; treat elapsed as one step to seed state.
-    if (this.lastTimestamp === 0) {
+    // Seed lastTimestamp on the first tick so the first frame contributes
+    // zero dt (no accumulated time) but subsequent frames measure real dt.
+    if (this.firstTick) {
       this.lastTimestamp = timestamp;
+      this.firstTick = false;
     }
     const frameDt = (timestamp - this.lastTimestamp) / 1000;
     this.lastTimestamp = timestamp;
@@ -155,6 +191,6 @@ export class GameLoop {
       cb(frameDt);
     }
 
-    this.rafHandle = this.raf(this.tick);
+    this.rafHandle = this.getRaf()(this.tick);
   };
 }
