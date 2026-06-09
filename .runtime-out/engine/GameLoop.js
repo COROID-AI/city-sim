@@ -27,12 +27,19 @@ class GameLoop {
         this.accumulator = 0;
         this.lastTimestamp = 0;
         this.stepCounter = 0;
+        /** True until the first tick has been seen; used to seed lastTimestamp. */
+        this.firstTick = true;
+        /** Override hooks for tests. When unset, rAF is resolved lazily from globalThis. */
+        this.rafOverride = null;
+        this.cancelRafOverride = null;
         this.tick = (timestamp) => {
             if (!this.running)
                 return;
-            // Initialize on first tick; treat elapsed as one step to seed state.
-            if (this.lastTimestamp === 0) {
+            // Seed lastTimestamp on the first tick so the first frame contributes
+            // zero dt (no accumulated time) but subsequent frames measure real dt.
+            if (this.firstTick) {
                 this.lastTimestamp = timestamp;
+                this.firstTick = false;
             }
             const frameDt = (timestamp - this.lastTimestamp) / 1000;
             this.lastTimestamp = timestamp;
@@ -55,25 +62,54 @@ class GameLoop {
             for (const cb of this.renderCallbacks) {
                 cb(frameDt);
             }
-            this.rafHandle = this.raf(this.tick);
+            this.rafHandle = this.getRaf()(this.tick);
         };
         this.fixedStep = options.fixedStepSeconds ?? DEFAULT_FIXED_STEP;
         this.maxCatchup = options.maxCatchupSeconds ?? DEFAULT_MAX_CATCHUP;
         this.maxSteps = options.maxStepsPerFrame ?? DEFAULT_MAX_STEPS;
+    }
+    /**
+     * Resolve rAF/cancelRaf. Looked up lazily on each start() so that tests
+     * can monkey-patch globalThis.requestAnimationFrame before the loop
+     * actually schedules a frame. Falls back to a setTimeout-based shim
+     * (~60Hz) in non-browser environments.
+     */
+    getRaf() {
+        if (this.rafOverride)
+            return this.rafOverride;
         const g = globalThis;
-        this.raf =
-            typeof g.requestAnimationFrame === 'function'
-                ? g.requestAnimationFrame.bind(g)
-                : ((cb) => {
-                    // Fallback for non-browser env (tests). ~60Hz via setTimeout.
-                    return setTimeout(() => cb(performance.now()), 16);
-                });
-        this.cancelRaf =
-            typeof g.cancelAnimationFrame === 'function'
-                ? g.cancelAnimationFrame.bind(g)
-                : ((handle) => {
-                    clearTimeout(handle);
-                });
+        if (typeof g.requestAnimationFrame === 'function') {
+            return g.requestAnimationFrame.bind(g);
+        }
+        return (cb) => {
+            return setTimeout(() => cb(performance.now()), 16);
+        };
+    }
+    getCancelRaf() {
+        if (this.cancelRafOverride)
+            return this.cancelRafOverride;
+        const g = globalThis;
+        if (typeof g.cancelAnimationFrame === 'function') {
+            return g.cancelAnimationFrame.bind(g);
+        }
+        return (handle) => {
+            clearTimeout(handle);
+        };
+    }
+    /**
+     * Test hook: install a custom rAF implementation. Returns the previous
+     * value (or null) so tests can restore it. Calling with null restores
+     * the default globalThis lookup.
+     */
+    setRaf(raf) {
+        const prev = this.rafOverride;
+        this.rafOverride = raf;
+        return prev;
+    }
+    setCancelRaf(cancel) {
+        const prev = this.cancelRafOverride;
+        this.cancelRafOverride = cancel;
+        return prev;
     }
     /** Register a per-fixed-step callback. Returns an unsubscribe function. */
     onStep(cb) {
@@ -96,7 +132,8 @@ class GameLoop {
         this.running = true;
         this.accumulator = 0;
         this.lastTimestamp = 0;
-        this.rafHandle = this.raf(this.tick);
+        this.firstTick = true;
+        this.rafHandle = this.getRaf()(this.tick);
     }
     /** Stop the loop and cancel the pending rAF. */
     stop() {
@@ -104,7 +141,7 @@ class GameLoop {
             return;
         this.running = false;
         if (this.rafHandle !== null) {
-            this.cancelRaf(this.rafHandle);
+            this.getCancelRaf()(this.rafHandle);
             this.rafHandle = null;
         }
     }
