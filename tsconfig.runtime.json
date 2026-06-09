@@ -9,7 +9,11 @@
     "skipLibCheck": true,
     "lib": ["ES2020", "DOM"],
     "outDir": "./.runtime-out",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
-  "include": ["src/engine/**/*.ts"]
+  "include": ["src/engine/**/*.ts", "src/generation/**/*.ts"]
 }

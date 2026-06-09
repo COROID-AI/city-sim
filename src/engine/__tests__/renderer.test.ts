@@ -23,6 +23,7 @@ import {
   type RendererContext2D,
 } from '../index';
 import { generateCity, type Building, type GeneratedCity } from '@/generation';
+import { Camera, DEFAULT_CAMERA_CONFIG } from '../Camera';
 
 interface CallRecord {
   layer: 'surface-fill' | 'ground-tile' | 'road-tile' | 'road-stripe' | 'building' | 'lighting';
@@ -35,12 +36,25 @@ interface CallRecord {
 
 function makeRecordingContext(): { ctx: RendererContext2D; calls: CallRecord[] } {
   const calls: CallRecord[] = [];
+  // Map fillStyle -> layer so we can detect which layer produced each
+  // fillRect call without instrumenting the renderer.
+  const styleToLayer: Record<string, CallRecord['layer']> = {
+    [PALETTE_FALLBACK.surface]: 'surface-fill',
+    [PALETTE_FALLBACK.ground]: 'ground-tile',
+    [PALETTE_FALLBACK.road]: 'road-tile',
+    [PALETTE_FALLBACK.accent]: 'road-stripe',
+    [PALETTE_FALLBACK.building]: 'building',
+    [PALETTE_FALLBACK.warning]: 'building',
+    [PALETTE_FALLBACK.citizen]: 'building',
+  };
   const ctx: RendererContext2D = {
     fillStyle: '',
     strokeStyle: '',
     lineWidth: 1,
     fillRect: (x: number, y: number, w: number, h: number): void => {
-      calls.push({ layer: classify(), x, y, w, h, fillStyle: String(ctx.fillStyle) });
+      const style = String(ctx.fillStyle);
+      const layer: CallRecord['layer'] = styleToLayer[style] ?? 'lighting';
+      calls.push({ layer, x, y, w, h, fillStyle: style });
     },
     beginPath: (): void => undefined,
     moveTo: (): void => undefined,
@@ -49,10 +63,6 @@ function makeRecordingContext(): { ctx: RendererContext2D; calls: CallRecord[] }
     save: (): void => undefined,
     restore: (): void => undefined,
   };
-  let last = 'surface-fill' as CallRecord['layer'];
-  function classify(): CallRecord['layer'] {
-    return last;
-  }
   return { ctx, calls };
 }
 
@@ -106,8 +116,11 @@ function makeFakeDocument(
   varName: string,
   value: string,
 ): import('../palette').DocumentLike {
+  // No `ownerDocument` on documentElement so palette.ts falls back to the
+  // top-level doc for the `defaultView` (mirrors how the browser exposes
+  // getComputedStyle on the active document).
   const doc = {
-    documentElement: { ownerDocument: null },
+    documentElement: {},
     defaultView: {
       getComputedStyle: (_el: unknown, _pseudo: string | null) => {
         return {
@@ -186,9 +199,9 @@ describe('sortBuildingsForDraw', () => {
 
   test('does not mutate the input city', () => {
     const city = buildCity(7);
-    const before = city.buildings.map((b) => b.id);
+    const before = city.buildings.map((b: Building) => b.id);
     sortBuildingsForDraw(city);
-    const after = city.buildings.map((b) => b.id);
+    const after = city.buildings.map((b: Building) => b.id);
     expect(after).toEqual(before);
   });
 });
@@ -305,14 +318,18 @@ function makeNoopContext(): RendererContext2D {
 }
 
 /**
- * A Camera-like object pre-positioned over the city center. The Renderer
- * only reads `getTransform()`, so we expose just that surface.
+ * A Camera pre-positioned over the city center. The Renderer only reads
+ * `getTransform()` (plus the transform's `x/y/zoom`), so we use a real
+ * Camera instance with the same shape. We disable clamping so the
+ * city-center target is honored exactly.
  */
-function makeCenteredCamera(city: GeneratedCity): {
-  getTransform: () => { x: number; y: number; zoom: number };
-} {
-  const tx = { x: city.width / 2, y: city.height / 2, zoom: 1 } as const;
-  return {
-    getTransform: (): { x: number; y: number; zoom: number } => tx,
-  };
+function makeCenteredCamera(city: GeneratedCity): Camera {
+  return new Camera({
+    ...DEFAULT_CAMERA_CONFIG,
+    minX: -Infinity,
+    maxX: Infinity,
+    minY: -Infinity,
+    maxY: Infinity,
+    initial: { x: city.width / 2, y: city.height / 2, zoom: 1 },
+  });
 }

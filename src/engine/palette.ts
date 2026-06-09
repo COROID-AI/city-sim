@@ -112,14 +112,16 @@ function readCssVar(doc: DocumentLike, varName: string): string | null {
   const el = doc.documentElement as unknown as {
     ownerDocument?: unknown;
   };
-  const owner = el.ownerDocument !== undefined ? el.ownerDocument : doc;
-  const getComputedStyleFn = (owner as {
+  const ownerRaw = el.ownerDocument !== undefined ? el.ownerDocument : doc;
+  const owner = ownerRaw as {
     defaultView?: {
       getComputedStyle?: (e: unknown, pseudo?: string | null) => {
         getPropertyValue: (n: string) => string;
       } | null;
     } | null;
-  }).defaultView?.getComputedStyle;
+  } | null;
+  if (!owner) return null;
+  const getComputedStyleFn = owner.defaultView?.getComputedStyle;
   if (typeof getComputedStyleFn !== 'function') return null;
   const style = getComputedStyleFn(el, null);
   if (!style) return null;
