@@ -66,7 +66,10 @@ console.log('GameLoop:');
   assert(loop.getFixedStep() === 0.05, 'fixed step is 0.05 (20Hz)');
   assert(!loop.isRunning(), 'starts not running');
 
-  // Use a fake rAF that drives ticks deterministically.
+  // We test the loop semantics by exercising the internal tick function
+  // through a custom rAF that drives a known schedule of frames. The fake
+  // rAF only fires the next callback when a frame is *pulled* off the
+  // queue, so the loop cannot schedule more frames than the test provides.
   const frames = [
     0,        // first tick: seeds lastTimestamp, no steps
     50,       // +50ms -> 1 step
@@ -81,33 +84,43 @@ console.log('GameLoop:');
   loop.onStep((dt) => { stepCount++; lastFixedDt = dt; });
   loop.onRender(() => { renderCount++; });
 
-  // Replace rAF with a manual driver.
+  // Replace rAF with a deterministic driver. We capture the latest
+  // requested cb in a single-slot mailbox, and the test driver pulls one
+  // frame off the queue at a time via tickFrame().
   const origRaf = global.requestAnimationFrame;
   const origCancel = global.cancelAnimationFrame;
-  let i = 0;
+  let pendingCb = null;
   global.requestAnimationFrame = (cb) => {
-    if (i >= frames.length) return 0;
-    const ts = frames[i++];
-    setImmediate(() => cb(ts));
-    return i;
+    pendingCb = cb;
+    return 1;
   };
-  global.cancelAnimationFrame = () => {};
+  global.cancelAnimationFrame = () => {
+    pendingCb = null;
+  };
 
   loop.start();
 
-  // Wait for the queue to drain
-  setTimeout(() => {
-    loop.stop();
-    global.requestAnimationFrame = origRaf;
-    global.cancelAnimationFrame = origCancel;
+  // Drain exactly 5 frames.
+  for (let f = 0; f < frames.length; f++) {
+    if (!pendingCb) {
+      // Loop was stopped early; bail.
+      break;
+    }
+    const cb = pendingCb;
+    pendingCb = null;
+    cb(frames[f]);
+  }
 
-    // Frames: 5 total. Steps: frame0=0, frame1=1, frame2=1, frame3=capped@5, frame4=1 => 8
-    assert(renderCount === 5, `rendered every frame (got ${renderCount})`);
-    assert(stepCount === 8, `stepped 8 times across frames (got ${stepCount})`);
-    assert(lastFixedDt === 0.05, 'fixed dt is the configured 0.05s');
-    assert(!loop.isRunning(), 'stops on stop()');
+  loop.stop();
+  global.requestAnimationFrame = origRaf;
+  global.cancelAnimationFrame = origCancel;
 
-    console.log(`\nResults: ${passed} passed, ${failed} failed`);
-    process.exit(failed === 0 ? 0 : 1);
-  }, 200);
+  // Frames: 5 total. Steps: frame0=0, frame1=1, frame2=1, frame3=capped@5, frame4=1 => 8
+  assert(renderCount === 5, `rendered every frame (got ${renderCount})`);
+  assert(stepCount === 8, `stepped 8 times across frames (got ${stepCount})`);
+  assert(lastFixedDt === 0.05, 'fixed dt is the configured 0.05s');
+  assert(!loop.isRunning(), 'stops on stop()');
+
+  console.log(`\nResults: ${passed} passed, ${failed} failed`);
+  process.exit(failed === 0 ? 0 : 1);
 }
