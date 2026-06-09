@@ -308,12 +308,15 @@ export class Renderer {
     if (lighting === undefined) return;
     const a = clampUnit(lighting.phaseAlpha);
     if (a <= 0) return;
-    const color = rgbToCss(lighting.blended);
-    const prevAlpha = ctx.globalAlpha;
+    // Use save/restore so we never leak globalAlpha into the next layer
+    // or the next frame. The contract tests verify both: (1) the alpha
+    // used for the fill matches phaseAlpha, and (2) the previous
+    // globalAlpha is restored on exit.
+    ctx.save();
     ctx.globalAlpha = a;
-    ctx.fillStyle = color;
+    ctx.fillStyle = rgbToCss(lighting.blended);
     ctx.fillRect(0, 0, frame.viewWidth, frame.viewHeight);
-    ctx.globalAlpha = prevAlpha;
+    ctx.restore();
   }
 }
 
@@ -337,6 +340,18 @@ function rgbToCss(c: { r: number; g: number; b: number }): string {
   const g = Math.round(clampUnit(c.g) * 255);
   const b = Math.round(clampUnit(c.b) * 255);
   return `rgb(${r}, ${g}, ${b})`;
+}
+
+/**
+ * Convert an Rgb tint + alpha to a CSS `rgba(r, g, b, a)` string.
+ * Alpha is clamped to [0, 1]; components to [0, 255].
+ */
+function rgbaToCss(c: { r: number; g: number; b: number }, alpha: number): string {
+  const r = Math.round(clampUnit(c.r) * 255);
+  const g = Math.round(clampUnit(c.g) * 255);
+  const b = Math.round(clampUnit(c.b) * 255);
+  const a = clampUnit(alpha);
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
 interface ScreenRect {

@@ -223,74 +223,104 @@ export class TimeSystem {
     const tod = toSecondsOfDay(this.simTime);
     const fade = this.fadeSeconds;
     const c = this.colors;
+    const SEC = SECONDS_PER_HOUR;
 
-    // Identify the active "base" phase and the "next" phase we're
-    // fading toward. Each boundary block is independent so the
-    // daylight logic stays readable.
-    let base: LightingPhase;
+    // The full-strength windows are:
+    //   dawn  05:00..07:00
+    //   day   07:00..17:00
+    //   dusk  17:00..19:00
+    //   night 19:00..05:00 next day
+    // Fades live in 30-sim-min windows LEADING OUT of each full window
+    // (i.e. the day->dusk fade is 17:00..17:30, ending at full dusk).
+    //
+    // For each branch below, `fadeStart` is the sim-second where alpha=0
+    // (full base color) and `fadeEnd` is where alpha=1 (full next color).
+    // The end of a fade is exactly the start of the next phase's full
+    // window, so `tod >= fadeEnd` falls through to the next full branch.
+
+    let phase: LightingPhase;
     let next: LightingPhase;
-    let baseStart: number;
-    let nextStart: number;
+    let fadeStart: number;
+    let fadeEnd: number;
 
-    if (tod < PHASE_BOUNDARIES.dawnStart - fade) {
-      // Pre-dawn: night fading into dawn.
-      base = 'night';
+    const dawnStart = 5 * SEC;        // 18000
+    const dayStart = 7 * SEC;         // 25200
+    const duskStart = 17 * SEC;       // 61200
+    const nightStart = 19 * SEC;      // 68400
+
+    // Night full window: 19:00 .. 05:00 (next day). The night->dawn
+    // fade is the last 30 min: 04:30 .. 05:00.
+    if (tod >= nightStart || tod < dawnStart - fade) {
+      phase = 'night';
+      next = 'night';
+      fadeStart = 0;
+      fadeEnd = 0;
+    } else if (tod < dawnStart) {
+      // Night -> Dawn fade: 04:30 .. 05:00
+      phase = 'night';
       next = 'dawn';
-      baseStart = PHASE_BOUNDARIES.nightStart - SECONDS_PER_HOUR; // 18:00 prev day
-      if (baseStart < 0) baseStart += SECONDS_PER_DAY;
-      nextStart = PHASE_BOUNDARIES.dawnStart;
-    } else if (tod < PHASE_BOUNDARIES.dawnStart) {
-      // Dawn full window.
-      base = 'dawn';
-      next = 'day';
-      baseStart = PHASE_BOUNDARIES.dawnStart;
-      nextStart = PHASE_BOUNDARIES.dayStart;
-    } else if (tod < PHASE_BOUNDARIES.dayStart) {
-      // Dawn -> Day fade.
-      base = 'dawn';
-      next = 'day';
-      baseStart = PHASE_BOUNDARIES.dawnStart;
-      nextStart = PHASE_BOUNDARIES.dayStart;
-    } else if (tod < PHASE_BOUNDARIES.duskStart - fade) {
-      // Day full window.
-      base = 'day';
-      next = 'dusk';
-      baseStart = PHASE_BOUNDARIES.dayStart;
-      nextStart = PHASE_BOUNDARIES.duskStart;
-    } else if (tod < PHASE_BOUNDARIES.duskStart) {
-      // Day -> Dusk fade.
-      base = 'day';
-      next = 'dusk';
-      baseStart = PHASE_BOUNDARIES.dayStart;
-      nextStart = PHASE_BOUNDARIES.duskStart;
-    } else if (tod < PHASE_BOUNDARIES.nightStart) {
-      // Dusk full window + Dusk -> Night fade.
-      base = 'dusk';
-      next = 'night';
-      baseStart = PHASE_BOUNDARIES.duskStart;
-      nextStart = PHASE_BOUNDARIES.nightStart;
+      fadeStart = dawnStart - fade;
+      fadeEnd = dawnStart;
+    } else if (tod < dayStart) {
+      // Dawn full window: 05:00 .. 07:00. The dawn->day fade is the
+      // last 30 min: 06:30 .. 07:00.
+      if (tod >= dayStart - fade) {
+        phase = 'dawn';
+        next = 'day';
+        fadeStart = dayStart - fade;
+        fadeEnd = dayStart;
+      } else {
+        phase = 'dawn';
+        next = 'dawn';
+        fadeStart = 0;
+        fadeEnd = 0;
+      }
+    } else if (tod < duskStart + fade) {
+      // Day full window: 07:00 .. 17:00. The day->dusk fade follows
+      // immediately: 17:00 .. 17:30.
+      if (tod >= duskStart) {
+        phase = 'day';
+        next = 'dusk';
+        fadeStart = duskStart;
+        fadeEnd = duskStart + fade;
+      } else {
+        phase = 'day';
+        next = 'day';
+        fadeStart = 0;
+        fadeEnd = 0;
+      }
+    } else if (tod < nightStart + fade) {
+      // Dusk full window: 17:00 .. 19:00. The dusk->night fade follows
+      // immediately: 19:00 .. 19:30.
+      if (tod >= nightStart) {
+        phase = 'dusk';
+        next = 'night';
+        fadeStart = nightStart;
+        fadeEnd = nightStart + fade;
+      } else {
+        phase = 'dusk';
+        next = 'dusk';
+        fadeStart = 0;
+        fadeEnd = 0;
+      }
     } else {
-      // Night full window.
-      base = 'night';
+      // Unreachable: covered by the night full branch above.
+      phase = 'night';
       next = 'night';
-      baseStart = PHASE_BOUNDARIES.nightStart;
-      nextStart = PHASE_BOUNDARIES.nightStart + SECONDS_PER_DAY;
+      fadeStart = 0;
+      fadeEnd = 0;
     }
 
-    // Compute progress within the current fade (0..1). When base===next
-    // we're not in a fade and alpha stays 0.
-    const phaseColor = c[base];
+    const phaseColor = c[phase];
     const nextColor = c[next];
     let phaseAlpha = 0;
-    if (base !== next && fade > 0) {
-      // Distance from baseStart. Wraps around midnight correctly
-      // because nextStart > baseStart within the same comparison.
-      const elapsed = tod < baseStart ? tod + SECONDS_PER_DAY - baseStart : tod - baseStart;
+    if (phase !== next && fade > 0) {
+      const elapsed = tod - fadeStart;
       phaseAlpha = clamp01(elapsed / fade);
     }
     const blended = mixRgb(phaseColor, nextColor, phaseAlpha);
     return {
-      phase: base,
+      phase,
       phaseColor,
       nextColor,
       phaseAlpha,
