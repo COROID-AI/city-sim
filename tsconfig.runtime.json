@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "lib": ["ES2020", "DOM"],
+    "outDir": "./.runtime-out",
+    "rootDir": "./src"
+  },
+  "include": ["src/engine/**/*.ts"]
+}
