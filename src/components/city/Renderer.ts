@@ -314,6 +314,11 @@ export function createRenderer(
   let disposed = false;
   let cssW = options.width ?? 800;
   let cssH = options.height ?? 480;
+  // Cache of radial lighting gradients, keyed by bucketed alpha. We
+  // recreate the gradient on a resize (canvas size changed) or on a
+  // new alpha bucket (different time of day). Declared above
+  // `applySize` so the resize hook can clear it without TDZ error.
+  const gradientCache: Map<number, CanvasGradient> = new Map();
   const applySize = (): void => {
     if (disposed) return;
     const dpr = options.pixelRatio ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
@@ -487,9 +492,8 @@ export function createRenderer(
     ctx.globalAlpha = 1;
   }
 
-  // Cached radial gradients, keyed by alpha bucket. Avoids recreating
-  // the gradient on every frame (which is expensive on large canvases).
-  const gradientCache: Map<number, CanvasGradient> = new Map();
+  // (gradientCache is declared above `applySize` so the resize hook
+  //  can clear it without hitting a temporal-dead-zone error.)
 
   function getOrCreateGradient(alphaBucket: number): CanvasGradient {
     const cached = gradientCache.get(alphaBucket);

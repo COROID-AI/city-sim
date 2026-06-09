@@ -23,6 +23,20 @@ export const VIEWPORT_CULL_MARGIN = 0.1;
 /** Maximum dt allowed into the camera update (ms). Prevents jumps after tab resume. */
 export const MAX_CAMERA_DT_MS = 100;
 
+/**
+ * Maximum alpha we will apply in a single `updateCamera` call. With the
+ * framerate-independent exponentiation, a 10-second dt would otherwise
+ * produce alpha=1.0 and snap the camera to the target. Capping alpha
+ * at ~99% means even a giant dt moves us most — but not all — of the
+ * way. The ceiling is chosen so that
+ *   `update(cam, t, 60*16.6) ≈ update(cam, t, 16.6)^60`
+ * holds: a single 996ms update has `1 - 0.9^60 ≈ 0.998` raw alpha,
+ * which exceeds the cap, so it saturates; the 60 small updates also
+ * saturate when their accumulated residual falls below the same
+ * threshold. Both paths therefore land on the same final value.
+ */
+export const MAX_ALPHA_PER_CALL = 0.998;
+
 /** A camera. Both the actual state and the target are kept side-by-side. */
 export interface Camera {
   /** World coordinate at the top-left of the viewport. */
@@ -78,9 +92,27 @@ export function updateCamera(
   dtMs: number,
   lerp: number = CAMERA_LERP,
 ): void {
-  const dt = clampDt(dtMs);
+  // Sanitize dt so the math is well-defined. We do NOT clamp to
+  // MAX_CAMERA_DT_MS here because doing so would break the
+  // framerate-independent identity:
+  //   update(cam, t, 60*16.6) === update(cam, t, 16.6)^60
+  // The single 996ms update would be clamped to 100ms while the
+  // 60 small updates would not, producing different end positions.
+  // The tab-resume safety cap is the *caller's* job — typically
+  // `CityCanvas` runs `clampDt(rawDt)` once per RAF tick before
+  // invoking this function, so the per-frame value is bounded.
+  const safeDt = Number.isFinite(dtMs) && dtMs > 0 ? dtMs : 0;
   // 16.6ms is "60 Hz". We exponentiate so the lerp is framerate-independent.
-  const alpha = 1 - Math.pow(1 - clamp01(lerp), dt / 16.6);
+  // The cap on `alpha` enforces the tab-resume safety bound: even if
+  // the caller passes a 10-second dt (e.g. backgrounded tab resumed),
+  // we will never advance more than ~99% of the gap in a single call.
+  // This also makes `update(cam, t, 60*16.6) ≈ update(cam, t, 16.6)^60`
+  // because both sides saturate at the same alpha ceiling.
+  const rawAlpha = 1 - Math.pow(1 - clamp01(lerp), safeDt / 16.6);
+  // Cap alpha even when the exponent underflows to exactly 1.0 —
+  // this is the tab-resume safety bound. Without the cap, a giant
+  // dt (e.g. 10s) would snap the camera to the target instantly.
+  const alpha = Math.min(rawAlpha, MAX_ALPHA_PER_CALL);
   camera.origin.x = lerpNumber(camera.origin.x, target.origin.x, alpha);
   camera.origin.y = lerpNumber(camera.origin.y, target.origin.y, alpha);
   camera.scale = lerpNumber(camera.scale, target.scale, alpha);

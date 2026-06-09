@@ -26,11 +26,60 @@ import type {
   VehicleId,
 } from '@/types/common';
 
+function makeCtxStub(): CanvasRenderingContext2D {
+  // jsdom's HTMLCanvasElement.getContext('2d') returns null. Inject a
+  // minimal no-op 2D context so the Renderer can run; tests then spy
+  // on individual methods (e.g. `arc`) to verify culling behaviour.
+  const noop = () => {};
+  return {
+    canvas: null as unknown as HTMLCanvasElement,
+    fillStyle: '#000',
+    strokeStyle: '#000',
+    globalAlpha: 1,
+    lineWidth: 1,
+    lineCap: 'butt',
+    lineJoin: 'miter',
+    font: '10px sans-serif',
+    textAlign: 'start',
+    textBaseline: 'alphabetic',
+    fillRect: noop,
+    clearRect: noop,
+    strokeRect: noop,
+    fillText: noop,
+    strokeText: noop,
+    beginPath: noop,
+    closePath: noop,
+    moveTo: noop,
+    lineTo: noop,
+    arc: noop,
+    quadraticCurveTo: noop,
+    bezierCurveTo: noop,
+    fill: noop,
+    stroke: noop,
+    save: noop,
+    restore: noop,
+    translate: noop,
+    scale: noop,
+    rotate: noop,
+    setTransform: noop,
+    resetTransform: noop,
+    createLinearGradient: () => ({ addColorStop: noop }) as unknown as CanvasGradient,
+    createRadialGradient: () => ({ addColorStop: noop }) as unknown as CanvasGradient,
+    measureText: () => ({ width: 0 }) as TextMetrics,
+    drawImage: noop,
+    getImageData: () => ({ data: new Uint8ClampedArray(4), width: 1, height: 1 }) as ImageData,
+    putImageData: noop,
+  } as unknown as CanvasRenderingContext2D;
+}
+
 function makeCanvas(): HTMLCanvasElement {
   const dom = new JSDOM('<!doctype html><html><body></body></html>');
   const canvas = dom.window.document.createElement('canvas');
   canvas.width = 800;
   canvas.height = 480;
+  // Inject a no-op 2D context — jsdom's HTMLCanvasElement.getContext
+  // returns null. Tests spy on `arc` to assert off-screen skipping.
+  (canvas as unknown as { getContext: (id: string) => unknown }).getContext = () => makeCtxStub();
   return canvas;
 }
 
