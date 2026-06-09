@@ -109,7 +109,8 @@ export function CityView({ engineRef, className, city }: CityViewProps): JSX.Ele
         engine.loop.stop();
       },
       resume: (): void => {
-        engine.time.setSpeed(lastSpeedRef.current === 0 ? 1 : lastSpeedRef.current);
+        const prev = lastSpeedRef.current ?? 1;
+        engine.time.setSpeed(prev === 0 ? 1 : prev);
         engine.loop.start();
       },
       setSpeed: (speed: number): void => {

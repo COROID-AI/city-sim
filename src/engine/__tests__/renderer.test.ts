@@ -94,38 +94,30 @@ function makeRecordingContext(): { ctx: RendererContext2D; calls: Array<{ x: num
   return { ctx, calls };
 }
 
-function makeAlphaRecordingContext(): {
-  fillRect(x: number, y: number, w: number, h: number): void;
-  globalAlpha: number;
-  fillStyle: string;
-  fillCalls: Array<{ x: number; y: number; w: number; h: number }>;
-  styleChanges: number;
-  beginPath(): void;
-  moveTo(x: number, y: number): void;
-  lineTo(x: number, y: number): void;
-  stroke(): void;
-  save(): void;
-  restore(): void;
-} {
+function makeAlphaRecordingContext(): RendererContext2D {
   const fillCalls: Array<{ x: number; y: number; w: number; h: number }> = [];
   let styleChanges = 0;
   let ga = 1;
   let fs = '';
-  return {
+  const stack: number[] = [];
+  const ctxObj = {
+    strokeStyle: '',
+    lineWidth: 1,
     get globalAlpha(): number { return ga; },
     set globalAlpha(v: number) { ga = v; },
     get fillStyle(): string { return fs; },
     set fillStyle(v: string) { fs = v; styleChanges++; },
     get fillCalls(): Array<{ x: number; y: number; w: number; h: number }> { return fillCalls; },
     get styleChanges(): number { return styleChanges; },
-    fillRect: (x, y, w, h): void => { fillCalls.push({ x, y, w, h }); },
+    fillRect: (x: number, y: number, w: number, h: number): void => { fillCalls.push({ x, y, w, h }); },
     beginPath: (): void => undefined,
     moveTo: (): void => undefined,
     lineTo: (): void => undefined,
     stroke: (): void => undefined,
-    save: (): void => undefined,
-    restore: (): void => undefined,
+    save: (): void => { stack.push(ga); },
+    restore: (): void => { const v = stack.pop(); if (v !== undefined) ga = v; },
   };
+  return ctxObj as unknown as RendererContext2D;
 }
 
 describe('Renderer.drawLightingOverlay', () => {

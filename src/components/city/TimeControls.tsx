@@ -102,26 +102,25 @@ export function TimeControls({ engineRef, className }: TimeControlsProps): JSX.E
       >
         {paused ? (
           // Play triangle
-          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden={true}>
             <path d="M4 3 L13 8 L4 13 Z" fill="currentColor" />
           </svg>
         ) : (
           // Pause bars
-          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden={true}>
             <rect x="4" y="3" width="3" height="10" fill="currentColor" />
             <rect x="9" y="3" width="3" height="10" fill="currentColor" />
           </svg>
         )}
       </button>
       <span
-        aria-hidden="true"
+        aria-hidden={true}
         className="mx-1 h-4 w-px bg-foreground/15"
       />
       {SPEED_PRESETS.map((preset) => {
         const active = !paused && Math.abs(speed - preset) < 1e-9;
         return (
           <button
-            key={preset}
             type="button"
             aria-label={`Set speed ${preset}x`}
             aria-pressed={active}
@@ -134,7 +133,7 @@ export function TimeControls({ engineRef, className }: TimeControlsProps): JSX.E
         );
       })}
       <span
-        aria-hidden="true"
+        aria-hidden={true}
         className="mx-1 h-4 w-px bg-foreground/15"
       />
       <span
