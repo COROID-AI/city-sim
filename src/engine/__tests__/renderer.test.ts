@@ -94,13 +94,26 @@ function makeRecordingContext(): { ctx: RendererContext2D; calls: Array<{ x: num
   return { ctx, calls };
 }
 
-function makeAlphaRecordingContext(): RendererContext2D {
+/**
+ * Recording context shape used by the lighting tests. Extends the
+ * renderer-agnostic context surface with test-only observability
+ * (a `fillCalls` array and a `styleChanges` counter). The returned
+ * value is structurally assignable to `RendererContext2D` because
+ * all required members are present, so call sites can pass it
+ * directly to the renderer.
+ */
+interface AlphaRecordingContext extends RendererContext2D {
+  readonly fillCalls: Array<{ x: number; y: number; w: number; h: number }>;
+  readonly styleChanges: number;
+}
+
+function makeAlphaRecordingContext(): AlphaRecordingContext {
   const fillCalls: Array<{ x: number; y: number; w: number; h: number }> = [];
   let styleChanges = 0;
   let ga = 1;
   let fs = '';
   const stack: number[] = [];
-  const ctxObj = {
+  const ctxObj: AlphaRecordingContext = {
     strokeStyle: '',
     lineWidth: 1,
     get globalAlpha(): number { return ga; },
@@ -117,7 +130,7 @@ function makeAlphaRecordingContext(): RendererContext2D {
     save: (): void => { stack.push(ga); },
     restore: (): void => { const v = stack.pop(); if (v !== undefined) ga = v; },
   };
-  return ctxObj as unknown as RendererContext2D;
+  return ctxObj;
 }
 
 describe('Renderer.drawLightingOverlay', () => {
