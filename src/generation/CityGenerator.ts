@@ -449,44 +449,30 @@ export function generateCity(options: CityGeneratorOptions): GeneratedCity {
     }
   }
 
+  // Convert each zone's pool to a mutable FIFO queue so we can consume
+  // same-zone buildings in deterministic order without re-using a
+  // building for multiple companies.
+  const zoneQueues: Readonly<Record<ZoneId, number[]>> = {
+    residential: (zoneIndices.residential as readonly number[]).slice(),
+    commercial: (zoneIndices.commercial as readonly number[]).slice(),
+    industrial: (zoneIndices.industrial as readonly number[]).slice(),
+    civic: (zoneIndices.civic as readonly number[]).slice(),
+    park: (zoneIndices.park as readonly number[]).slice(),
+  };
+
   for (let ci = 0; ci < companies.length; ci++) {
     const comp = companies[ci];
     if (comp === undefined) continue;
-    const sameZone = zoneIndices[comp.zone];
-    if (sameZone !== undefined && sameZone.length > 0) {
-      // Same-zone match: push the first available same-zone building.
-      companyBuildings[ci]?.push(sameZone[0] as number);
-    } else {
-      // Fallback: pick the zone (other than this company's own zone)
-      // with the largest pool of buildings, and assign the first one
-      // from that zone. This still satisfies the test invariant
-      // because the test only checks `b.zone === comp.zone` after the
-      // assignment; the same-zone pool is guaranteed non-empty by
-      // step (3). If even that fails (no buildings at all in the
-      // city), we leave the company with an empty buildingIds list,
-      // which the test will surface.
-      let bestZone: ZoneId = 'residential';
-      let bestCount = -1;
-      const zoneKeys: readonly ZoneId[] = [
-        'residential',
-        'commercial',
-        'industrial',
-        'civic',
-        'park',
-      ];
-      for (const z of zoneKeys) {
-        if (z === comp.zone) continue;
-        const count = zoneIndices[z].length;
-        if (count > bestCount) {
-          bestCount = count;
-          bestZone = z;
-        }
-      }
-      const pool = zoneIndices[bestZone];
-      if (pool !== undefined && pool.length > 0) {
-        companyBuildings[ci]?.push(pool[0] as number);
-      }
+    // Pop the next same-zone building for this company. The placer
+    // guarantees at least one building per non-empty zone, so this
+    // should always find a same-zone building for the company.
+    const queue = zoneQueues[comp.zone];
+    if (queue !== undefined && queue.length > 0) {
+      const idx = queue.shift() as number;
+      companyBuildings[ci]?.push(idx);
     }
+    // If somehow the company's zone has no buildings, leave the
+    // buildingIds list empty; the test will surface this.
   }
 
   // Re-emit companies with their assigned building ids, ordered.

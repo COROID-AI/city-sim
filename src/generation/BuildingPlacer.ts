@@ -89,8 +89,12 @@ export class BuildingPlacer {
   }
 
   private fillPlot(zone: ZoneId, plot: Rect, out: Building[]): void {
-    // Industrial gets 3x3 candidates, others 2x2.
-    const minSize = 2;
+    // Industrial gets 3x3 candidates, others 2x2. As a last resort we
+    // try 1x1 to guarantee that even tiny zones (e.g. the central
+    // 3x3 civic plaza) yield at least one building per plot, which
+    // keeps the "every company has a building in its allowed zone"
+    // invariant satisfiable for every zone.
+    const minSize = 1;
     const maxSize = zone === 'industrial' ? 3 : 2;
 
     for (let y = plot.y; y < plot.y + plot.height; y += 1) {
