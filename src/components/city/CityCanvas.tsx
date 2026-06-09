@@ -3,15 +3,33 @@
 /**
  * CityCanvas — top-level canvas host.
  *
- * Mounts the `Renderer`, wires pointer events for the hover tooltip,
- * and re-renders the canvas every time the city clock ticks. The host
- * owns pointer events (not the Tooltip) so the tooltip is reusable from
- * any future canvas host and we avoid the canvas-vs-DOM event-ordering
- * bug where `mousemove` on a child element stops firing on the canvas.
+ * Mounts the `Renderer`, owns the Camera state (with a smooth
+ * requestAnimationFrame-driven lerp toward a user-controlled target),
+ * drives pointer events for the hover tooltip, and re-renders the
+ * canvas every time the city clock ticks.
+ *
+ * The host owns pointer events (not the Tooltip) so the tooltip is
+ * reusable from any future canvas host and we avoid the
+ * canvas-vs-DOM event-ordering bug where `mousemove` on a child
+ * element stops firing on the canvas.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
 import { createRenderer, type Camera, type Renderer } from './Renderer';
+import {
+  CAMERA_LERP,
+  createCamera,
+  createTarget,
+  updateCamera,
+  type CameraTarget,
+} from './Camera';
+import {
+  createParticles,
+  spawnDust,
+  spawnZzz,
+  updateParticles,
+  type Particle,
+} from './Particles';
 import { Tooltip, clampTooltipPosition } from '@/ui/Tooltip';
 import { useCityClock } from '@/hooks/useCityClock';
 import {
@@ -23,10 +41,11 @@ import {
   cityBus,
   generateCity,
 } from '@/systems';
-import { type Citizen, isCitizen } from '@/entities';
+import { type Citizen, isCitizen, type Vehicle } from '@/entities';
 import type { ActivityId, BuildingId } from '@/types/common';
 
-const DEFAULT_CAMERA: Camera = { origin: { x: 0, y: 0 }, scale: 1 };
+/** Default starting camera. Lives at world origin, scale 1. */
+const INITIAL_CAMERA: Camera = createCamera({ origin: { x: 0, y: 0 }, scale: 1 });
 
 /** Compact read-only view of the engine's UI-relevant state. */
 export interface CanvasSnapshot {
@@ -60,6 +79,14 @@ const WRAPPER_STYLE: CSSProperties = {
   overflow: 'hidden',
 };
 
+/** Helper: compute per-tick vehicle velocity (1 tile/tick on the cardinal axis). */
+function vehicleTickVelocity(v: Vehicle): { x: number; y: number } {
+  if (v.path.length === 0) return { x: 0, y: 0 };
+  const next = v.path[v.pathIndex];
+  if (!next) return { x: 0, y: 0 };
+  return { x: next.x - v.position.x, y: next.y - v.position.y };
+}
+
 export interface CityCanvasProps {
   /**
    * Optional callback invoked after every render-tick with a compact
@@ -74,6 +101,11 @@ export function CityCanvas({ onSnapshot }: CityCanvasProps = {}): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const cameraRef = useRef<Camera>(createCamera(INITIAL_CAMERA));
+  const targetRef = useRef<CameraTarget>(createTarget(INITIAL_CAMERA));
+  const particlesRef = useRef<Particle[]>(createParticles());
+  const lastFrameTimeRef = useRef<number | null>(null);
+  const rafIdRef = useRef<number | null>(null);
   const hour = useCityClock();
 
   // Build initial world state once. We don't need to re-run CityGenerator
@@ -148,10 +180,32 @@ export function CityCanvas({ onSnapshot }: CityCanvasProps = {}): ReactElement {
       // keeps the renderer contract stable for the follow-up task
       // that emits vehicles.
       const tickResult = commuteManager.tick(needSystem.getCitizens());
-      renderer.drawCitizens(tickResult.activeCitizens, DEFAULT_CAMERA);
-      renderer.drawVehicles(tickResult.activeVehicles, DEFAULT_CAMERA);
+
+      // Emit particles: dust behind moving vehicles, Zzz over sleeping citizens.
+      const vehicles = tickResult.activeVehicles;
+      for (const v of vehicles) {
+        const vel = vehicleTickVelocity(v);
+        if (Math.hypot(vel.x, vel.y) > 0.5) {
+          spawnDust(particlesRef.current, v.position, vel);
+        }
+      }
+      for (const c of tickResult.activeCitizens) {
+        if (c.currentActivity === 'sleep') {
+          // Cycle the sizeIndex by minute-of-hour for a nice cadence.
+          const sizeIndex = Math.floor(timeSystem.getElapsedMinutes() / 3) % 3;
+          spawnZzz(particlesRef.current, c.position, { sizeIndex });
+        }
+      }
+      updateParticles(particlesRef.current, 1 / 30);
+
+      const camera = cameraRef.current;
+      renderer.drawBuildings(stubBuildings(), camera);
+      renderer.drawCitizens(tickResult.activeCitizens, camera);
+      renderer.drawVehicles(tickResult.activeVehicles, camera);
+      renderer.drawParticles(particlesRef.current, camera);
+      renderer.drawLightingOverlay(currentHour, camera);
     },
-    [needSystem, commuteManager, economySystem],
+    [needSystem, commuteManager, economySystem, timeSystem],
   );
 
   // Bridge state outward when a consumer (e.g. CityView) is listening.
@@ -189,13 +243,39 @@ export function CityCanvas({ onSnapshot }: CityCanvasProps = {}): ReactElement {
     const renderer = createRenderer(canvas, { width: 800, height: 480 });
     rendererRef.current = renderer;
     // Initial paint.
-    renderer.drawCitizens(needSystem.getCitizens(), DEFAULT_CAMERA);
-    renderer.drawVehicles(commuteManager.getVehicles(), DEFAULT_CAMERA);
+    renderer.drawBuildings(stubBuildings(), cameraRef.current);
+    renderer.drawCitizens(needSystem.getCitizens(), cameraRef.current);
+    renderer.drawVehicles(commuteManager.getVehicles(), cameraRef.current);
+    renderer.drawParticles(particlesRef.current, cameraRef.current);
+    renderer.drawLightingOverlay(0, cameraRef.current);
     return () => {
       renderer.dispose();
       rendererRef.current = null;
     };
-  }, [needSystem]);
+  }, [needSystem, commuteManager]);
+
+  // Camera loop: requestAnimationFrame drives the lerp and the
+  // particle update between simulation ticks. The lerp uses the
+  // canonical CAMERA_LERP (0.1) factor.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = (now: number): void => {
+      if (cancelled) return;
+      const prev = lastFrameTimeRef.current;
+      lastFrameTimeRef.current = now;
+      const dtMs = prev === null ? 16.6 : now - prev;
+      updateCamera(cameraRef.current, targetRef.current, dtMs, CAMERA_LERP);
+      rafIdRef.current = requestAnimationFrame(tick);
+    };
+    rafIdRef.current = requestAnimationFrame(tick);
+    return (): void => {
+      cancelled = true;
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+  }, []);
 
   // Re-render whenever the city clock reports a new hour.
   useEffect(() => {
@@ -212,7 +292,7 @@ export function CityCanvas({ onSnapshot }: CityCanvasProps = {}): ReactElement {
     const rect = wrapper.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const hit = renderer.hitTest(x, y, needSystem.getCitizens(), DEFAULT_CAMERA);
+    const hit = renderer.hitTest(x, y, needSystem.getCitizens(), cameraRef.current);
     if (hit === null) {
       setHover({ citizen: null, x, y });
       return;
