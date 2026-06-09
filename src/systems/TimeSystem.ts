@@ -10,6 +10,7 @@
  */
 
 import { HOURS_PER_DAY } from '@/types/common';
+import type { CityEventMap, EventBus } from './EventBus';
 
 export interface TimeProvider {
   /** Current hour of the day, integer in [0, 23]. */
@@ -25,6 +26,18 @@ export interface TimeProvider {
 export class TimeSystem implements TimeProvider {
   private elapsedMinutes = 0;
   private lastReportedHour = -1;
+  private lastDay = 0;
+  private bus: EventBus<CityEventMap> | null = null;
+
+  /**
+   * Wire an EventBus to this TimeSystem. When a bus is wired,
+   * the system emits a `new_day` event on the hour transition
+   * from 23 -> 0. The wiring is one-way: re-wiring replaces the
+   * previous bus.
+   */
+  setBus(bus: EventBus<CityEventMap>): void {
+    this.bus = bus;
+  }
 
   /**
    * Advance the clock. `realDeltaMs` is the wall-clock time elapsed
@@ -35,6 +48,16 @@ export class TimeSystem implements TimeProvider {
     if (!Number.isFinite(realDeltaMs) || realDeltaMs < 0) return;
     const minutes = (realDeltaMs / 1000) * timeScale;
     this.elapsedMinutes += minutes;
+    // Day-wrap detection: when the in-game day counter changes, fire
+    // `new_day`. The wrap occurs at minute N*24*60.
+    const newDay = Math.floor(this.elapsedMinutes / (24 * 60));
+    if (newDay > this.lastDay) {
+      this.lastDay = newDay;
+      this.bus?.emit('new_day', {
+        day: newDay,
+        totalMinutes: Math.floor(this.elapsedMinutes),
+      });
+    }
   }
 
   getCurrentHour(): number {

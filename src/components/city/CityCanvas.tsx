@@ -14,7 +14,14 @@ import type { CSSProperties, ReactElement } from 'react';
 import { createRenderer, type Camera, type Renderer } from './Renderer';
 import { Tooltip, clampTooltipPosition } from '@/ui/Tooltip';
 import { useCityClock } from '@/hooks/useCityClock';
-import { TimeSystem, NeedSystem, CommuteManager, generateCity } from '@/systems';
+import {
+  TimeSystem,
+  NeedSystem,
+  CommuteManager,
+  TrafficSystem,
+  EconomySystem,
+  cityBus,
+} from '@/systems';
 import { type Citizen, isCitizen } from '@/entities';
 import type { ActivityId, BuildingId } from '@/types/common';
 
@@ -61,6 +68,7 @@ export function CityCanvas(): ReactElement {
   // The need system is a long-lived holder for the citizen list.
   const needSystem = useMemo(() => {
     const time = new TimeSystem();
+    time.setBus(cityBus);
     return new NeedSystem(initial.citizens, { timeProvider: time });
   }, [initial]);
 
@@ -71,7 +79,21 @@ export function CityCanvas(): ReactElement {
   // now means we can verify drawVehicles receives a (still empty)
   // list today and integrate handoff in the next task without
   // touching the canvas.
-  const commuteManager = useMemo(() => new CommuteManager(), []);
+  const commuteManager = useMemo(() => {
+    const m = new CommuteManager({ bus: cityBus });
+    return m;
+  }, []);
+
+  // Traffic + economy systems. They share the city-wide bus and are
+  // wired here so the dashboard / event-log / mini-map can subscribe
+  // to the same events that drive the simulation. Neither system is
+  // read by the renderer today; both are stable hooks for the
+  // dashboard follow-up task.
+  const trafficSystem = useMemo(() => new TrafficSystem({ bus: cityBus }), []);
+  const economySystem = useMemo(
+    () => new EconomySystem({ bus: cityBus, initialBudget: 50_000 }),
+    [],
+  );
 
   // Per-tick: advance the simulation and re-render. Wrapped in a
   // useCallback so the effect below doesn't re-subscribe every render.
@@ -81,6 +103,10 @@ export function CityCanvas(): ReactElement {
       const renderer = rendererRef.current;
       if (renderer === null) return;
       needSystem.update();
+      // Drive the economy + time transition: when the in-game day
+      // rolls over, the EconomySystem settles the ledger and emits
+      // `new_day` on the bus.
+      economySystem.tick(currentHour);
       // CommuteManager.tick filters in-flight citizens out of the
       // active list and restores them on arrival. Today it is a
       // pass-through (no in-flight citizens) but wiring it here
@@ -90,7 +116,7 @@ export function CityCanvas(): ReactElement {
       renderer.drawCitizens(tickResult.activeCitizens, DEFAULT_CAMERA);
       renderer.drawVehicles(tickResult.activeVehicles, DEFAULT_CAMERA);
     },
-    [needSystem, commuteManager],
+    [needSystem, commuteManager, economySystem],
   );
 
   // Mouse hover state for the tooltip.

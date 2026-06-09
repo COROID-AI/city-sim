@@ -17,6 +17,13 @@
  * and assert the phase transitions deterministically.
  */
 import type { TrafficPhase } from '@/entities/Road';
+import type { CityEventMap, EventBus } from './EventBus';
+
+/** Threshold: a tile is "jammed" when vehicle count reaches this value. */
+export const DEFAULT_JAM_THRESHOLD = 3;
+
+/** How long (ms) a tile must stay jammed before emitting `traffic_jam`. */
+export const DEFAULT_JAM_DURATION_MS = 1500;
 
 export interface TrafficSystemOptions {
   /** NS/EW green phase length in (scaled) milliseconds. Default 15000. */
@@ -34,6 +41,12 @@ export interface TrafficSystemOptions {
    * red-light tiles and `isTileOnRed` always returns false.
    */
   intersectionKeys?: readonly string[];
+  /** Vehicle count threshold above which a tile is considered jammed. */
+  jamThreshold?: number;
+  /** Minimum sustained time (ms) before a jam fires `traffic_jam`. */
+  jamDurationMs?: number;
+  /** Optional bus for emitting `traffic_jam` and `traffic_clear` events. */
+  bus?: EventBus<CityEventMap>;
 }
 
 interface PhaseWindow {
@@ -54,13 +67,23 @@ export class TrafficSystem {
   private readonly allRedDurationMs: number;
   private readonly intersections: ReadonlySet<string>;
   private readonly cycle: readonly PhaseWindow[];
+  private readonly jamThreshold: number;
+  private readonly jamDurationMs: number;
+  private bus: EventBus<CityEventMap> | null;
   private phaseIndex: number;
   private phaseElapsedMs: number;
+  /** Per-tile ongoing jam duration (ms). */
+  private readonly jamTimers: Map<string, number> = new Map();
+  /** Tiles that have already fired `traffic_jam` and are still jammed. */
+  private readonly jammedTiles: Set<string> = new Set();
 
   constructor(options: TrafficSystemOptions = {}) {
     this.greenDurationMs = options.greenDurationMs ?? CYCLE[0]!.durationMs;
     this.allRedDurationMs = options.allRedDurationMs ?? CYCLE[1]!.durationMs;
     this.intersections = new Set(options.intersectionKeys ?? []);
+    this.jamThreshold = Math.max(1, options.jamThreshold ?? DEFAULT_JAM_THRESHOLD);
+    this.jamDurationMs = Math.max(0, options.jamDurationMs ?? DEFAULT_JAM_DURATION_MS);
+    this.bus = options.bus ?? null;
     // Build a per-instance cycle so options take effect.
     this.cycle = [
       { phase: 'NS_GREEN', durationMs: this.greenDurationMs },
@@ -72,6 +95,11 @@ export class TrafficSystem {
     const idx = this.cycle.findIndex((w) => w.phase === initial);
     this.phaseIndex = idx >= 0 ? idx : 0;
     this.phaseElapsedMs = 0;
+  }
+
+  /** Attach (or replace) the bus used for traffic_jam events. */
+  setBus(bus: EventBus<CityEventMap>): void {
+    this.bus = bus;
   }
 
   /** The current traffic-light phase. */
@@ -132,6 +160,38 @@ export class TrafficSystem {
   isIntersectionOpen(key: string): boolean {
     if (!this.intersections.has(key)) return true;
     return !this.isTileOnRed(key);
+  }
+
+  /**
+   * Report a vehicle count for a tile. Drives the jam detector:
+   * a tile that stays >= jamThreshold for jamDurationMs emits
+   * `traffic_jam` on the bus; once it falls back below the
+   * threshold, `traffic_clear` is emitted.
+   */
+  reportTileOccupancy(tileKey: string, vehicleCount: number): void {
+    const prev = this.jamTimers.get(tileKey) ?? 0;
+    if (vehicleCount >= this.jamThreshold) {
+      const next = prev + 16; // assume ~60Hz polling; tests pass explicit deltas
+      this.jamTimers.set(tileKey, next);
+      if (next >= this.jamDurationMs && !this.jammedTiles.has(tileKey)) {
+        this.jammedTiles.add(tileKey);
+        this.bus?.emit('traffic_jam', {
+          tileKey,
+          vehicleCount,
+          durationMs: next,
+        });
+      }
+    } else {
+      this.jamTimers.set(tileKey, 0);
+      if (this.jammedTiles.delete(tileKey)) {
+        this.bus?.emit('traffic_clear', { tileKey });
+      }
+    }
+  }
+
+  /** Returns true when a tile is currently flagged as jammed. */
+  isTileJammed(tileKey: string): boolean {
+    return this.jammedTiles.has(tileKey);
   }
 }
 

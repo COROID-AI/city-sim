@@ -51,3 +51,21 @@ export {
   createVehicle,
   advanceVehicle,
 } from './Vehicle';
+
+// Companies (economy entities)
+export {
+  type Company,
+  type CompanyId,
+  type CompanyStatus,
+  type LedgerEntry,
+  type CreateCompanyParams,
+  createCompany,
+  getCompanyDefinition,
+  openCompany,
+  closeCompany,
+  hireEmployee,
+  fireEmployee,
+  appendLedger,
+  recordTransaction,
+  isCompany,
+} from './Company';

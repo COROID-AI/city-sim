@@ -22,6 +22,7 @@ import {
   createVehicle,
 } from '@/entities';
 import type { ActivityId, Vector2, VehicleId } from '@/types/common';
+import type { CityEventMap, EventBus } from './EventBus';
 
 /** Minimum path length required to spin up a vehicle. */
 export const COMMUTE_MIN_PATH_LENGTH = 2;
@@ -72,6 +73,8 @@ export interface CommuteManagerOptions {
   idFactory?: IdFactory;
   /** Vehicle speed override (defaults to 1). */
   vehicleSpeed?: number;
+  /** Optional bus for emitting commute_arrived events. */
+  bus?: EventBus<CityEventMap>;
 }
 
 export interface CommuteTickResult {
@@ -99,6 +102,7 @@ export class CommuteManager {
   private readonly destinationActivity: ActivityId;
   private readonly idFactory: IdFactory;
   private readonly vehicleSpeed: number;
+  private readonly bus: EventBus<CityEventMap> | null;
   private readonly inFlight: Map<string, InFlight> = new Map();
   private vehicles: Vehicle[] = [];
 
@@ -107,6 +111,12 @@ export class CommuteManager {
     this.destinationActivity = options.destinationActivity ?? COMMUTE_DESTINATION_ACTIVITY;
     this.idFactory = options.idFactory ?? defaultIdFactory;
     this.vehicleSpeed = options.vehicleSpeed ?? 1;
+    this.bus = options.bus ?? null;
+  }
+
+  /** Attach (or replace) the bus used for commute_arrived events. */
+  setBus(bus: EventBus<CityEventMap>): void {
+    this.bus = bus;
   }
 
   /**
@@ -189,6 +199,11 @@ export class CommuteManager {
           currentActivity: this.destinationActivity,
         };
         restored.push(restoredCitizen);
+        this.bus?.emit('commute_arrived', {
+          citizenId: restoredCitizen.id,
+          destination: lastTile,
+        });
+        this.bus?.emit('vehicle_despawned', { vehicleId: advanced.id });
         continue;
       }
       nextVehicles.push(advanced);

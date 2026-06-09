@@ -15,6 +15,7 @@ export interface Vector2 {
 export type CitizenId = string & { readonly __brand: 'CitizenId' };
 export type BuildingId = string & { readonly __brand: 'BuildingId' };
 export type VehicleId = string & { readonly __brand: 'VehicleId' };
+export type CompanyId = string & { readonly __brand: 'CompanyId' };
 
 /**
  * Discrete activity a citizen can be doing at a given hour.

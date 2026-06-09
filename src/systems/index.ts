@@ -27,3 +27,21 @@ export {
   type CommuteTickResult,
   type IdFactory,
 } from './CommuteManager';
+export {
+  EventBus,
+  cityBus,
+  type CityEventMap,
+  type CityEventName,
+  type CityEventListener,
+  type Unsubscribe,
+  type EventBusErrorHandler,
+} from './EventBus';
+export {
+  EconomySystem,
+  DEFAULT_TAX_RATE,
+  DEFAULT_DAILY_UPKEEP,
+  DEFAULT_MAX_COMPANIES,
+  type EconomySystemOptions,
+  type DailyLedger,
+  type OpenCompanyResult,
+} from './EconomySystem';
