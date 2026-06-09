@@ -18,3 +18,4 @@ export {
   type GeneratedCity,
   type WorkplaceBuilding,
 } from './CityGenerator';
+export { TrafficSystem, type TrafficSystemOptions } from './TrafficSystem';
