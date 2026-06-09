@@ -9,6 +9,7 @@ import {
   type StepCallback,
 } from '@/engine';
 import { generateCity, type GeneratedCity } from '@/generation';
+import { EventBus, TimeSystem, type TimeState } from '@/systems';
 
 export interface CityViewEngineHandle {
   /** Read the current (smoothed) camera transform. */
@@ -19,6 +20,16 @@ export interface CityViewEngineHandle {
   pause: () => void;
   /** Resume the simulation loop. */
   resume: () => void;
+  /**
+   * Set the simulation speed multiplier. 0 pauses the clock without
+   * stopping the render loop. The previous speed is restored when the
+   * caller resumes via `resume()`.
+   */
+  setSpeed: (speed: number) => void;
+  /** Read the current TimeSystem state (simTime, speed, day). */
+  getTimeState: () => TimeState;
+  /** Read the current lighting snapshot (used by the renderer). */
+  getLighting: () => ReturnType<TimeSystem['getLighting']>;
 }
 
 export interface CityViewProps {
@@ -34,8 +45,9 @@ export interface CityViewProps {
 }
 
 /**
- * CityView — mounts the game engine (Camera + GameLoop + Renderer) and
- * renders a fullscreen canvas with layered ground/roads/buildings.
+ * CityView — mounts the game engine (Camera + GameLoop + Renderer + TimeSystem
+ * + EventBus) and renders a fullscreen canvas with layered
+ * ground/roads/buildings plus a 4-phase lighting overlay.
  *
  * This component is intentionally thin: the simulation, time, citizens, and
  * rendering layers all plug in via the engine handle and the container ref.
@@ -48,8 +60,12 @@ export function CityView({ engineRef, className, city }: CityViewProps): JSX.Ele
   const cameraRef = useRef<Camera | null>(null);
   const loopRef = useRef<GameLoop | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
+  const timeRef = useRef<TimeSystem | null>(null);
+  const busRef = useRef<EventBus | null>(null);
   const cityRef = useRef<GeneratedCity | null>(city ?? null);
   const dragStateRef = useRef<{ x: number; y: number } | null>(null);
+  // Speed captured at the moment of `pause()` so `resume()` can restore it.
+  const lastSpeedRef = useRef<number>(1);
 
   // Lazily create the engine once. We do this in a ref-initializer style
   // (computed once) to avoid re-creating the loop on every render.
@@ -57,7 +73,9 @@ export function CityView({ engineRef, className, city }: CityViewProps): JSX.Ele
     const camera = new Camera();
     const loop = new GameLoop();
     const renderer = new Renderer();
-    return { camera, loop, renderer };
+    const bus = new EventBus();
+    const time = new TimeSystem({ initialSpeed: 1, bus });
+    return { camera, loop, renderer, bus, time };
   }, []);
 
   // Keep the latest city data accessible from the render callback.
@@ -74,6 +92,8 @@ export function CityView({ engineRef, className, city }: CityViewProps): JSX.Ele
   cameraRef.current = engine.camera;
   loopRef.current = engine.loop;
   rendererRef.current = engine.renderer;
+  timeRef.current = engine.time;
+  busRef.current = engine.bus;
 
   useImperativeHandle<CityViewEngineHandle | null, CityViewEngineHandle | null>(
     engineRef ?? null,
@@ -81,11 +101,23 @@ export function CityView({ engineRef, className, city }: CityViewProps): JSX.Ele
       getCameraTransform: (): CameraTransform => engine.camera.getTransform(),
       onStepRegister: (fn: StepCallback): (() => void) => engine.loop.onStep(fn),
       pause: (): void => {
+        // Capture current speed so resume() can restore it; this is
+        // idempotent — repeated pauses don't lose the previous value.
+        const current = engine.time.getSpeed();
+        if (current !== 0) lastSpeedRef.current = current;
+        engine.time.setSpeed(0);
         engine.loop.stop();
       },
       resume: (): void => {
+        engine.time.setSpeed(lastSpeedRef.current === 0 ? 1 : lastSpeedRef.current);
         engine.loop.start();
       },
+      setSpeed: (speed: number): void => {
+        engine.time.setSpeed(speed);
+        if (speed > 0) lastSpeedRef.current = speed;
+      },
+      getTimeState: (): TimeState => engine.time.getTimeState(),
+      getLighting: () => engine.time.getLighting(),
     }),
     [engine],
   );
@@ -94,15 +126,19 @@ export function CityView({ engineRef, className, city }: CityViewProps): JSX.Ele
     const camera = engine.camera;
     const loop = engine.loop;
     const renderer = engine.renderer;
+    const time = engine.time;
     let unsubStep: (() => void) | null = null;
     let unsubRender: (() => void) | null = null;
 
-    // Smooth camera each render frame.
+    // Smooth camera + advance simulation time on every fixed step.
     unsubStep = loop.onStep((dt: number): void => {
       camera.update(dt);
+      time.tick(dt);
     });
 
-    // Draw the base layers each frame via the Renderer.
+    // Draw the base layers each frame via the Renderer. Lighting is
+    // passed in via the frame snapshot, so the Renderer stays pure and
+    // never queries TimeSystem directly.
     unsubRender = loop.onRender((): void => {
       const canvas = canvasRef.current;
       const c = cityRef.current;
@@ -126,6 +162,7 @@ export function CityView({ engineRef, className, city }: CityViewProps): JSX.Ele
         camera,
         viewWidth: canvas.width,
         viewHeight: canvas.height,
+        lighting: time.getLighting(),
       });
     });
 

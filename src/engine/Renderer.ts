@@ -5,10 +5,10 @@
  *   1. drawGround          — base tile for every cell
  *   2. drawRoads           — main + secondary road overlay
  *   3. drawBuildings       — depth-sorted building footprints
- *   4. drawLightingOverlay — stub; populated by the time/lighting task
+ *   4. drawLightingOverlay — full-viewport tint when frame.lighting is set
  *
  * Determinism:
- *   - Draw order is fully determined by `(cityData, camera)` snapshots.
+ *   - Draw order is fully determined by `(cityData, camera, lighting)` snapshots.
  *   - Building depth key = `footprint.y + footprint.height` (the "back"
  *     of the footprint in world space) with `footprint.x` as a stable
  *     tie-breaker. Sorting by ascending key gives a back-to-front
@@ -23,10 +23,18 @@
  *     caller is responsible for sizing the underlying `<canvas>` and
  *     applying the camera transform. This keeps the renderer pure and
  *     trivially testable without a real DOM.
+ *
+ * Lighting overlay:
+ *   - When `frame.lighting` is provided, drawLightingOverlay paints a
+ *     single full-viewport rect using `phaseColor` and `globalAlpha =
+ *     phaseAlpha`. The overlay is a strict no-op when `frame.lighting`
+ *     is undefined, so the cost is paid only when a lighting system
+ *     is actually wired up.
  */
 
 import type { Camera } from './Camera';
 import type { Building, GeneratedCity, RoadKind, ZoneId } from '@/generation';
+import type { Lighting } from '@/systems';
 import {
   PALETTE_FALLBACK,
   type DocumentLike,
@@ -39,6 +47,7 @@ export interface RendererContext2D {
   fillStyle: string | CanvasGradient | CanvasPattern;
   strokeStyle: string | CanvasGradient | CanvasPattern;
   lineWidth: number;
+  globalAlpha: number;
   fillRect(x: number, y: number, w: number, h: number): void;
   beginPath(): void;
   moveTo(x: number, y: number): void;
@@ -71,6 +80,13 @@ export interface RenderFrame {
    * for providing static fallbacks.
    */
   readonly paletteOverrides?: Partial<Record<PaletteKey, string>>;
+  /**
+   * Optional lighting snapshot. When provided, drawLightingOverlay
+   * paints a full-viewport tint with fillStyle = phaseColor (or the
+   * blended color) and globalAlpha = phaseAlpha. When undefined, the
+   * overlay is a strict no-op.
+   */
+  readonly lighting?: Lighting;
 }
 
 /** Public, side-effect-free depth-sort key. Exported for tests. */
@@ -90,7 +106,7 @@ export interface BuildingDepthKey {
  */
 export function buildingDepthKey(building: Building, index: number): BuildingDepthKey {
   const f = building.footprint;
-  // y + height is the back-row of the footprint in world space. Tie-break
+  // y is the back-row of the footprint in world space. Tie-break
   // by x so the order is stable across runs (no JS engine sort quirks).
   const y = f.y * 100000 + f.x;
   return { index, key: y, building };
@@ -111,8 +127,6 @@ export function sortBuildingsForDraw(city: GeneratedCity): BuildingDepthKey[] {
   }
   return out.sort((a, b) => a.key - b.key);
 }
-
-const ROAD_LANE_WIDTH = 0.7; // fraction of cell width painted as road
 
 /**
  * Color tint per zone. The renderer maps a zone to a single base color
@@ -275,19 +289,55 @@ export class Renderer {
   }
 
   /**
-   * Layer 4: lighting overlay stub.
+   * Layer 4: lighting overlay.
    *
-   * Intentionally a no-op for this phase. The time/lighting task will
-   * fill this in with day/night tinting.
+   * When `frame.lighting` is provided, paint a single full-viewport
+   * rect with `fillStyle = blended tint` and `globalAlpha =
+   * phaseAlpha`. We honor the existing `globalAlpha` contract on the
+   * minimal context interface (added in the lighting task) and reset
+   * it after the fill so subsequent layers (or the next frame's
+   * background pass) are not dimmed.
+   *
+   * When `frame.lighting` is undefined, this method is a strict
+   * no-op. We intentionally do not touch `ctx.globalAlpha` in that
+   * case so the renderer stays a safe drop-in for tests that do not
+   * exercise the lighting system.
    */
-  drawLightingOverlay(_ctx: RendererContext2D, _frame: RenderFrame): void {
-    // No-op until the lighting system ships.
+  drawLightingOverlay(ctx: RendererContext2D, frame: RenderFrame): void {
+    const lighting = frame.lighting;
+    if (lighting === undefined) return;
+    const a = clampUnit(lighting.phaseAlpha);
+    if (a <= 0) return;
+    const color = rgbToCss(lighting.blended);
+    const prevAlpha = ctx.globalAlpha;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, frame.viewWidth, frame.viewHeight);
+    ctx.globalAlpha = prevAlpha;
   }
 }
 
 /* -------------------------------------------------------------------------- */
 /*                                  Helpers                                   */
 /* -------------------------------------------------------------------------- */
+
+/** Clamp a number to [0, 1] without allocating. */
+function clampUnit(n: number): number {
+  if (!(n > 0)) return 0;
+  if (n > 1) return 1;
+  return n;
+}
+
+/**
+ * Convert an Rgb tint to a CSS `rgb(r, g, b)` string with components
+ * in [0, 255]. Values outside the range are clamped.
+ */
+function rgbToCss(c: { r: number; g: number; b: number }): string {
+  const r = Math.round(clampUnit(c.r) * 255);
+  const g = Math.round(clampUnit(c.g) * 255);
+  const b = Math.round(clampUnit(c.b) * 255);
+  return `rgb(${r}, ${g}, ${b})`;
+}
 
 interface ScreenRect {
   x: number;

@@ -1,7 +1,8 @@
 // Minimal local type stubs to enable standalone strict typechecking of
-// CityView.tsx without depending on a full Node modules install.
-// This file is consumed ONLY by tsconfig.check.json and is excluded from
-// the real build by not being listed in the project tsconfig.
+// CityView.tsx and TimeControls.tsx without depending on a full Node
+// modules install. This file is consumed ONLY by tsconfig.check.json
+// and is excluded from the real build by not being listed in the
+// project tsconfig.
 
 declare module 'react' {
   export type Ref<T> = { current: T | null } | ((instance: T | null) => void);
@@ -15,6 +16,8 @@ declare module 'react' {
     init: () => R,
     deps?: ReadonlyArray<unknown>,
   ): void;
+  export function useState<T>(initial: T): [T, (v: T) => void];
+  export function useState<T = undefined>(): [T | undefined, (v: T | undefined) => void];
   export interface PointerEvent {
     button: number;
     clientX: number;

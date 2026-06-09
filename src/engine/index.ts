@@ -15,3 +15,6 @@ export {
   resolvePaletteColor,
 } from './palette';
 export type { PaletteKey } from './palette';
+// Re-export Lighting from systems so RenderFrame can be type-referenced
+// from callers without an extra import path.
+export type { Lighting } from '@/systems';
