@@ -8,6 +8,11 @@ declare global {
         'data-city-view'?: boolean;
         children?: unknown;
       };
+      canvas: {
+        ref?: unknown;
+        className?: string;
+        'data-city-canvas'?: boolean;
+      };
     }
   }
 }
