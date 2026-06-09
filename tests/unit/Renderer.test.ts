@@ -8,8 +8,11 @@
  */
 import {
   ACTIVITY_COLORS,
-  resolveCitizenStyle,
+  VEHICLE_COLOR,
   assertActivityColorsComplete,
+  assertVehicleColorsComplete,
+  resolveCitizenStyle,
+  resolveVehicleStyle,
 } from '@/components/city/Renderer';
 import { ACTIVITY_IDS, type ActivityId } from '@/types/common';
 
@@ -80,6 +83,50 @@ describe('Renderer', () => {
           (globalThis as unknown as { getComputedStyle: typeof original }).getComputedStyle = original;
         }
       }
+    });
+  });
+
+  describe('Renderer vehicles', () => {
+    it('exports a VEHICLE_COLOR token pointing at --color-warning', () => {
+      expect(VEHICLE_COLOR).toBe('--color-warning');
+    });
+
+    it('resolveVehicleStyle falls back to a non-empty orange when CSS is missing', () => {
+      const style = resolveVehicleStyle(null);
+      expect(typeof style.body).toBe('string');
+      expect(style.body.length).toBeGreaterThan(0);
+    });
+
+    it('resolveVehicleStyle returns the CSS value when getComputedStyle provides one', () => {
+      const original = (globalThis as { getComputedStyle?: (e: Element) => CSSStyleDeclaration }).getComputedStyle;
+      (globalThis as unknown as { getComputedStyle: (e: Element) => CSSStyleDeclaration }).getComputedStyle = (): CSSStyleDeclaration => {
+        const map: Record<string, string> = { '--color-warning': 'oklch(0.7 0.15 60)' };
+        return {
+          getPropertyValue(name: string): string {
+            return map[name] ?? '';
+          },
+        } as unknown as CSSStyleDeclaration;
+      };
+      try {
+        const style = resolveVehicleStyle({} as unknown as Element);
+        expect(style.body).toBe('oklch(0.7 0.15 60)');
+      } finally {
+        if (original === undefined) {
+          delete (globalThis as { getComputedStyle?: unknown }).getComputedStyle;
+        } else {
+          (globalThis as unknown as { getComputedStyle: typeof original }).getComputedStyle = original;
+        }
+      }
+    });
+
+    it('assertVehicleColorsComplete accepts valid token/fallback pairs', () => {
+      expect(() => assertVehicleColorsComplete('--color-warning', '#e8b878')).not.toThrow();
+    });
+
+    it('assertVehicleColorsComplete rejects empty / malformed tokens', () => {
+      expect(() => assertVehicleColorsComplete('color-warning', '#e8b878')).toThrow();
+      expect(() => assertVehicleColorsComplete('', '#e8b878')).toThrow();
+      expect(() => assertVehicleColorsComplete('--color-warning', '')).toThrow();
     });
   });
 });

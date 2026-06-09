@@ -19,3 +19,11 @@ export {
   type WorkplaceBuilding,
 } from './CityGenerator';
 export { TrafficSystem, type TrafficSystemOptions } from './TrafficSystem';
+export {
+  CommuteManager,
+  COMMUTE_MIN_PATH_LENGTH,
+  COMMUTE_VEHICLE_TIMEOUT_TICKS,
+  type CommuteManagerOptions,
+  type CommuteTickResult,
+  type IdFactory,
+} from './CommuteManager';

@@ -23,7 +23,7 @@
  * (resolveCitizenStyle, ACTIVITY_COLORS) only. The actual `ctx.draw*`
  * path is not exercised in jsdom (it has a stub 2D context).
  */
-import type { Citizen } from '@/entities';
+import type { Citizen, Vehicle } from '@/entities';
 import {
   ACTIVITY_IDS,
   type ActivityId,
@@ -51,6 +51,14 @@ const DOT_RADIUS = 3.5;
 const HALO_RADIUS = 6.5;
 const HALO_ALPHA = 0.35;
 const HIT_RADIUS = 8;
+
+// Vehicle drawing constants (mockup direction: small orange rounded
+// rects with a 2px arrow head, drawn at 70% opacity over road tiles).
+const VEHICLE_WIDTH = 3.5;
+const VEHICLE_LENGTH = 7;
+const VEHICLE_ARROW_LENGTH = 2;
+const VEHICLE_ALPHA = 0.7;
+const VEHICLE_CORNER_RADIUS = 1.5;
 
 /**
  * Per-activity color table. Keys MUST match the `ActivityId` union so
@@ -85,6 +93,32 @@ export interface CitizenStyle {
   halo: string;
 }
 
+/** CSS variable name for the vehicle body color. */
+export const VEHICLE_COLOR = '--color-warning';
+
+/** Hard-coded fallback for the vehicle body when CSS isn't available. */
+const VEHICLE_COLOR_FALLBACK = '#e8b878';
+
+/** Resolved style for a single vehicle (pure, fully testable). */
+export interface VehicleStyle {
+  body: string;
+}
+
+/**
+ * Resolve a vehicle's body color. Mirrors `resolveCitizenStyle`: reads
+ * the `--color-warning` CSS custom property from `:root` and falls
+ * back to a hard-coded orange when the CSS hasn't been parsed yet.
+ */
+export function resolveVehicleStyle(
+  root: Element | null = typeof document !== 'undefined' ? document.documentElement : null,
+): VehicleStyle {
+  const cssValue =
+    root !== null
+      ? getComputedStyle(root).getPropertyValue(VEHICLE_COLOR).trim()
+      : '';
+  return { body: cssValue.length > 0 ? cssValue : VEHICLE_COLOR_FALLBACK };
+}
+
 /**
  * Resolve a citizen's draw style for the given activity.
  * Pure function; the only DOM access is `getComputedStyle` on `:root`
@@ -109,6 +143,12 @@ export function resolveCitizenStyle(
 export interface Renderer {
   /** Repaint the canvas with the current world state. */
   drawCitizens(citizens: readonly Citizen[], camera: Camera): void;
+  /**
+   * Repaint the vehicle layer. Vehicles are drawn AFTER citizens so
+   * they read on top; their orientation is derived from the velocity
+   * (next tile - previous tile). No-op for an empty list.
+   */
+  drawVehicles(vehicles: readonly Vehicle[], camera: Camera): void;
   /** Hit-test the screen for a citizen under (x, y) in CSS pixels. */
   hitTest(
     x: number,
@@ -175,6 +215,43 @@ export function createRenderer(
     };
   }
 
+  function drawVehicles(vehicles: readonly Vehicle[], camera: Camera): void {
+    if (disposed) return;
+    if (vehicles.length === 0) return;
+    const style = resolveVehicleStyle();
+
+    for (const vehicle of vehicles) {
+      const screen = worldToScreen(vehicle.position, camera);
+      const { dx, dy } = vehicleVelocity(vehicle);
+      const angle = Math.atan2(dy, dx);
+
+      ctx.save();
+      ctx.translate(screen.x, screen.y);
+      ctx.rotate(angle);
+
+      // Body: rounded rect, 3.5px wide x 7px long, oriented along +x.
+      ctx.globalAlpha = VEHICLE_ALPHA;
+      ctx.fillStyle = style.body;
+      const halfW = VEHICLE_WIDTH / 2;
+      const halfL = VEHICLE_LENGTH / 2;
+      roundRectPath(ctx, -halfL, -halfW, VEHICLE_LENGTH, VEHICLE_WIDTH, VEHICLE_CORNER_RADIUS);
+      ctx.fill();
+
+      // Arrow head: 2px triangle pointing along +x.
+      ctx.beginPath();
+      ctx.moveTo(halfL + VEHICLE_ARROW_LENGTH, 0);
+      ctx.lineTo(halfL, -VEHICLE_WIDTH / 2);
+      ctx.lineTo(halfL, VEHICLE_WIDTH / 2);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    // Reset alpha so subsequent callers (e.g. debug overlays) start clean.
+    ctx.globalAlpha = 1;
+  }
+
   function drawCitizens(citizens: readonly Citizen[], camera: Camera): void {
     if (disposed) return;
     // Clear in CSS-pixel space (transform was reset by setTransform above).
@@ -234,12 +311,61 @@ export function createRenderer(
 
   return {
     drawCitizens,
+    drawVehicles,
     hitTest,
     dispose,
     get canvas() {
       return canvas;
     },
   };
+}
+
+/**
+ * Derive a vehicle's velocity vector from its path. We look at the
+ * next tile (path[pathIndex]) and the previous tile (path[pathIndex-1])
+ * and return their delta. If pathIndex === 0 we don't have a previous
+ * tile; we fall back to (0, 1) so the arrow points "down" (toward
+ * the next intersection) on the very first tick.
+ */
+function vehicleVelocity(vehicle: Vehicle): { dx: number; dy: number } {
+  if (vehicle.path.length === 0) {
+    return { dx: 0, dy: 1 };
+  }
+  const next = vehicle.path[vehicle.pathIndex] ?? vehicle.path[vehicle.path.length - 1]!;
+  const prev = vehicle.pathIndex > 0 ? vehicle.path[vehicle.pathIndex - 1]! : null;
+  if (prev === null) {
+    // First tick: there's no previous tile. Default to "down" so the
+    // arrow points somewhere sensible; a future renderer can blend
+    // toward the next tile over the first few ticks if desired.
+    return { dx: 0, dy: 1 };
+  }
+  return { dx: next.x - prev.x, dy: next.y - prev.y };
+}
+
+/**
+ * Append a rounded-rect path to the current 2D context. Kept tiny
+ * because the only consumer is the vehicle body.
+ */
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  const radius = Math.max(0, Math.min(r, Math.min(w, h) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+  ctx.lineTo(x + radius, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
 }
 
 /**
@@ -251,5 +377,22 @@ export function assertActivityColorsComplete(table: Readonly<Record<string, stri
     if (typeof table[id] !== 'string' || table[id] === undefined) {
       throw new Error(`ACTIVITY_COLORS missing entry for "${id}"`);
     }
+  }
+}
+
+/**
+ * Assert that the vehicle color token is a non-empty CSS custom-property
+ * name (must start with '--') and that the fallback is a non-empty
+ * string. Exposed for tests; pure.
+ */
+export function assertVehicleColorsComplete(
+  token: string,
+  fallback: string,
+): void {
+  if (typeof token !== 'string' || token.length === 0 || !token.startsWith('--')) {
+    throw new Error(`VEHICLE_COLOR must be a CSS custom property (got "${token}")`);
+  }
+  if (typeof fallback !== 'string' || fallback.length === 0) {
+    throw new Error('VEHICLE_COLOR_FALLBACK must be a non-empty string');
   }
 }

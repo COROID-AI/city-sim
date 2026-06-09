@@ -14,7 +14,7 @@ import type { CSSProperties, ReactElement } from 'react';
 import { createRenderer, type Camera, type Renderer } from './Renderer';
 import { Tooltip, clampTooltipPosition } from '@/ui/Tooltip';
 import { useCityClock } from '@/hooks/useCityClock';
-import { TimeSystem, NeedSystem, generateCity } from '@/systems';
+import { TimeSystem, NeedSystem, CommuteManager, generateCity } from '@/systems';
 import { type Citizen, isCitizen } from '@/entities';
 import type { ActivityId, BuildingId } from '@/types/common';
 
@@ -64,6 +64,15 @@ export function CityCanvas(): ReactElement {
     return new NeedSystem(initial.citizens, { timeProvider: time });
   }, [initial]);
 
+  // The commute manager is the citizen<->vehicle handoff state
+  // machine. It is hooked up here so the renderer has a vehicle list
+  // to draw, but it is a no-op until something calls beginCommute
+  // (which arrives in a follow-up task). Keeping it in the React tree
+  // now means we can verify drawVehicles receives a (still empty)
+  // list today and integrate handoff in the next task without
+  // touching the canvas.
+  const commuteManager = useMemo(() => new CommuteManager(), []);
+
   // Per-tick: advance the simulation and re-render. Wrapped in a
   // useCallback so the effect below doesn't re-subscribe every render.
   const renderTick = useCallback(
@@ -72,9 +81,16 @@ export function CityCanvas(): ReactElement {
       const renderer = rendererRef.current;
       if (renderer === null) return;
       needSystem.update();
-      renderer.drawCitizens(needSystem.getCitizens(), DEFAULT_CAMERA);
+      // CommuteManager.tick filters in-flight citizens out of the
+      // active list and restores them on arrival. Today it is a
+      // pass-through (no in-flight citizens) but wiring it here
+      // keeps the renderer contract stable for the follow-up task
+      // that emits vehicles.
+      const tickResult = commuteManager.tick(needSystem.getCitizens());
+      renderer.drawCitizens(tickResult.activeCitizens, DEFAULT_CAMERA);
+      renderer.drawVehicles(tickResult.activeVehicles, DEFAULT_CAMERA);
     },
-    [needSystem],
+    [needSystem, commuteManager],
   );
 
   // Mouse hover state for the tooltip.
@@ -92,6 +108,7 @@ export function CityCanvas(): ReactElement {
     rendererRef.current = renderer;
     // Initial paint.
     renderer.drawCitizens(needSystem.getCitizens(), DEFAULT_CAMERA);
+    renderer.drawVehicles(commuteManager.getVehicles(), DEFAULT_CAMERA);
     return () => {
       renderer.dispose();
       rendererRef.current = null;
