@@ -102,7 +102,7 @@ export class CommuteManager {
   private readonly destinationActivity: ActivityId;
   private readonly idFactory: IdFactory;
   private readonly vehicleSpeed: number;
-  private readonly bus: EventBus<CityEventMap> | null;
+  private bus: EventBus<CityEventMap> | null;
   private readonly inFlight: Map<string, InFlight> = new Map();
   private vehicles: Vehicle[] = [];
 

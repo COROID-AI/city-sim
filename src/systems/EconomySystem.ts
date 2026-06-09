@@ -26,21 +26,19 @@
  * is injected so the system can be unit-tested with a fresh bus.
  */
 
-import { BUILDING_TYPES, getBuildingType } from '@/constants/building-types';
+import { getBuildingType } from '@/constants/building-types';
 import {
   type Company,
-  type CompanyId,
   createCompany,
   getCompanyDefinition,
   hireEmployee,
   fireEmployee,
-  openCompany as openCompanyEntity,
   closeCompany as closeCompanyEntity,
   recordTransaction,
-  isCompany,
 } from '@/entities/Company';
-import type { CityEventMap, EventBus } from './EventBus';
-import type { CitizenId, Vector2 } from '@/types/common';
+import { EventBus } from './EventBus';
+import type { CityEventMap } from './EventBus';
+import type { CitizenId, CompanyId, Vector2 } from '@/types/common';
 
 /** Daily tax rate (fraction of net revenue) applied at end of day. */
 export const DEFAULT_TAX_RATE = 0.12;
@@ -354,4 +352,3 @@ function clampFraction(n: number): number {
   return n;
 }
 
-export { isCompany };

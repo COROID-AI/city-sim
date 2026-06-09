@@ -21,6 +21,7 @@ import {
   TrafficSystem,
   EconomySystem,
   cityBus,
+  generateCity,
 } from '@/systems';
 import { type Citizen, isCitizen } from '@/entities';
 import type { ActivityId, BuildingId } from '@/types/common';
@@ -89,7 +90,15 @@ export function CityCanvas(): ReactElement {
   // to the same events that drive the simulation. Neither system is
   // read by the renderer today; both are stable hooks for the
   // dashboard follow-up task.
+  // Construct the systems so they share the city-wide bus. The
+  // reference is held by the useMemo'd closure and is intentionally
+  // not read by the renderer; downstream consumers (dashboard,
+  // event-log, mini-map) will subscribe to the same bus to observe
+  // the events these systems emit. Both systems are created exactly
+  // once for the lifetime of the canvas.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const trafficSystem = useMemo(() => new TrafficSystem({ bus: cityBus }), []);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const economySystem = useMemo(
     () => new EconomySystem({ bus: cityBus, initialBudget: 50_000 }),
     [],

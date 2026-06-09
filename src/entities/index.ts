@@ -55,7 +55,6 @@ export {
 // Companies (economy entities)
 export {
   type Company,
-  type CompanyId,
   type CompanyStatus,
   type LedgerEntry,
   type CreateCompanyParams,
@@ -69,3 +68,7 @@ export {
   recordTransaction,
   isCompany,
 } from './Company';
+
+// Re-export CompanyId (branded id type) from the shared types module so
+// downstream consumers can import it from `@/entities` alongside `Company`.
+export type { CompanyId } from '@/types/common';
