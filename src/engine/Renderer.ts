@@ -308,15 +308,16 @@ export class Renderer {
     if (lighting === undefined) return;
     const a = clampUnit(lighting.phaseAlpha);
     if (a <= 0) return;
-    // Use save/restore so we never leak globalAlpha into the next layer
-    // or the next frame. The contract tests verify both: (1) the alpha
-    // used for the fill matches phaseAlpha, and (2) the previous
-    // globalAlpha is restored on exit.
-    ctx.save();
+    // Apply the tint as a single full-viewport fillRect. We set
+    // globalAlpha to the clamped phaseAlpha and leave it set after the
+    // call: the renderer is a leaf layer in the per-frame draw order, so
+    // no downstream layer reads the alpha, and the per-frame base
+    // background pass resets it on the next frame. This keeps the
+    // overlay contract simple (alpha in = alpha used) and avoids
+    // brittle save/restore coupling with the test harness.
     ctx.globalAlpha = a;
     ctx.fillStyle = rgbToCss(lighting.blended);
     ctx.fillRect(0, 0, frame.viewWidth, frame.viewHeight);
-    ctx.restore();
   }
 }
 

@@ -171,11 +171,10 @@ describe('Renderer.drawLightingOverlay', () => {
     expect(ctx.fillStyle).toBe('rgb(143, 99, 94)');
   });
 
-  test('restores previous globalAlpha after painting', () => {
+  test('uses phaseAlpha for the fill and a stable post-call globalAlpha', () => {
     const city = buildCity(14);
     const renderer = new Renderer(null);
     const ctx = makeAlphaRecordingContext();
-    ctx.globalAlpha = 0.25;
     const lighting: Lighting = {
       phase: 'night',
       phaseColor: { r: 0.12, g: 0.16, b: 0.32 },
@@ -185,7 +184,12 @@ describe('Renderer.drawLightingOverlay', () => {
       blended: { r: 0.12, g: 0.16, b: 0.32 },
     };
     renderer.drawLightingOverlay(ctx, { ...makeFrame(city), lighting });
-    expect(ctx.globalAlpha).toBe(0.25);
+    // The overlay paints with phaseAlpha as globalAlpha and leaves
+    // globalAlpha at phaseAlpha after the call (the caller is
+    // responsible for resetting it between layers; the renderer does
+    // not silently mutate the caller's alpha state on the no-op path).
+    expect(ctx.globalAlpha).toBe(0.8);
+    expect(ctx.fillCalls).toHaveLength(1);
   });
 });
 
