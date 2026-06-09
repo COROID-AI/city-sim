@@ -12,8 +12,8 @@
  *   - useEffect cleanup detaches the listener (no new entries
  *     appear after unmount).
  */
-import { act, createRoot, type Root } from 'react-dom/client';
-import { createElement } from 'react';
+import { act, createElement, type ComponentProps } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { CityLog, CITY_LOG_RING_CAPACITY } from '@/ui/CityLog';
 import { EventBus, type CityEventMap } from '@/systems/EventBus';
 
@@ -23,7 +23,7 @@ interface Container {
   cleanup(): void;
 }
 
-function mount(initial?: ConstructorParameters<typeof CityLog>[0]): Container {
+function mount(initial?: ComponentProps<typeof CityLog>): Container {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);

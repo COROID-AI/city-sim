@@ -89,10 +89,14 @@ export function CityCanvas({ onSnapshot }: CityCanvasProps = {}): ReactElement {
   }, []);
 
   // The need system is a long-lived holder for the citizen list.
-  const needSystem = useMemo(() => {
+  // We also keep a reference to the underlying TimeSystem so the
+  // snapshot bridge can read the current in-game day/hour/minute
+  // (NeedSystem does not expose time itself; it only consumes it).
+  const { needSystem, timeSystem } = useMemo(() => {
     const time = new TimeSystem();
     time.setBus(cityBus);
-    return new NeedSystem(initial.citizens, { timeProvider: time });
+    const needs = new NeedSystem(initial.citizens, { timeProvider: time });
+    return { needSystem: needs, timeSystem: time };
   }, [initial]);
 
   // The commute manager is the citizen<->vehicle handoff state
@@ -157,18 +161,19 @@ export function CityCanvas({ onSnapshot }: CityCanvasProps = {}): ReactElement {
     const citizens = needSystem.getCitizens();
     const companies = economySystem.getCompanies();
     const open = companies.filter((c) => c.status === 'open').length;
-    const time = needSystem.getTime();
+    const elapsed = timeSystem.getElapsedMinutes();
+    const day = Math.floor(elapsed / (24 * 60));
     onSnapshot({
-      day: time.day,
-      hour: time.hour,
-      minute: time.minute,
+      day,
+      hour: timeSystem.getCurrentHour(),
+      minute: timeSystem.getCurrentMinute(),
       budget: economySystem.getBudget(),
       openCompanies: open,
       totalCompanies: companies.length,
       population: citizens.length,
       vehicleCount: commuteManager.getVehicles().length,
     });
-  }, [onSnapshot, needSystem, economySystem, commuteManager]);
+  }, [onSnapshot, needSystem, economySystem, commuteManager, timeSystem]);
 
   // Mouse hover state for the tooltip.
   const [hover, setHover] = useState<{ citizen: Citizen | null; x: number; y: number }>({

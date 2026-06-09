@@ -6,6 +6,11 @@
  * from `@/entities` so we have a single stable contract.
  */
 
+// Re-export the 2D vector type from the shared types module so
+// downstream consumers can import it from `@/entities` alongside the
+// other entity types without reaching into `@/types/common` directly.
+export type { Vector2 } from '@/types/common';
+
 // Citizen (people + their needs/schedules)
 export {
   type Citizen,

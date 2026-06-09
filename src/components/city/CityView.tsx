@@ -23,9 +23,9 @@
  * uses the provided engine to read state without rendering the
  * production canvas — that path is what the integration test uses.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { ReactElement } from 'react';
-import { CityCanvas } from './CityCanvas';
+import { CityCanvas, type CanvasSnapshot } from './CityCanvas';
 import { Dashboard } from '@/ui/Dashboard';
 import { CityLog } from '@/ui/CityLog';
 import { MiniMap } from '@/ui/MiniMap';
@@ -87,13 +87,7 @@ function buildSnapshotFromEngine(engine: CityViewEngine): CitySnapshot {
   const companies = engine.getCompanies();
   const time = engine.getTime();
   const counts = engine.getCompanyCounts();
-  // The view does not import the heavy entity types; we treat the
-  // engine values as the source of truth. We shape the citizens as
-  // the `buildCitySnapshot` consumer expects, using the engine's
-  // already-defined shape. To keep `buildCitySnapshot` decoupled
-  // from engine specifics we map the citizens into the snapshot's
-  // own marker shape, then compute the KPI scalars ourselves.
-  const snapshot = buildCitySnapshot({
+  return buildCitySnapshot({
     day: time.day,
     hour: time.hour,
     minute: time.minute,
@@ -129,7 +123,25 @@ function buildSnapshotFromEngine(engine: CityViewEngine): CitySnapshot {
     })) as never,
     resolveBuildingColor: engine.resolveBuildingColor,
   });
-  return snapshot;
+}
+
+/**
+ * Build a full `CitySnapshot` from the compact `CanvasSnapshot` the
+ * canvas bridge emits. Citizens / vehicles / companies lists are
+ * empty here because the canvas bridge is intentionally narrow — it
+ * only carries the scalar KPIs the dashboard cares about. The
+ * mini-map renders an empty canvas in this case, which is fine for
+ * the production layout (the panel still frames the world).
+ */
+function buildCitySnapshotFromCanvas(snap: CanvasSnapshot): CitySnapshot {
+  return buildCitySnapshot({
+    day: snap.day,
+    hour: snap.hour,
+    minute: snap.minute,
+    budget: snap.budget,
+    openCompanies: snap.openCompanies,
+    totalCompanies: snap.totalCompanies,
+  });
 }
 
 function CityViewImpl({ engine, bus }: CityViewProps): ReactElement {
@@ -138,9 +150,8 @@ function CityViewImpl({ engine, bus }: CityViewProps): ReactElement {
   // systems twice). When omitted we render the CityCanvas and
   // bridge its internal state upward via a controlled snapshot.
   const [bridgedSnapshot, setBridgedSnapshot] = useState<CitySnapshot>(() =>
-    engine ? emptyCitySnapshot() : emptyCitySnapshot(),
+    emptyCitySnapshot(),
   );
-  const bridgeRef = useRef<((snap: CitySnapshot) => void) | null>(null);
 
   // The reader used by `useCitySnapshot`. If we have an engine we
   // delegate to it; otherwise we re-emit the most recent bridged
@@ -152,15 +163,12 @@ function CityViewImpl({ engine, bus }: CityViewProps): ReactElement {
 
   const snapshot = useCitySnapshot(read, 500);
 
-  const handleCanvasSnapshot = useCallback((snap: CitySnapshot) => {
-    bridgeRef.current = setBridgedSnapshot;
-    setBridgedSnapshot(snap);
+  // The CityCanvas emits a compact `CanvasSnapshot`. The view derives
+  // a full `CitySnapshot` from it so the Dashboard + MiniMap can
+  // render without re-implementing the engine wiring.
+  const handleCanvasSnapshot = useCallback((snap: CanvasSnapshot): void => {
+    setBridgedSnapshot(buildCitySnapshotFromCanvas(snap));
   }, []);
-
-  // Reset bridge so the latest callback is always invoked.
-  useEffect(() => {
-    bridgeRef.current = setBridgedSnapshot;
-  });
 
   return (
     <div

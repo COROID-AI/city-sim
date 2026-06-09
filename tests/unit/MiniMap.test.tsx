@@ -8,8 +8,8 @@
  * with a fresh snapshot to confirm the component doesn't throw on
  * prop changes.
  */
-import { act, createRoot, type Root } from 'react-dom/client';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { MiniMap } from '@/ui/MiniMap';
 import { buildCitySnapshot } from '@/ui/CitySnapshot';
 

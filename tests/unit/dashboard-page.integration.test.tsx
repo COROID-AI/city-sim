@@ -13,8 +13,8 @@
  * a hand-rolled engine so we don't need to drive the production
  * canvas — that keeps the test deterministic and fast.
  */
-import { act, createRoot, type Root } from 'react-dom/client';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { CityView, type CityViewEngine } from '@/components/city/CityView';
 import { EventBus, type CityEventMap } from '@/systems/EventBus';
 
