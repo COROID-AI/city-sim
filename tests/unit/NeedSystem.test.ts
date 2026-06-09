@@ -100,6 +100,60 @@ describe('NeedSystem', () => {
     });
   });
 
+  describe('NeedSystem decay (24 update() ticks)', () => {
+    it('24 update() ticks with a "work" citizen at 50/50/50/50 decay energy/hunger/fun and clamp >= 0', () => {
+      const time = fakeTime(0);
+      // 50/50/50/50 across the board. Work deltas: energy -2, hunger -2, fun -1.5, social -0.5.
+      const c = citizen('a', 'work', {
+        energy: 50,
+        hunger: 50,
+        fun: 50,
+        social: 50,
+      });
+      const sys = new NeedSystem([c], { timeProvider: time });
+      for (let i = 0; i < 24; i += 1) {
+        sys.update();
+      }
+      const after = sys.getCitizens()[0];
+      expect(after).toBeDefined();
+      if (after === undefined) return;
+      // All four needs must remain in [0, 100].
+      expect(after.needs.energy).toBeLessThanOrEqual(100);
+      expect(after.needs.energy).toBeGreaterThanOrEqual(0);
+      expect(after.needs.hunger).toBeLessThanOrEqual(100);
+      expect(after.needs.hunger).toBeGreaterThanOrEqual(0);
+      expect(after.needs.fun).toBeLessThanOrEqual(100);
+      expect(after.needs.fun).toBeGreaterThanOrEqual(0);
+      expect(after.needs.social).toBeLessThanOrEqual(100);
+      expect(after.needs.social).toBeGreaterThanOrEqual(0);
+      // Energy / hunger / fun are strictly lower than the start (work drains all three).
+      expect(after.needs.energy).toBeLessThan(50);
+      expect(after.needs.hunger).toBeLessThan(50);
+      expect(after.needs.fun).toBeLessThan(50);
+    });
+
+    it('24 update() ticks never drive any need below 0 even with starting values at the floor', () => {
+      const time = fakeTime(0);
+      const c = citizen('a', 'work', {
+        energy: 0,
+        hunger: 0,
+        fun: 0,
+        social: 0,
+      });
+      const sys = new NeedSystem([c], { timeProvider: time });
+      for (let i = 0; i < 24; i += 1) {
+        sys.update();
+      }
+      const after = sys.getCitizens()[0];
+      expect(after).toBeDefined();
+      if (after === undefined) return;
+      expect(after.needs.energy).toBe(0);
+      expect(after.needs.hunger).toBe(0);
+      expect(after.needs.fun).toBe(0);
+      expect(after.needs.social).toBe(0);
+    });
+  });
+
   describe('applyActivityDeltas', () => {
     it('returns the same citizen when no delta is defined for the activity', () => {
       const c = citizen('a', 'sleep');
@@ -149,6 +203,33 @@ describe('NeedSystem', () => {
       // 1 hunger tick on eat: 10 + 4 = 14
       expect(sys.getCitizens()[0]?.needs.hunger).toBe(14);
       expect(energy).toBeDefined();
+    });
+
+    it('schedule flips on hour 8 -> commute and hour 9 -> work with advanceSchedule', () => {
+      // Build a citizen whose 24h schedule is mixed.
+      const schedule: ActivityId[] = new Array(24).fill('sleep') as ActivityId[];
+      schedule[7] = 'sleep';
+      schedule[8] = 'commute';
+      schedule[9] = 'work';
+      schedule[17] = 'commute';
+      schedule[18] = 'leisure';
+      schedule[23] = 'sleep';
+      const c = createCitizen({
+        id: 'cit-mixed' as CitizenId,
+        position: { x: 0, y: 0 },
+        name: 'Mixed',
+        homeId: HOME,
+        workplaceId: WORK,
+        schedule,
+        currentActivity: schedule[0] ?? 'sleep',
+      });
+      // h=7 -> sleep, h=8 -> commute, h=9 -> work.
+      const at7 = advanceSchedule([c], 7);
+      const at8 = advanceSchedule(at7, 8);
+      const at9 = advanceSchedule(at8, 9);
+      expect(at7[0]?.currentActivity).toBe('sleep');
+      expect(at8[0]?.currentActivity).toBe('commute');
+      expect(at9[0]?.currentActivity).toBe('work');
     });
   });
 

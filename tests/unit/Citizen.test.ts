@@ -103,6 +103,47 @@ describe('Citizen', () => {
     });
   });
 
+  describe('state transitions (sleep -> commute -> work)', () => {
+    function mixedSchedule(): ActivityId[] {
+      // h=0..7 sleep, h=8 commute, h=9..17 work, h=18 commute, h=19..22 leisure, h=23 sleep
+      const s: ActivityId[] = new Array(24).fill('sleep') as ActivityId[];
+      s[8] = 'commute';
+      for (let i = 9; i <= 17; i += 1) s[i] = 'work';
+      s[18] = 'commute';
+      for (let i = 19; i <= 22; i += 1) s[i] = 'leisure';
+      s[23] = 'sleep';
+      return s;
+    }
+
+    it('transitions sleep (h=7) -> commute (h=8) -> work (h=9) using activityAtHour', () => {
+      const c = createCitizen({
+        id: 'cit-transit' as CitizenId,
+        position: { x: 0, y: 0 },
+        name: 'Transit',
+        homeId: HOME,
+        workplaceId: WORK,
+        schedule: mixedSchedule(),
+      });
+      expect(activityAtHour(c, 7)).toBe('sleep');
+      expect(activityAtHour(c, 8)).toBe('commute');
+      expect(activityAtHour(c, 9)).toBe('work');
+    });
+
+    it('transitions back to sleep in the evening (h=22 leisure, h=23 sleep)', () => {
+      const c = createCitizen({
+        id: 'cit-transit' as CitizenId,
+        position: { x: 0, y: 0 },
+        name: 'Transit',
+        homeId: HOME,
+        workplaceId: WORK,
+        schedule: mixedSchedule(),
+      });
+      expect(activityAtHour(c, 22)).toBe('leisure');
+      expect(activityAtHour(c, 23)).toBe('sleep');
+      expect(activityAtHour(c, 0)).toBe('sleep');
+    });
+  });
+
   describe('applyNeedDeltas', () => {
     it('applies deltas for currentActivity and clamps', () => {
       const c = createCitizen({
