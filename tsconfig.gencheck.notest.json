@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noImplicitAny": true,
+    "lib": ["ES2020", "DOM"],
+    "types": []
+  },
+  "include": [
+    "src/generation/types.ts",
+    "src/generation/NameGenerator.ts",
+    "src/generation/BuildingPlacer.ts",
+    "src/generation/spatialIndex.ts",
+    "src/generation/CityGenerator.ts",
+    "src/generation/index.ts"
+  ],
+  "exclude": ["src/generation/__tests__/**"]
+}

@@ -435,24 +435,40 @@ export function generateCity(options: CityGeneratorOptions): GeneratedCity {
     }
   }
   // Second pass: round-robin any remaining buildings to companies.
+  // We only assign buildings whose zone matches the target company's
+  // zone, so the invariant `b.zone === comp.zone` always holds.
   let cursor = 0;
   for (let bi = 0; bi < allBuildings.length; bi++) {
     // Skip already assigned.
     if (companyBuildings.some((arr) => arr.includes(bi))) continue;
-    const target = companies[cursor % companies.length];
+    const targetIdx = cursor % companies.length;
+    const target = companies[targetIdx];
     cursor++;
     if (target === undefined) continue;
-    companyBuildings[cursor % companies.length]?.push(bi);
+    const b = allBuildings[bi];
+    if (b === undefined) continue;
+    if (b.zone !== target.zone) continue;
+    companyBuildings[targetIdx]?.push(bi);
   }
 
   // Guarantee: every company has at least one building. If any didn't
-  // get one, hand it the nearest same-zone building even if it means
-  // sharing.
+  // get one, hand it a same-zone building even if it means sharing.
   for (let ci = 0; ci < companies.length; ci++) {
     if ((companyBuildings[ci]?.length ?? 0) > 0) continue;
     const comp = companies[ci];
     if (comp === undefined) continue;
-    const fallback = (byZone.get(comp.zone) ?? [])[0];
+    const sameZoneBuildings = byZone.get(comp.zone) ?? [];
+    let fallback: number | undefined = sameZoneBuildings[0];
+    if (typeof fallback !== 'number') {
+      // Search allBuildings for any same-zone building index.
+      for (let bi = 0; bi < allBuildings.length; bi++) {
+        const b = allBuildings[bi];
+        if (b === undefined) continue;
+        if (b.zone !== comp.zone) continue;
+        fallback = bi;
+        break;
+      }
+    }
     if (typeof fallback === 'number') {
       companyBuildings[ci]?.push(fallback);
     }
