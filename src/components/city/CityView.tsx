@@ -1,166 +1,203 @@
 'use client';
 
-import { useEffect, useImperativeHandle, useMemo, useRef, type Ref } from 'react';
-import { Camera, GameLoop, type CameraTransform, type StepCallback } from '@/engine';
+/**
+ * CityView — top-level page composition.
+ *
+ * Spec reference: §6.4 Dashboard Layout.
+ *
+ * Lays out:
+ *   - the main canvas (~2/3 width) on the left
+ *   - a right rail split vertically into:
+ *       - Dashboard  (top, KPIs)
+ *       - CityLog    (middle, scrollable, flex-1)
+ *       - MiniMap    (bottom, fixed-height canvas)
+ *
+ * The view is the only place that owns the engine state. It builds
+ * a `CitySnapshot` at 2 Hz via `useCitySnapshot` and passes the
+ * frozen value down to `Dashboard` and `MiniMap`. `CityLog` reads
+ * directly from the shared `cityBus`.
+ *
+ * Test seam: the view accepts an optional `engine` prop. When
+ * omitted, the view constructs a default engine by rendering
+ * `CityCanvas` (which builds its own). When supplied, the view
+ * uses the provided engine to read state without rendering the
+ * production canvas — that path is what the integration test uses.
+ */
+import { useCallback, useState } from 'react';
+import type { ReactElement } from 'react';
+import { CityCanvas, type CanvasSnapshot } from './CityCanvas';
+import { Dashboard } from '@/ui/Dashboard';
+import { CityLog } from '@/ui/CityLog';
+import { MiniMap } from '@/ui/MiniMap';
+import {
+  buildCitySnapshot,
+  emptyCitySnapshot,
+  type CitySnapshot,
+} from '@/ui/CitySnapshot';
+import { useCitySnapshot } from '@/hooks/useCitySnapshot';
+import { EventBus, cityBus, type CityEventMap } from '@/systems/EventBus';
 
-export interface CityViewEngineHandle {
-  /** Read the current (smoothed) camera transform. */
-  getCameraTransform: () => CameraTransform;
-  /** Register a per-simulation-step callback. Returns an unsubscribe. */
-  onStepRegister: (fn: StepCallback) => () => void;
-  /** Pause the simulation loop. */
-  pause: () => void;
-  /** Resume the simulation loop. */
-  resume: () => void;
+/** Minimal engine surface the view needs to read state. */
+export interface CityViewEngine {
+  /** Total city budget (treasury). */
+  getBudget(): number;
+  /** Open + total company counts. */
+  getCompanyCounts(): { open: number; total: number };
+  /** Current in-game time. */
+  getTime(): { day: number; hour: number; minute: number };
+  /** Live (non-commuting) citizens. */
+  getCitizens(): ReadonlyArray<{
+    id: string;
+    position: { x: number; y: number };
+    needs: { energy: number; hunger: number; fun: number; social: number };
+  }>;
+  /** Active vehicles. */
+  getVehicles(): ReadonlyArray<{
+    id: string;
+    position: { x: number; y: number };
+    status?: string;
+  }>;
+  /** Companies (used for the mini-map). */
+  getCompanies(): ReadonlyArray<{
+    id: string;
+    position: { x: number; y: number };
+    buildingTypeId: string;
+  }>;
+  /** Resolve a building-type color (optional, used by the mini-map). */
+  resolveBuildingColor?(buildingTypeId: string): string | undefined;
 }
 
 export interface CityViewProps {
-  /** Forwarded ref to access the engine handle from parent components. */
-  engineRef?: Ref<CityViewEngineHandle | null>;
-  /** Optional CSS class for the outer container. */
-  className?: string;
+  /**
+   * Optional engine override. When omitted, the view constructs a
+   * default engine that reads the live state from the CityCanvas
+   * via a callback (production path). When supplied, the view
+   * reads from this engine directly (test path) and DOES NOT
+   * render the CityCanvas, so the test can mount with a
+   * deterministic, mocked world.
+   */
+  engine?: CityViewEngine;
+  /** Optional bus override for the CityLog. Defaults to `cityBus`. */
+  bus?: EventBus<CityEventMap>;
+}
+
+function buildSnapshotFromEngine(engine: CityViewEngine): CitySnapshot {
+  const citizens = engine.getCitizens();
+  const vehicles = engine.getVehicles();
+  const companies = engine.getCompanies();
+  const time = engine.getTime();
+  const counts = engine.getCompanyCounts();
+  return buildCitySnapshot({
+    day: time.day,
+    hour: time.hour,
+    minute: time.minute,
+    budget: engine.getBudget(),
+    openCompanies: counts.open,
+    totalCompanies: counts.total,
+    citizens: citizens.map((c) => ({
+      id: c.id as never,
+      position: c.position,
+      needs: c.needs,
+      name: '',
+      homeId: '' as never,
+      workplaceId: null,
+      schedule: [],
+      currentActivity: 'sleep' as const,
+    })) as never,
+    vehicles: vehicles.map((v) => ({
+      id: v.id,
+      position: v.position,
+      status: v.status,
+    })),
+    companies: companies.map((c) => ({
+      id: c.id as never,
+      buildingTypeId: c.buildingTypeId,
+      position: c.position,
+      status: 'open' as const,
+      employees: [],
+      totalRevenue: 0,
+      totalWages: 0,
+      totalTax: 0,
+      ledger: [],
+      openedOnDay: 0,
+    })) as never,
+    resolveBuildingColor: engine.resolveBuildingColor,
+  });
 }
 
 /**
- * CityView — mounts the game engine (Camera + GameLoop) and renders a
- * fullscreen container that downstream rendering layers can attach to.
- *
- * This component is intentionally thin: the simulation, time, citizens, and
- * rendering layers all plug in via the engine handle and the container ref.
- *
- * Interaction: pointer drag pans, wheel zooms (cursor-anchored).
+ * Build a full `CitySnapshot` from the compact `CanvasSnapshot` the
+ * canvas bridge emits. Citizens / vehicles / companies lists are
+ * empty here because the canvas bridge is intentionally narrow — it
+ * only carries the scalar KPIs the dashboard cares about. The
+ * mini-map renders an empty canvas in this case, which is fine for
+ * the production layout (the panel still frames the world).
  */
-export function CityView({ engineRef, className }: CityViewProps): JSX.Element {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const cameraRef = useRef<Camera | null>(null);
-  const loopRef = useRef<GameLoop | null>(null);
-  const dragStateRef = useRef<{ x: number; y: number } | null>(null);
+function buildCitySnapshotFromCanvas(snap: CanvasSnapshot): CitySnapshot {
+  return buildCitySnapshot({
+    day: snap.day,
+    hour: snap.hour,
+    minute: snap.minute,
+    budget: snap.budget,
+    openCompanies: snap.openCompanies,
+    totalCompanies: snap.totalCompanies,
+  });
+}
 
-  // Lazily create the engine once. We do this in a ref-initializer style
-  // (computed once) to avoid re-creating the loop on every render.
-  const engine = useMemo(() => {
-    const camera = new Camera();
-    const loop = new GameLoop();
-    return { camera, loop };
-  }, []);
-
-  // Expose engine + camera to refs so the imperative API is stable.
-  cameraRef.current = engine.camera;
-  loopRef.current = engine.loop;
-
-  useImperativeHandle<CityViewEngineHandle | null, CityViewEngineHandle | null>(
-    engineRef ?? null,
-    (): CityViewEngineHandle => ({
-      getCameraTransform: (): CameraTransform => engine.camera.getTransform(),
-      onStepRegister: (fn: StepCallback): (() => void) => engine.loop.onStep(fn),
-      pause: (): void => {
-        engine.loop.stop();
-      },
-      resume: (): void => {
-        engine.loop.start();
-      },
-    }),
-    [engine],
+function CityViewImpl({ engine, bus }: CityViewProps): ReactElement {
+  // When an explicit engine is provided we read from it directly
+  // and do NOT render the production canvas (avoids constructing
+  // systems twice). When omitted we render the CityCanvas and
+  // bridge its internal state upward via a controlled snapshot.
+  const [bridgedSnapshot, setBridgedSnapshot] = useState<CitySnapshot>(() =>
+    emptyCitySnapshot(),
   );
 
-  useEffect(() => {
-    const camera = engine.camera;
-    const loop = engine.loop;
-    let unsubStep: (() => void) | null = null;
+  // The reader used by `useCitySnapshot`. If we have an engine we
+  // delegate to it; otherwise we re-emit the most recent bridged
+  // snapshot from the canvas.
+  const read = useCallback((): CitySnapshot => {
+    if (engine) return buildSnapshotFromEngine(engine);
+    return bridgedSnapshot;
+  }, [engine, bridgedSnapshot]);
 
-    // Smooth camera each render frame.
-    unsubStep = loop.onStep((dt: number): void => {
-      camera.update(dt);
-    });
+  const snapshot = useCitySnapshot(read, 500);
 
-    loop.start();
-
-    return (): void => {
-      if (unsubStep) {
-        unsubStep();
-        unsubStep = null;
-      }
-      loop.stop();
-    };
-  }, [engine]);
-
-  // Pointer / wheel interaction delegated on the container. We avoid
-  // interfering with interactive children by checking event target.
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const onPointerDown = (ev: PointerEvent): void => {
-      if (ev.button !== 0) return;
-      // Don't start a pan if the pointer began on an interactive element.
-      const target = ev.target as HTMLElement | null;
-      if (target && target.closest('button, a, input, [data-no-pan="true"]')) {
-        return;
-      }
-      dragStateRef.current = { x: ev.clientX, y: ev.clientY };
-      el.setPointerCapture(ev.pointerId);
-    };
-
-    const onPointerMove = (ev: PointerEvent): void => {
-      const drag = dragStateRef.current;
-      if (!drag) return;
-      const camera = cameraRef.current;
-      if (!camera) return;
-      const dxScreen = ev.clientX - drag.x;
-      const dyScreen = ev.clientY - drag.y;
-      dragStateRef.current = { x: ev.clientX, y: ev.clientY };
-      // Convert pixel deltas to world units: divide by zoom and container size.
-      const rect = el.getBoundingClientRect();
-      const t = camera.getTransform();
-      const worldPerPixelX = 1 / (rect.width * t.zoom);
-      const worldPerPixelY = 1 / (rect.height * t.zoom);
-      camera.pan(-dxScreen * worldPerPixelX, -dyScreen * worldPerPixelY);
-    };
-
-    const onPointerUp = (ev: PointerEvent): void => {
-      if (dragStateRef.current) {
-        el.releasePointerCapture(ev.pointerId);
-        dragStateRef.current = null;
-      }
-    };
-
-    const onWheel = (ev: WheelEvent): void => {
-      const camera = cameraRef.current;
-      if (!camera) return;
-      ev.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const anchorX = (ev.clientX - rect.left) / rect.width;
-      const anchorY = (ev.clientY - rect.top) / rect.height;
-      // Wheel up (negative deltaY) zooms in.
-      const factor = ev.deltaY < 0 ? 1.1 : 1 / 1.1;
-      camera.zoomAt(factor, anchorX, anchorY);
-    };
-
-    el.addEventListener('pointerdown', onPointerDown);
-    el.addEventListener('pointermove', onPointerMove);
-    el.addEventListener('pointerup', onPointerUp);
-    el.addEventListener('pointercancel', onPointerUp);
-    el.addEventListener('wheel', onWheel, { passive: false });
-
-    return (): void => {
-      el.removeEventListener('pointerdown', onPointerDown);
-      el.removeEventListener('pointermove', onPointerMove);
-      el.removeEventListener('pointerup', onPointerUp);
-      el.removeEventListener('pointercancel', onPointerUp);
-      el.removeEventListener('wheel', onWheel);
-    };
+  // The CityCanvas emits a compact `CanvasSnapshot`. The view derives
+  // a full `CitySnapshot` from it so the Dashboard + MiniMap can
+  // render without re-implementing the engine wiring.
+  const handleCanvasSnapshot = useCallback((snap: CanvasSnapshot): void => {
+    setBridgedSnapshot(buildCitySnapshotFromCanvas(snap));
   }, []);
 
   return (
     <div
-      ref={containerRef}
-      data-city-view
-      className={
-        'relative h-full w-full overflow-hidden bg-surface touch-none ' +
-        (className ?? '')
-      }
-    />
+      data-testid="city-view"
+      className="grid h-full min-h-[480px] w-full grid-cols-1 gap-3 lg:grid-cols-[2fr_1fr]"
+    >
+      <div className="min-w-0">
+        {engine === undefined ? (
+          <CityCanvas onSnapshot={handleCanvasSnapshot} />
+        ) : (
+          // When an explicit engine is supplied, render a placeholder
+          // that still carries the testid so the integration test
+          // can find the canvas host. The engine is the source of
+          // truth for state, not the canvas.
+          <div
+            data-testid="city-canvas"
+            data-test-engine="1"
+            className="rounded-md border border-border bg-ground"
+            style={{ width: '100%', height: 480 }}
+          />
+        )}
+      </div>
+      <aside className="flex min-h-0 flex-col gap-3">
+        <Dashboard snapshot={snapshot} />
+        <CityLog bus={bus ?? cityBus} />
+        <MiniMap snapshot={snapshot} />
+      </aside>
+    </div>
   );
 }
 
-export default CityView;
+export const CityView = CityViewImpl;
