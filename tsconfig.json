@@ -31,10 +31,6 @@
       }
     ]
   },
-  // Tests are type-checked separately by jest via jest.config.cjs (which sets
-  // its own `jsx: react-jsx`). They are excluded from the production build to
-  // avoid coupling `npm run build` to test fixtures. A follow-up tsconfig.test.json
-  // can re-enable strict type-checking for tests in CI without blocking the build.
   "include": [
     "next-env.d.ts",
     "src/**/*.ts",
