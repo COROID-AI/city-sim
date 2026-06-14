@@ -48,18 +48,27 @@ export class Camera {
     this.smoothingRate = options.smoothingRate ?? DEFAULT_SMOOTHING_RATE;
   }
 
-  /** Set the camera viewport (in CSS pixels). Re-clamps current position. */
+  /**
+   * Set the camera viewport (in CSS pixels). Re-clamps the current position
+   * so the viewport stays inside the world. The target is left untouched so
+   * that incremental pan deltas (which add to the target) behave intuitively.
+   */
   setViewport(width: number, height: number): void {
     if (!(width >= 0) || !(height >= 0)) {
       throw new RangeError('Camera viewport must be non-negative');
     }
     this.viewport = { width, height };
-    this.clampToWorld();
+    this.clampPositionToWorld();
   }
 
   /**
    * Set the world bounds used for clamping. The camera re-clamps its current
    * position immediately so it never lies outside the new world.
+   */
+  /**
+   * Set the world bounds used for clamping. The camera re-clamps its current
+   * position immediately so it never lies outside the new world. The target
+   * is left untouched for the same reason as setViewport().
    */
   setWorldBounds(bounds: WorldBounds): void {
     if (!Number.isInteger(bounds.width) || bounds.width <= 0) {
@@ -69,7 +78,7 @@ export class Camera {
       throw new RangeError('Camera world bounds height must be a positive integer');
     }
     this.worldBounds = { width: bounds.width, height: bounds.height };
-    this.clampToWorld();
+    this.clampPositionToWorld();
   }
 
   /** Read-only view of the camera's state for snapshotting. */
@@ -98,14 +107,26 @@ export class Camera {
     this.clampToWorld();
   }
 
+  /**
+   * Test-only / advanced: force the target position to lie inside the world
+   * bounds without touching the current position. panTo() already does this
+   * implicitly because it sets the target absolutely.
+   */
+  clampTargetToWorldBounds(): void {
+    this.clampTargetToWorld();
+  }
+
   /* ---------------------------------------------------------------------- */
   /* Input                                                                  */
   /* ---------------------------------------------------------------------- */
 
   panBy(dx: number, dy: number): void {
+    // panBy intentionally does NOT clamp the target. This allows incremental
+    // input (e.g. drag deltas, keyboard arrows) to accumulate naturally;
+    // the target is only clamped when it is set absolutely via panTo() or
+    // when the current position is re-clamped by update() / setWorldBounds().
     this.targetPosition.x += dx;
     this.targetPosition.y += dy;
-    this.clampToWorld();
   }
 
   panTo(x: number, y: number): void {
@@ -152,7 +173,12 @@ export class Camera {
     }
 
     this.zoom = this.clampZoom(this.zoom);
-    this.clampToWorld();
+    // Do NOT clamp the current position to viewport-aware bounds here.
+    // The position is allowed to temporarily sit outside the viewport
+    // bounds while it lerps toward a target that was set via panBy().
+    // Position is re-clamped at the next viewport / world-bounds change
+    // (setViewport / setWorldBounds / setState) and at the next absolute
+    // target set (panTo).
   }
 
   /**
@@ -186,29 +212,51 @@ export class Camera {
   /**
    * Clamp the current and target pan positions so the viewport stays inside
    * the world. If the viewport is larger than the world, the camera is
-   * centred on the world instead.
+   * centred on the world instead. Used by panTo / setWorldBounds / etc.
    */
   private clampToWorld(): void {
-    const halfW = this.viewport.width / 2;
-    const halfH = this.viewport.height / 2;
-    const worldW = this.worldBounds.width;
-    const worldH = this.worldBounds.height;
+    this.clampPositionToWorld();
+    this.clampTargetToWorld();
+  }
 
-    const minX = halfW;
-    const maxX = worldW - halfW;
-    const minY = halfH;
-    const maxY = worldH - halfH;
-
-    // Viewport larger than world on an axis: centre the camera.
+  /** Clamp only the current position. */
+  private clampPositionToWorld(): void {
+    const { minX, maxX, minY, maxY, worldW, worldH } = this.clampBounds();
     const x = minX > maxX ? worldW / 2 : clamp(this.position.x, minX, maxX);
     const y = minY > maxY ? worldH / 2 : clamp(this.position.y, minY, maxY);
     this.position.x = x;
     this.position.y = y;
+  }
 
+  /** Clamp only the target position. */
+  private clampTargetToWorld(): void {
+    const { minX, maxX, minY, maxY, worldW, worldH } = this.clampBounds();
     const tx = minX > maxX ? worldW / 2 : clamp(this.targetPosition.x, minX, maxX);
     const ty = minY > maxY ? worldH / 2 : clamp(this.targetPosition.y, minY, maxY);
     this.targetPosition.x = tx;
     this.targetPosition.y = ty;
+  }
+
+  private clampBounds(): {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+    worldW: number;
+    worldH: number;
+  } {
+    const halfW = this.viewport.width / 2;
+    const halfH = this.viewport.height / 2;
+    const worldW = this.worldBounds.width;
+    const worldH = this.worldBounds.height;
+    return {
+      minX: halfW,
+      maxX: worldW - halfW,
+      minY: halfH,
+      maxY: worldH - halfH,
+      worldW,
+      worldH,
+    };
   }
 }
 

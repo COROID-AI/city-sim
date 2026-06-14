@@ -20,7 +20,7 @@ function createFakeRaf(): FakeRaf & { pending: Array<(n: number) => void>; curre
     currentTime: 0,
     request(cb: (nowMs: number) => void) {
       state.pending.push(cb);
-      return { cancel: () => undefined };
+      return { cancel: () => { state.pending = state.pending.filter((c) => c !== cb); } };
     },
     now() {
       return state.currentTime;

@@ -104,7 +104,7 @@ export class World {
     // Reject negative/zero footprints up front.
     if (building.size.width <= 0 || building.size.height <= 0) return false;
     // No overlapping footprints: every tile within the new footprint must
-    // not already host another building origin.
+    // not already host another building.
     for (let dy = 0; dy < building.size.height; dy++) {
       for (let dx = 0; dx < building.size.width; dx++) {
         const key = this.originKey({
@@ -115,7 +115,19 @@ export class World {
       }
     }
     this.buildings.set(building.id, building);
-    this.buildingByOrigin.set(this.originKey(building.origin), building.id);
+    // Index every tile in the footprint, not just the origin, so
+    // getBuildingAt() and overlap detection work for multi-tile buildings.
+    for (let dy = 0; dy < building.size.height; dy++) {
+      for (let dx = 0; dx < building.size.width; dx++) {
+        this.buildingByOrigin.set(
+          this.originKey({
+            x: building.origin.x + dx,
+            y: building.origin.y + dy,
+          }),
+          building.id,
+        );
+      }
+    }
     return true;
   }
 
@@ -123,7 +135,16 @@ export class World {
     const b = this.buildings.get(id);
     if (!b) return false;
     this.buildings.delete(id);
-    this.buildingByOrigin.delete(this.originKey(b.origin));
+    for (let dy = 0; dy < b.size.height; dy++) {
+      for (let dx = 0; dx < b.size.width; dx++) {
+        this.buildingByOrigin.delete(
+          this.originKey({
+            x: b.origin.x + dx,
+            y: b.origin.y + dy,
+          }),
+        );
+      }
+    }
     return true;
   }
 
