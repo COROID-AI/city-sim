@@ -1,9 +1,9 @@
 /**
  * Building placement: fills each non-park zone with non-overlapping
- * building footprints chosen from a per-zone inline catalog. The catalog
- * is intentionally inline so a follow-up task can promote it to
- * `src/constants/building-types.ts` without changing the placer's
- * interface.
+ * building footprints chosen from a per-zone catalog. The catalog
+ * is now sourced from `@/constants/building-types` (the canonical
+ * `BUILDING_DEFS` + `RESIDENTIAL_DEF`) so the ids registered with
+ * the world always match what the renderer / economy system expects.
  *
  * The placer respects:
  *  - World bounds (via `World.addBuilding`).
@@ -15,56 +15,20 @@
 
 import { World } from '@/engine/World';
 import type { Building, BuildingDef, TileCoord } from '@/engine/types';
+import { BUILDING_DEFS, RESIDENTIAL_DEF } from '@/constants/building-types';
 import type { NameGenerator } from './NameGenerator';
 import type { Rng } from './random';
 import type { Zone, ZoneKind } from './zones';
 
-/** Inline per-zone building catalog. Keys are `BuildingType`s. */
-const ZONE_CATALOG: Record<Exclude<ZoneKind, 'park'>, BuildingDef> = {
-  residential: {
-    id: 'def-residential-house',
-    name: 'House',
-    type: 'residential',
-    color: '#5b8def',
-    revenue: 0,
-    maxEmployees: 0,
-    openHour: 0,
-    closeHour: 24,
-    size: { width: 2, height: 2 },
-  },
-  commercial: {
-    id: 'def-commercial-shop',
-    name: 'Shop',
-    type: 'shop',
-    color: '#ffb454',
-    revenue: 320,
-    maxEmployees: 6,
-    openHour: 9,
-    closeHour: 21,
-    size: { width: 2, height: 2 },
-  },
-  industrial: {
-    id: 'def-industrial-factory',
-    name: 'Factory',
-    type: 'factory',
-    color: '#a4a4a4',
-    revenue: 540,
-    maxEmployees: 24,
-    openHour: 6,
-    closeHour: 22,
-    size: { width: 3, height: 3 },
-  },
-  entertainment: {
-    id: 'def-entertainment-venue',
-    name: 'Theatre',
-    type: 'restaurant',
-    color: '#e879f9',
-    revenue: 410,
-    maxEmployees: 12,
-    openHour: 10,
-    closeHour: 24,
-    size: { width: 2, height: 3 },
-  },
+/** Per-zone building catalog. Keys are `ZoneKind`s. */
+const ZONE_CATALOG: Partial<Record<ZoneKind, BuildingDef>> = {
+  residential: RESIDENTIAL_DEF,
+  commercial:
+    BUILDING_DEFS.find((d) => d.type === 'shop') ?? BUILDING_DEFS[0]!,
+  industrial:
+    BUILDING_DEFS.find((d) => d.type === 'factory') ?? BUILDING_DEFS[0]!,
+  entertainment:
+    BUILDING_DEFS.find((d) => d.type === 'restaurant') ?? BUILDING_DEFS[0]!,
 };
 
 export interface BuildingPlacerOptions {
@@ -102,6 +66,7 @@ export class BuildingPlacer {
     for (const zone of zones) {
       if (zone.kind === 'park') continue;
       const def = ZONE_CATALOG[zone.kind];
+      if (!def) continue;
       this.world.registerBuildingDef(def);
       placed.push(...this.fillZone(zone, def, density, roadWidth, inset));
     }

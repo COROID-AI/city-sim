@@ -30,7 +30,12 @@ import {
   tryLoadSprites,
   World,
 } from '@/engine';
-import { TimeSystem } from '@/systems';
+import {
+  EconomySystem,
+  EventBus,
+  TimeSystem,
+  type SimEventMap,
+} from '@/systems';
 import { TimeControls } from '@/ui/TimeControls';
 import { Tooltip } from '@/ui/Tooltip';
 import { createCitizen, type Citizen } from '@/entities/Citizen';
@@ -66,6 +71,13 @@ export default function CitySimPage(): JSX.Element {
   // Camera ref for the hover hit-test. Lives outside the rAF loop so
   // the mousemove handler can read the latest viewport / pan / zoom.
   const cameraRef = useRef<Camera | null>(null);
+  // EventBus + EconomySystem refs, populated by the mount effect.
+  // Downstream UI components (Dashboard, CityLog, MiniMap) reach
+  // into these via context or props; for now they are kept local
+  // so the page compiles without forcing a Context shape on this
+  // task.
+  const simBusRef = useRef<EventBus<SimEventMap> | null>(null);
+  const economyRef = useRef<EconomySystem | null>(null);
   // Latest hover state, used by the mousemove handler to detect
   // transitions without invoking the React state setter on every
   // mousemove.
@@ -134,6 +146,19 @@ export default function CitySimPage(): JSX.Element {
     const time = new TimeSystem();
     timeRef.current = time;
 
+    // EventBus + EconomySystem. The bus is the single integration
+    // point between the sim and the React UI: producers (economy,
+    // time, traffic) emit typed events; downstream UI components
+    // subscribe via `useEffect`. We expose the system via refs (not
+    // React state) so the rAF loop can drive it without re-rendering.
+    // `World` already conforms to the structural
+    // `EconomySystemWorldView` shape, so passing it directly is
+    // type-safe and zero-cost.
+    const simBus = new EventBus<SimEventMap>();
+    const economy = new EconomySystem(simBus, world);
+    simBusRef.current = simBus;
+    economyRef.current = economy;
+
     // Seed a few citizens so the hover / tooltip demo has something
     // to hit. Real cities will populate the world via CityGenerator.
     const demoCitizens: Citizen[] = [
@@ -156,6 +181,12 @@ export default function CitySimPage(): JSX.Element {
     let lastHudUpdate = 0;
     loop.setFixedStepCallback((dt: number) => {
       time.tick(dt);
+      // The economy rolls over on day change. `tick(day, hour)` is
+      // idempotent for the same day, so it's safe to call on every
+      // fixed step. We do not emit `new_day` on the very first tick
+      // before any time has elapsed (day stays at 1 on tick 0).
+      const t = time.getTime();
+      economy.tick(t.day, t.hour);
     });
     loop.setFrameCallback((realDt: number) => {
       camera.update(realDt);
@@ -206,6 +237,12 @@ export default function CitySimPage(): JSX.Element {
       window.removeEventListener('mouseleave', handleMouseLeave);
       timeRef.current = null;
       cameraRef.current = null;
+      // Drop all bus listeners — useful for hot-reload and the
+      // React strict-mode double-effect that runs cleanup once
+      // before the second mount.
+      simBus.clear();
+      simBusRef.current = null;
+      economyRef.current = null;
     };
     return () => {
       cleanupRef.current?.();
