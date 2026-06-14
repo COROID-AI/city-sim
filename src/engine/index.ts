@@ -31,3 +31,18 @@ export {
   DEFAULT_MAX_STEPS_PER_FRAME,
 } from './GameLoop';
 export type { GameLoopOptions, LoopPhase, FixedStepCallback, FrameCallback, RafHandle } from './GameLoop';
+export {
+  Renderer,
+  TILE_PIXELS,
+  compareBuildingsByDepth,
+  DEFAULT_PALETTE,
+  colorForTile,
+} from './Renderer';
+export type { RendererContext, RendererOptions } from './Renderer';
+export type { CityPalette } from './palette';
+export {
+  tryLoadSprites,
+  spriteUrl,
+  SPRITE_BASE,
+} from './sprites';
+export type { SpriteAtlas, SpriteKey } from './sprites';
