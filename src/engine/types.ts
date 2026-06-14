@@ -1,0 +1,174 @@
+/**
+ * Engine core type definitions.
+ *
+ * All shapes are pure data — no logic, no functions — so that the engine
+ * remains framework-agnostic (no React, no DOM). Structural types only.
+ *
+ * Conventions:
+ *  - `readonly` is used for fields that should never mutate after construction
+ *    (entity IDs, world bounds, building definitions).
+ *  - Mutable runtime state (camera position, citizen position, time) is left
+ *    mutable because systems update it in place each tick.
+ */
+
+/* -------------------------------------------------------------------------- */
+/* Geometry                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/** A 2D vector / point in screen or world space. */
+export interface Vector2 {
+  x: number;
+  y: number;
+}
+
+/** A single tile on the world grid. Tiles are immutable once placed. */
+export interface Tile {
+  readonly coord: TileCoord;
+  /** Terrain kind — concrete values listed in `TileKind`. */
+  readonly kind: TileKind;
+  /** Optional elevation in world units (0 for default). */
+  readonly elevation: number;
+}
+
+/** Integer grid coordinate. Distinct from `Vector2` to prevent unit confusion. */
+export interface TileCoord {
+  readonly x: number;
+  readonly y: number;
+}
+
+export type TileKind =
+  | 'ground'
+  | 'road'
+  | 'water'
+  | 'park'
+  | 'lot';
+
+/* -------------------------------------------------------------------------- */
+/* Buildings                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Structural union of building categories. The canonical, extended list lives
+ * in `src/constants/building-types.ts` and is re-exported under the same name
+ * once that file exists. Kept inline here so this task is not blocked.
+ */
+export type BuildingType =
+  | 'office'
+  | 'shop'
+  | 'factory'
+  | 'farm'
+  | 'warehouse'
+  | 'tech'
+  | 'restaurant'
+  | 'hospital'
+  | 'school'
+  | 'park'
+  | 'residential';
+
+/** Static, immutable definition of a building type. */
+export interface BuildingDef {
+  readonly id: string;
+  readonly name: string;
+  readonly type: BuildingType;
+  /** Hex color, palette-aligned (e.g. '#3aa0ff'). */
+  readonly color: string;
+  /** Approximate daily revenue in currency units. */
+  readonly revenue: number;
+  readonly maxEmployees: number;
+  /** 0–23, inclusive. */
+  readonly openHour: number;
+  /** 0–23, inclusive. May be < openHour for overnight businesses. */
+  readonly closeHour: number;
+  /** Footprint in tiles, width × height. */
+  readonly size: { width: number; height: number };
+}
+
+/** Runtime instance of a building placed on the world grid. */
+export interface Building {
+  readonly id: string;
+  readonly defId: string;
+  readonly origin: TileCoord;
+  readonly size: { width: number; height: number };
+  /** IDs of citizens currently employed here. */
+  employees: readonly string[];
+  /** Treasury for this specific building. */
+  treasury: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Citizens                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export type CitizenState =
+  | 'idle'
+  | 'commuting'
+  | 'working'
+  | 'shopping'
+  | 'resting'
+  | 'leisure';
+
+export interface Citizen {
+  readonly id: string;
+  /** Display name. */
+  name: string;
+  /** Home building id, if assigned. */
+  homeId: string | null;
+  /** Workplace building id, if assigned. */
+  workId: string | null;
+  /** Current world position (in world units, not tile coords). */
+  position: Vector2;
+  /** Current world velocity (world units per second). */
+  velocity: Vector2;
+  state: CitizenState;
+  /** 0..1, where 0 = starving, 1 = fully satiated. */
+  hunger: number;
+  /** 0..1, where 0 = exhausted, 1 = fully rested. */
+  energy: number;
+  /** 0..1, where 0 = bored, 1 = fully entertained. */
+  fun: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Time                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * City simulation clock. `tick` is the number of fixed-step ticks since the
+ * simulation started; `hour` is the in-world hour of day [0, 24).
+ */
+export interface CityTime {
+  /** Total real time elapsed in seconds (wall clock since start). */
+  readonly elapsed: number;
+  /** Number of fixed-step ticks since start (1 tick = 1 / TICK_HZ seconds). */
+  tick: number;
+  /** Current in-world hour of day, 0..24 (may exceed 24 on multi-day wrap). */
+  hour: number;
+  /** Current in-world day number, starting at 1. */
+  day: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Camera                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export interface CameraState {
+  /** Current pan position in world coordinates (centre of viewport). */
+  position: Vector2;
+  /** Target pan position; camera lerps `position` toward this. */
+  targetPosition: Vector2;
+  /** Current zoom factor. 1 = native, > 1 = zoomed in. */
+  zoom: number;
+  /** Target zoom factor. */
+  targetZoom: number;
+  /** Viewport size in CSS pixels. */
+  viewport: { width: number; height: number };
+}
+
+/* -------------------------------------------------------------------------- */
+/* World                                                                      */
+/* -------------------------------------------------------------------------- */
+
+export interface WorldBounds {
+  readonly width: number;
+  readonly height: number;
+}
