@@ -150,7 +150,6 @@ export function Dashboard(): JSX.Element {
     tick();
     // tick reads from `handles`; we re-run when the handle bag
     // identity changes (only on remount in practice).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handles]);
 
   if (!snapshot) {

@@ -139,7 +139,6 @@ export function MiniMap(): JSX.Element {
     ensureCache();
     // Re-paint once on mount / key change.
     drawFrame();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheKey]);
 
   // 2 Hz tick — re-read camera state and re-paint the viewport rect.
@@ -150,7 +149,6 @@ export function MiniMap(): JSX.Element {
   // Initial paint when world/camera become available.
   useEffect(() => {
     drawFrame();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [world, camera]);
 
   function drawFrame(): void {

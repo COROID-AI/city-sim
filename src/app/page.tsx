@@ -273,7 +273,6 @@ export default function CitySimPage(): JSX.Element {
     // Re-derive after the mount effect has run by depending on the
     // refs themselves. They are stable objects once populated; the
     // re-render is triggered once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [timeRef.current, cameraRef.current, worldRef.current, simBusRef.current, economyRef.current],
   );
 
