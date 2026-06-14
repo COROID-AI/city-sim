@@ -31,10 +31,16 @@ export {
   DEFAULT_NIGHT_START_HOUR,
 } from './TimeSystem';
 
-export { ScheduleGenerator } from './ScheduleGenerator';
+export {
+  generateSchedule,
+  DEFAULT_WORK_START_HOUR,
+  DEFAULT_WORK_END_HOUR,
+  WORK_JITTER_HOURS,
+} from './ScheduleGenerator';
 export type {
-  ScheduleGeneratorOptions,
   Schedule,
+  ScheduleBlock,
+  GenerateScheduleOptions,
 } from './ScheduleGenerator';
 
 export { NeedSystem } from './NeedSystem';
@@ -57,17 +63,26 @@ export type {
   TrafficPhase,
 } from './TrafficSystem';
 
-export { CommuteDispatcher } from './CommuteDispatcher';
+export {
+  shouldDrive,
+  planCommute,
+  createCommuteVehicle,
+  manhattan,
+  COMMUTE_DRIVE_THRESHOLD_TILES,
+} from './CommuteDispatcher';
 export type {
-  CommuteDispatcherOptions,
-  CommuteDispatcherWorldView,
+  CommuteDecision,
 } from './CommuteDispatcher';
 
 export { MovementSystem } from './MovementSystem';
 export type {
   MovementSystemOptions,
   MovementSystemWorldView,
-  MovementResult,
+  TargetMap,
+} from './MovementSystem';
+export {
+  MOVEMENT_TILES_PER_SECOND,
+  MOVEMENT_ARRIVAL_TOLERANCE,
 } from './MovementSystem';
 
 export { EventBus, setEventBusLogger } from './EventBus';
@@ -75,6 +90,7 @@ export type { EventMap, Listener } from './EventBus';
 
 export type {
   SimEventMap,
+  SimEventName,
   ArrivalEvent,
   ArrivalKind,
   CompanyOpenCloseEvent,
@@ -85,7 +101,13 @@ export type {
 } from './SimEvents';
 export { SIM_EVENT_NAMES } from './SimEvents';
 
-export { EconomySystem, isOpen, TAX_RATE, INFRA_DAILY_COST, WAGE_PER_EMPLOYEE } from './EconomySystem';
+export {
+  EconomySystem,
+  isOpen,
+  TAX_RATE,
+  INFRA_DAILY_COST,
+  WAGE_PER_EMPLOYEE,
+} from './EconomySystem';
 export type {
   EconomySystemOptions,
   EconomySystemWorldView,

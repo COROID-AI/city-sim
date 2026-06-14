@@ -91,8 +91,13 @@ export interface CitizenFiredEvent {
  * The full set of events the simulation can publish. Adding a new
  * event is as simple as adding a key here and calling
  * `bus.emit('new_event', { ... })` in the producing system.
+ *
+ * The explicit string index signature satisfies
+ * `EventMap = Record<string, unknown>` so `SimEventMap` can be
+ * passed as the type parameter to `EventBus<SimEventMap>` without
+ * a structural mismatch.
  */
-export interface SimEventMap {
+export interface SimEventMap extends Record<string, unknown> {
   arrival: ArrivalEvent;
   company_open: CompanyOpenCloseEvent;
   company_close: CompanyOpenCloseEvent;
@@ -102,13 +107,22 @@ export interface SimEventMap {
   citizen_fired: CitizenFiredEvent;
 }
 
-/** Convenience keys — useful in tests / dashboards that switch on event name. */
+/**
+ * Convenience keys — useful in tests / dashboards that switch on event name.
+ * Values mirror the `SimEventMap` keys so the same string can be used in
+ * `bus.emit(SIM_EVENT_NAMES.NEW_DAY, payload)` and the type-checker will
+ * refuse to drift. Exposes both the string constants and a typed
+ * `SimEventName` union for switch-statement exhaustiveness.
+ */
 export const SIM_EVENT_NAMES = {
-  ARRIVAL: 'arrival',
-  COMPANY_OPEN: 'company_open',
-  COMPANY_CLOSE: 'company_close',
-  TRAFFIC_JAM: 'traffic_jam',
-  NEW_DAY: 'new_day',
-  CITIZEN_HIRED: 'citizen_hired',
-  CITIZEN_FIRED: 'citizen_fired',
+  arrival: 'arrival',
+  company_open: 'company_open',
+  company_close: 'company_close',
+  traffic_jam: 'traffic_jam',
+  new_day: 'new_day',
+  citizen_hired: 'citizen_hired',
+  citizen_fired: 'citizen_fired',
 } as const satisfies { [K in keyof SimEventMap]: K };
+
+/** Union of every published event name. Useful for switch exhaustiveness. */
+export type SimEventName = keyof SimEventMap;
