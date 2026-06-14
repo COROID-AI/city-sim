@@ -1,9 +1,10 @@
-/**
- * Jest config for unit tests.
- * Sets its own `jsx: react-jsx` so tests can compile JSX even when the
- * production `tsconfig.json` excludes `tests/**/*` from the production
- * type-check. See `tsconfig.json` comment for the rationale.
- */
+/* eslint-disable */
+// Jest config for unit tests.
+// Sets its own `jsx: react-jsx` so tests can compile JSX even when the
+// production `tsconfig.json` excludes `tests/**/*` from the production
+// type-check. See `tsconfig.json` comment for the rationale.
+// Note: kept as a line-comment block to avoid the `*` glob inside the
+// `tests/**/*` path being parsed as a CJS block-comment terminator.
 
 module.exports = {
   preset: 'ts-jest',

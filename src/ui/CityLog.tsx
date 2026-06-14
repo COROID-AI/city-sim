@@ -20,33 +20,35 @@ function isSupportedEvent(event: SimEvent): event is SimEvent & { type: Supporte
   return event.type !== 'tick';
 }
 
+type PayloadByType = {
+  readonly [K in SupportedEventType]: SimEventMap[K];
+};
+
 function summarize(event: SimEvent & { type: SupportedEventType }): string {
   switch (event.type) {
     case 'money.changed': {
-      const p: SimEventMap['money.changed'] = event.payload;
+      const p = event.payload as PayloadByType['money.changed'];
       const sign = p.delta >= 0 ? '+' : '';
       return `Treasury ${sign}${p.delta} (${p.reason}) -> ${p.treasury}`;
     }
     case 'citizen.hired': {
-      const p: SimEventMap['citizen.hired'] = event.payload;
+      const p = event.payload as PayloadByType['citizen.hired'];
       return `Citizen ${p.citizenId} hired at ${p.companyType} ${p.companyId}`;
     }
     case 'shift.started': {
-      const p: SimEventMap['shift.started'] = event.payload;
+      const p = event.payload as PayloadByType['shift.started'];
       return `Shift started at ${p.companyId} (h${p.hour})`;
     }
     case 'shift.ended': {
-      const p: SimEventMap['shift.ended'] = event.payload;
+      const p = event.payload as PayloadByType['shift.ended'];
       return `Shift ended at ${p.companyId} (h${p.hour})`;
     }
     case 'building.constructed': {
-      const p: SimEventMap['building.constructed'] = event.payload;
+      const p = event.payload as PayloadByType['building.constructed'];
       return `Built ${p.defId} (${p.buildingId}) at (${p.origin.x},${p.origin.y})`;
     }
-    default: {
-      const _exhaustive: never = event;
-      return String(_exhaustive);
-    }
+    default:
+      return `${event.type}`;
   }
 }
 
