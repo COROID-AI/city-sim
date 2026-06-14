@@ -6,9 +6,11 @@
  *    entertainment, park.
  *  - A 2-tile-wide road grid around and between zones.
  *  - Non-overlapping building footprints placed inside each non-park zone.
+ *  - 50–100 citizens, each with a daily schedule. Citizens are
+ *    deterministically assigned homes and workplaces.
  *
  * Determinism: a given seed always produces the same layout, building
- * count, and building IDs. Tests assert this.
+ * count, building IDs, citizen IDs, and schedules. Tests assert this.
  *
  * Benchmark: after `generate()` completes, the function writes a
  * `__CITY_BENCHMARK__` object onto `window` (when `window` is defined) so
@@ -16,7 +18,9 @@
  */
 
 import { World } from '@/engine/World';
-import type { Building, WorldBounds } from '@/engine/types';
+import type { Building, Citizen, WorldBounds } from '@/engine/types';
+import { createCitizen } from '@/entities/Citizen';
+import { generateSchedule, type Schedule } from '@/systems/ScheduleGenerator';
 import { BuildingPlacer } from './BuildingPlacer';
 import { NameGenerator } from './NameGenerator';
 import { buildRoadNetwork, collectRoadTiles } from './RoadNetwork';
@@ -26,12 +30,20 @@ import { computeZoneLayout, type Zone, type ZoneKind } from './zones';
 export const DEFAULT_WORLD_WIDTH = 80;
 export const DEFAULT_WORLD_HEIGHT = 80;
 
+/** Default minimum and maximum citizens spawned per city. */
+export const DEFAULT_MIN_CITIZENS = 50;
+export const DEFAULT_MAX_CITIZENS = 100;
+
 export interface CityGeneratorOptions {
   readonly seed: number;
   readonly width?: number;
   readonly height?: number;
   /** Building density 0..1. */
   readonly density?: number;
+  /** Minimum citizens to spawn. Defaults to 50. */
+  readonly minCitizens?: number;
+  /** Maximum citizens to spawn. Defaults to 100. */
+  readonly maxCitizens?: number;
   /** Inject a custom rng; defaults to a mulberry32 seeded with `options.seed`. */
   readonly rng?: Rng;
 }
@@ -41,6 +53,8 @@ export interface GeneratedCity {
   readonly zones: readonly Zone[];
   readonly buildings: readonly Building[];
   readonly roads: readonly { x: number; y: number }[];
+  readonly citizens: readonly Citizen[];
+  readonly schedules: ReadonlyMap<string, Schedule>;
   readonly seed: number;
   readonly generatedAtMs: number;
   readonly bounds: WorldBounds;
@@ -88,12 +102,66 @@ export class CityGenerator {
     const placer = new BuildingPlacer(world, rng, names);
     const buildings = placer.placeInZones(zones, { density: options.density });
 
+    // Citizens: pick a count in [min, max] (inclusive) from the rng so the
+    // exact count is deterministic for a given seed.
+    const minCitizens = options.minCitizens ?? DEFAULT_MIN_CITIZENS;
+    const maxCitizens = options.maxCitizens ?? DEFAULT_MAX_CITIZENS;
+    if (!Number.isInteger(minCitizens) || minCitizens < 0) {
+      throw new RangeError(`CityGenerator: minCitizens must be a non-negative integer (got ${minCitizens})`);
+    }
+    if (!Number.isInteger(maxCitizens) || maxCitizens < minCitizens) {
+      throw new RangeError(
+        `CityGenerator: maxCitizens (${maxCitizens}) must be >= minCitizens (${minCitizens})`,
+      );
+    }
+    const citizenCount = maxCitizens === minCitizens ? minCitizens : rng.int(minCitizens, maxCitizens);
+
+    // Identify residential buildings (for homeIds) and commercial/industrial/
+    // entertainment buildings (for workIds).
+    const residentialBuildings: Building[] = [];
+    const workplaceBuildings: Building[] = [];
+    for (const b of buildings) {
+      if (b.defId === 'def-residential-house') {
+        residentialBuildings.push(b);
+      } else {
+        workplaceBuildings.push(b);
+      }
+    }
+
+    const citizens: Citizen[] = [];
+    const schedules = new Map<string, Schedule>();
+    for (let i = 0; i < citizenCount; i++) {
+      const id = `c-${(i + 1).toString(36)}`;
+      const isEmployed = workplaceBuildings.length > 0 && rng.chance(0.7);
+      const home = pickRandom(residentialBuildings, rng);
+      const work = isEmployed ? pickRandom(workplaceBuildings, rng) : null;
+      const homeId = home ? home.id : null;
+      const workId = work ? work.id : null;
+      const citizen = createCitizen({
+        id,
+        name: names.generate(),
+        homeId,
+        workId,
+        position: home
+          ? {
+              x: home.origin.x + home.size.width / 2,
+              y: home.origin.y + home.size.height / 2,
+            }
+          : { x: 0, y: 0 },
+      });
+      world.addCitizen(citizen);
+      citizens.push(citizen);
+      schedules.set(id, generateSchedule(rng, isEmployed));
+    }
+
     const generatedAtMs = Date.now();
     const result: GeneratedCity = {
       world,
       zones,
       buildings,
       roads,
+      citizens,
+      schedules,
       seed: options.seed,
       generatedAtMs,
       bounds,
@@ -111,7 +179,7 @@ export class CityGenerator {
       buildings: city.buildings.length,
       zones: city.zones.length,
       roads: city.roads.length,
-      citizens: city.world.citizenCount,
+      citizens: city.citizens.length,
       seed: city.seed,
       generatedAtMs: city.generatedAtMs,
       bounds: city.bounds,
@@ -135,6 +203,15 @@ export function generateCity(seed: number): GeneratedCity {
 export function readCityBenchmark(): CityBenchmark | null {
   if (typeof window === 'undefined') return null;
   return window.__CITY_BENCHMARK__ ?? null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Internals                                                                  */
+/* -------------------------------------------------------------------------- */
+
+function pickRandom<T>(items: readonly T[], rng: Rng): T | null {
+  if (items.length === 0) return null;
+  return rng.pick(items);
 }
 
 // Re-export the road collector so callers can re-derive the road set

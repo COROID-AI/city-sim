@@ -5,7 +5,7 @@
  * reaching into individual files. Engine internals are NOT re-exported.
  */
 
-export { CityGenerator, generateCity, readCityBenchmark, DEFAULT_WORLD_WIDTH, DEFAULT_WORLD_HEIGHT } from './CityGenerator';
+export { CityGenerator, generateCity, readCityBenchmark, DEFAULT_WORLD_WIDTH, DEFAULT_WORLD_HEIGHT, DEFAULT_MIN_CITIZENS, DEFAULT_MAX_CITIZENS } from './CityGenerator';
 export type { CityGeneratorOptions, GeneratedCity, CityBenchmark } from './CityGenerator';
 export { BuildingPlacer } from './BuildingPlacer';
 export type { BuildingPlacerOptions } from './BuildingPlacer';

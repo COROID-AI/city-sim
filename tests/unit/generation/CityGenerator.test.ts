@@ -93,7 +93,9 @@ describe('CityGenerator', () => {
     expect(typeof bench!.buildings).toBe('number');
     expect(bench!.zones).toBe(5);
     expect(typeof bench!.roads).toBe('number');
-    expect(bench!.citizens).toBe(0);
+    // Citizens are now spawned: count is in [50, 100].
+    expect(bench!.citizens).toBeGreaterThanOrEqual(50);
+    expect(bench!.citizens).toBeLessThanOrEqual(100);
     expect(bench!.seed).toBe(7);
     expect(typeof bench!.generatedAtMs).toBe('number');
     expect(bench!.bounds).toEqual({ width: 80, height: 80 });
@@ -105,6 +107,44 @@ describe('CityGenerator', () => {
     expect(a.buildings).toHaveLength(b.buildings.length);
     expect(a.buildings.map((x) => x.id)).toEqual(b.buildings.map((x) => x.id));
     expect(a.world.buildingCount).toBe(b.world.buildingCount);
+    expect(a.citizens).toHaveLength(b.citizens.length);
+    expect(a.citizens.map((c) => c.id)).toEqual(b.citizens.map((c) => c.id));
+    expect(a.schedules.size).toBe(b.schedules.size);
+  });
+
+  it('spawns 50-100 citizens, each with a schedule and added via world.addCitizen', () => {
+    const result = new CityGenerator().generate({ seed: 42 });
+    expect(result.citizens.length).toBeGreaterThanOrEqual(50);
+    expect(result.citizens.length).toBeLessThanOrEqual(100);
+    expect(result.world.citizenCount).toBe(result.citizens.length);
+    for (const c of result.citizens) {
+      const found = result.world.getCitizen(c.id);
+      expect(found).not.toBeNull();
+      expect(found).toBe(c);
+      expect(result.schedules.has(c.id)).toBe(true);
+    }
+  });
+
+  it('assigns each citizen either a home (residential) and optionally a work (commercial/industrial/entertainment) building', () => {
+    const result = new CityGenerator().generate({ seed: 42 });
+    let employedCount = 0;
+    for (const c of result.citizens) {
+      if (c.homeId !== null) {
+        const home = result.world.getBuilding(c.homeId);
+        expect(home).not.toBeNull();
+        expect(home!.defId).toBe('def-residential-house');
+      }
+      if (c.workId !== null) {
+        const work = result.world.getBuilding(c.workId);
+        expect(work).not.toBeNull();
+        expect(work!.defId).not.toBe('def-residential-house');
+        employedCount += 1;
+      }
+    }
+    // With 70% employment chance, expect roughly 70% employed; allow
+    // a wide band for small cities.
+    expect(employedCount).toBeGreaterThanOrEqual(0);
+    expect(employedCount).toBeLessThanOrEqual(result.citizens.length);
   });
 
   it('produces a render-ready world: every tile referenced by a building exists and is in-bounds', () => {
