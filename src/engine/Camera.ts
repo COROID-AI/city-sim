@@ -27,7 +27,7 @@ export class Camera {
   targetZoom = 1;
   viewport: { width: number; height: number } = { width: 0, height: 0 };
 
-  private readonly worldBounds: WorldBounds;
+  private worldBounds: WorldBounds;
 
   constructor(
     worldBounds: WorldBounds,
@@ -68,8 +68,7 @@ export class Camera {
     if (!Number.isInteger(bounds.height) || bounds.height <= 0) {
       throw new RangeError('Camera world bounds height must be a positive integer');
     }
-    (this.worldBounds as { width: number; height: number }).width = bounds.width;
-    (this.worldBounds as { width: number; height: number }).height = bounds.height;
+    this.worldBounds = { width: bounds.width, height: bounds.height };
     this.clampToWorld();
   }
 

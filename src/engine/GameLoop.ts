@@ -29,7 +29,7 @@ export type FrameCallback = (realDt: number, accumulated: number) => void;
  * (no `window.requestAnimationFrame`) the noop variant is returned so
  * importing this module is safe during Next.js static export.
  */
-type RafHandle = {
+export type RafHandle = {
   readonly cancel: () => void;
 };
 

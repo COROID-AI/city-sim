@@ -101,11 +101,21 @@ export class World {
     ) {
       return false;
     }
-    // No overlapping origins.
-    const key = this.originKey(building.origin);
-    if (this.buildingByOrigin.has(key)) return false;
+    // Reject negative/zero footprints up front.
+    if (building.size.width <= 0 || building.size.height <= 0) return false;
+    // No overlapping footprints: every tile within the new footprint must
+    // not already host another building origin.
+    for (let dy = 0; dy < building.size.height; dy++) {
+      for (let dx = 0; dx < building.size.width; dx++) {
+        const key = this.originKey({
+          x: building.origin.x + dx,
+          y: building.origin.y + dy,
+        });
+        if (this.buildingByOrigin.has(key)) return false;
+      }
+    }
     this.buildings.set(building.id, building);
-    this.buildingByOrigin.set(key, building.id);
+    this.buildingByOrigin.set(this.originKey(building.origin), building.id);
     return true;
   }
 

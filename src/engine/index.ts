@@ -30,4 +30,4 @@ export {
   MAX_FRAME_DT,
   DEFAULT_MAX_STEPS_PER_FRAME,
 } from './GameLoop';
-export type { GameLoopOptions, LoopPhase, FixedStepCallback, FrameCallback } from './GameLoop';
+export type { GameLoopOptions, LoopPhase, FixedStepCallback, FrameCallback, RafHandle } from './GameLoop';
