@@ -171,6 +171,10 @@ export class Renderer {
     // via a per-draw parameter so the constructor stays side-effect-free.
     const hourForCitizens = optionsHour ?? 12;
     this.drawCitizens(ctx, world, view, hourForCitizens);
+    // Vehicles draw on top of citizens and buildings: a moving car
+    // should always be visible above the static city. The hour is used
+    // for the headlight dot.
+    this.drawVehicles(ctx, world, view, hourForCitizens);
 
     ctx.restore();
     ctx.restore();
@@ -836,6 +840,76 @@ export class Renderer {
         return 0.5;
       case 'idle':
         return 0.3;
+    }
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Layer: vehicles                                                        */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Paint every vehicle whose world position is inside the visible
+   * viewport. Each vehicle is drawn as a small filled square (using
+   * `palette.vehicle`) with a slightly darker cab square on top
+   * (using `palette.vehicleCab`) so the sprite reads as a "car"
+   * from above. At night, a small headlight dot is stamped ahead of
+   * the vehicle in the direction of travel.
+   *
+   * Vehicles draw AFTER citizens and buildings so they always read
+   * as the topmost layer on the road. Colour is sourced from the
+   * palette — NO hex literals are introduced here (the static
+   * palette check in tests asserts that).
+   */
+  drawVehicles(
+    ctx: RendererContext,
+    world: World,
+    view: { minX: number; minY: number; maxX: number; maxY: number },
+    hour: number = 12,
+  ): void {
+    const isNight = !(hour >= 6 && hour <= 20);
+    const radius = this.palette.vehicleBodyRadius;
+    // Hoist palette lookups out of the per-vehicle loop.
+    const bodyColor = this.palette.vehicle;
+    const cabColor = this.palette.vehicleCab;
+    const headColor = this.palette.vehicleHeadlight;
+
+    for (const v of world.vehicles_()) {
+      // Skip vehicles that have arrived and been parked. They are
+      // off-map and have no position worth drawing.
+      if (v.state === 'arrived') continue;
+      const cx = v.position.x;
+      const cy = v.position.y;
+      if (cx + radius < view.minX) continue;
+      if (cx - radius > view.maxX) continue;
+      if (cy + radius < view.minY) continue;
+      if (cy - radius > view.maxY) continue;
+
+      ctx.save();
+      // Body — the larger of the two squares.
+      ctx.fillStyle = bodyColor;
+      const d = radius * 2;
+      ctx.fillRect(cx - radius, cy - radius, d, d);
+      // Cab — a smaller square on top, offset in the direction of
+      // travel. When the vehicle is stopped (velocity ~ 0) we put
+      // the cab in the centre for a "parked" look.
+      const vx = v.velocity.x;
+      const vy = v.velocity.y;
+      const vmag = Math.hypot(vx, vy);
+      const cabR = radius * 0.55;
+      const cabCx = vmag > 1e-4 ? cx + (vx / vmag) * (radius * 0.15) : cx;
+      const cabCy = vmag > 1e-4 ? cy + (vy / vmag) * (radius * 0.15) : cy;
+      ctx.fillStyle = cabColor;
+      const cd = cabR * 2;
+      ctx.fillRect(cabCx - cabR, cabCy - cabR, cd, cd);
+
+      // Headlight (night only): a small warm dot ahead of the vehicle.
+      if (isNight) {
+        const fx = vmag > 1e-4 ? cx + (vx / vmag) * (radius + 0.08) : cx + radius + 0.08;
+        const fy = vmag > 1e-4 ? cy + (vy / vmag) * (radius + 0.08) : cy;
+        ctx.fillStyle = headColor;
+        ctx.fillRect(fx - 0.05, fy - 0.05, 0.1, 0.1);
+      }
+      ctx.restore();
     }
   }
 

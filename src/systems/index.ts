@@ -10,6 +10,8 @@
  *  - The in-world clock (TimeSystem).
  *  - The schedule generator for citizen daily routines.
  *  - The need system that decays / replenishes citizen needs.
+ *  - The TrafficSystem that owns the traffic-light cycle.
+ *  - The CommuteDispatcher that decides walk vs drive.
  */
 
 export {
@@ -61,3 +63,24 @@ export type {
   MovementSystemWorldView,
   TargetMap,
 } from './MovementSystem';
+
+export {
+  TrafficSystem,
+  TileOccupancy,
+  detectIntersections,
+  detectIntersectionsFromGraph,
+} from './TrafficSystem';
+export type {
+  TrafficPhase,
+  TrafficSystemOptions,
+  TrafficSystemWorldView,
+} from './TrafficSystem';
+
+export {
+  shouldDrive,
+  planCommute,
+  createCommuteVehicle,
+  manhattan,
+  COMMUTE_DRIVE_THRESHOLD_TILES,
+} from './CommuteDispatcher';
+export type { CommuteDecision } from './CommuteDispatcher';

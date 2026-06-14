@@ -156,6 +156,15 @@ export const DEFAULT_PALETTE: CityPalette = Object.freeze({
   citizenFlashlight: '#fff3b0',
   citizenHaloRadius: 0.55,
   citizenBodyRadius: 0.18,
+  // Vehicle & traffic light tokens.
+  vehicle: '#e2e6ee',
+  vehicleHeadlight: '#fff3b0',
+  vehicleBodyRadius: 0.32,
+  vehicleCab: '#a7aebd',
+  trafficLightNS: '#7cf0a8',
+  trafficLightEW: '#7cf0a8',
+  trafficLightAllRed: '#e74c3c',
+  trafficLightRed: '#e74c3c',
 });
 
 /**

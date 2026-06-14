@@ -7,178 +7,241 @@
  *    on a 4-neighbour grid with uniform edge weights. Admissibility is the
  *    key property: it guarantees A* returns an optimal path.
  *  - A `maxNodes` cap is enforced so a malformed / disconnected graph can
- *    never hang the simulation. When the cap is hit, `findPath` returns
- *    `null` and the caller can fall back to a straight-line approach.
- *  - The pathfinder holds the graph as a const reference; it does not
- *    mutate the graph. The same `Pathfinder` instance is therefore safe
- *    to share across all vehicles in a tick.
- *  - Reusing a single instance also means the closed-set Map can be
- *    retained between calls if we ever want to; for v1 we keep it
- *    per-call to avoid state leaks and to keep the API trivially testable.
+ *    never cause a runaway search. When the cap is hit, `findPath` returns
+ *    `null` and sets `lastStats.capped` to `true`.
+ *  - `path` is returned as a list of tile coords from start to goal
+ *    (inclusive of both endpoints). The first entry is `start`; the
+ *    last entry is `goal`.
  *
- * Engine layer rule: pure TS, no React, no DOM. Uses only structural
- * types so the file can be unit-tested without spinning up a world.
+ * Layer rule: this module is the *engine* — no React, no DOM. It may
+ * import engine *types* from `./types` and the `RoadGraph` from
+ * `@/entities/Road` (which is itself pure TS).
  */
 
 import type { TileCoord } from './types';
-import { indexOfCoord, type RoadGraph } from '@/entities/Road';
+import type { RoadGraph } from '@/entities/Road';
 
 /* -------------------------------------------------------------------------- */
 /* Public types                                                               */
 /* -------------------------------------------------------------------------- */
 
 export interface PathfinderOptions {
-  /**
-   * Maximum number of nodes the A* expansion may visit before giving up.
-   * Defaults to 5000 — enough for an 80x80 world with a dense 2-tile
-   * road grid, low enough to bound the worst-case tick cost. Pass a
-   * lower value to make the pathfinder more aggressive about failing
-   * fast (e.g. for batched nightly commute requests).
-   */
+  /** Maximum number of expanded nodes per search. Default 5000. */
   readonly maxNodes?: number;
 }
 
 export interface PathfinderStats {
-  /** Nodes expanded before returning. `0` if the start == goal. */
+  /** Number of nodes expanded in the last search. */
   readonly expanded: number;
-  /** Length of the returned path (in tiles), or 0 for a no-op. */
-  readonly pathLength: number;
-  /** True if the search was abandoned because it hit `maxNodes`. */
+  /** True if the search was abandoned because `maxNodes` was reached. */
   readonly capped: boolean;
+  /** Length of the returned path (in tiles), or 0 if no path. */
+  readonly pathLength: number;
+  /** Total run-time in milliseconds (rough). */
+  readonly elapsedMs: number;
 }
 
-export interface PathResult {
-  /** Tile coords from `start` to `goal` (both inclusive). */
+export interface PathfinderResult {
+  /** Tile coords from start to goal, inclusive. Empty if no path. */
   readonly path: ReadonlyArray<TileCoord>;
   readonly stats: PathfinderStats;
 }
 
 /* -------------------------------------------------------------------------- */
-/* Class                                                                      */
+/* Min-heap                                                                   */
 /* -------------------------------------------------------------------------- */
 
-const DEFAULT_MAX_NODES = 5000;
-
 /**
- * A* pathfinder. Construct with a `RoadGraph` and (optionally) override
- * the `maxNodes` cap. Call `findPath` with tile coordinates that exist
- * in the graph; if either endpoint is off the road, the call returns
- * `null`.
+ * A binary min-heap keyed by `priority` (a number). Supports
+ * `push`, `pop`, and `size`. Ties are broken by insertion order
+ * (FIFO), so the heap is deterministic for a given input — no
+ * `Math.random`, no Date.now.
  */
-export class Pathfinder {
-  private readonly graph: RoadGraph;
-  private readonly maxNodes: number;
+class MinHeap<T> {
+  private readonly data: { key: T; priority: number; seq: number }[] = [];
+  private seq = 0;
 
-  constructor(graph: RoadGraph, options: PathfinderOptions = {}) {
-    this.graph = graph;
-    const m = options.maxNodes ?? DEFAULT_MAX_NODES;
-    if (!Number.isInteger(m) || m <= 0) {
-      throw new RangeError(`Pathfinder: maxNodes must be a positive integer (got ${m})`);
+  get size(): number {
+    return this.data.length;
+  }
+
+  push(key: T, priority: number): void {
+    const entry = { key, priority, seq: this.seq++ };
+    this.data.push(entry);
+    this.siftUp(this.data.length - 1);
+  }
+
+  pop(): { key: T; priority: number } | undefined {
+    if (this.data.length === 0) return undefined;
+    const top = this.data[0]!;
+    const last = this.data.pop()!;
+    if (this.data.length > 0) {
+      this.data[0] = last;
+      this.siftDown(0);
     }
-    this.maxNodes = m;
+    return { key: top.key, priority: top.priority };
   }
 
-  /** Expose the graph for read-only callers (e.g. for diagnostics). */
-  get roadGraph(): RoadGraph {
-    return this.graph;
+  private siftUp(i: number): void {
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (this.less(this.data[i]!, this.data[parent]!)) {
+        this.swap(i, parent);
+        i = parent;
+      } else {
+        break;
+      }
+    }
   }
 
-  /** Expose the node cap (read-only). */
-  get cap(): number {
-    return this.maxNodes;
+  private siftDown(i: number): void {
+    const n = this.data.length;
+    for (;;) {
+      const l = 2 * i + 1;
+      const r = 2 * i + 2;
+      let smallest = i;
+      if (l < n && this.less(this.data[l]!, this.data[smallest]!)) smallest = l;
+      if (r < n && this.less(this.data[r]!, this.data[smallest]!)) smallest = r;
+      if (smallest === i) break;
+      this.swap(i, smallest);
+      i = smallest;
+    }
+  }
+
+  private less(a: { priority: number; seq: number }, b: { priority: number; seq: number }): boolean {
+    if (a.priority !== b.priority) return a.priority < b.priority;
+    return a.seq < b.seq; // FIFO tiebreak
+  }
+
+  private swap(i: number, j: number): void {
+    const tmp = this.data[i]!;
+    this.data[i] = this.data[j]!;
+    this.data[j] = tmp;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Pathfinder                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/** Default safety cap. Sized for ~100x100 cities. */
+export const DEFAULT_MAX_NODES = 5000;
+
+export class Pathfinder {
+  readonly maxNodes: number;
+  private lastStats: PathfinderStats = {
+    expanded: 0,
+    capped: false,
+    pathLength: 0,
+    elapsedMs: 0,
+  };
+
+  constructor(public readonly roadGraph: RoadGraph, options: PathfinderOptions = {}) {
+    if (!roadGraph) {
+      throw new RangeError('Pathfinder: roadGraph is required');
+    }
+    const cap = options.maxNodes ?? DEFAULT_MAX_NODES;
+    if (!Number.isInteger(cap) || cap <= 0) {
+      throw new RangeError(`Pathfinder: maxNodes must be a positive integer (got ${cap})`);
+    }
+    this.maxNodes = cap;
   }
 
   /**
-   * Find the shortest path between two tile coordinates. Both endpoints
-   * MUST lie on the road graph (use `findNearestRoadNode` from
-   * `entities/Road` to snap arbitrary coords to roads).
-   *
-   * Returns:
-   *  - `null` if either endpoint is not on the graph, or if the search
-   *    exhausted `maxNodes` without reaching the goal.
-   *  - A `PathResult` whose `path` is a `TileCoord[]` (start..goal,
-   *    inclusive) and whose `stats.expanded` is the number of nodes
-   *    the search popped from the heap.
+   * Stats from the most recent `findPath` call. Useful for tests and
+   * for the debug overlay.
    */
-  findPath(start: TileCoord, goal: TileCoord): PathResult | null {
-    const startIdx = indexOfCoord(this.graph, start);
-    const goalIdx = indexOfCoord(this.graph, goal);
-    if (startIdx === -1 || goalIdx === -1) return null;
+  get stats(): PathfinderStats {
+    return this.lastStats;
+  }
 
-    // Fast path: start === goal.
+  /**
+   * Find a shortest path from `start` to `goal`. Both `start` and
+   * `goal` are expected to be in the graph (callers should use
+   * `findNearestRoadNode` first if they have arbitrary tile coords).
+   * Returns `null` when no path exists or the cap is hit.
+   */
+  findPath(start: TileCoord, goal: TileCoord): PathfinderResult | null {
+    const t0 = nowMs();
+    const graph = this.roadGraph;
+    const startIdx = graph.indexByCoord.get(coordKey(start));
+    const goalIdx = graph.indexByCoord.get(coordKey(goal));
+    if (startIdx === undefined || goalIdx === undefined) {
+      this.lastStats = { expanded: 0, capped: false, pathLength: 0, elapsedMs: nowMs() - t0 };
+      return null;
+    }
     if (startIdx === goalIdx) {
-      return {
-        path: [start],
-        stats: { expanded: 0, pathLength: 1, capped: false },
+      const result: PathfinderResult = {
+        path: [graph.nodes[startIdx]!],
+        stats: { expanded: 0, capped: false, pathLength: 1, elapsedMs: nowMs() - t0 },
       };
+      this.lastStats = result.stats;
+      return result;
     }
 
-    const goalCoord = this.graph.nodes[goalIdx]!;
-    const { nodes, neighbors } = this.graph;
-    const n = nodes.length;
-
-    // gScore[i] = best known cost from start to i. Use Float64 infinity
-    // sentinel. All costs are non-negative integers, so we use a single
-    // typed-array-of-objects-via-Map isn't faster than two flat arrays.
-    const gScore = new Float64Array(n);
-    for (let i = 0; i < n; i++) gScore[i] = Number.POSITIVE_INFINITY;
+    const goalNode = graph.nodes[goalIdx]!;
+    const gScore = new Float64Array(graph.size);
+    const fScore = new Float64Array(graph.size);
+    const cameFrom = new Int32Array(graph.size);
+    for (let i = 0; i < graph.size; i++) {
+      gScore[i] = Number.POSITIVE_INFINITY;
+      fScore[i] = Number.POSITIVE_INFINITY;
+      cameFrom[i] = -1;
+    }
     gScore[startIdx] = 0;
+    fScore[startIdx] = manhattan(graph.nodes[startIdx]!, goalNode);
 
-    // cameFrom[i] = predecessor index on the best path so far, or -1
-    // for the start node.
-    const cameFrom = new Int32Array(n);
-    for (let i = 0; i < n; i++) cameFrom[i] = -1;
+    const open = new MinHeap<number>();
+    open.push(startIdx, fScore[startIdx]!);
 
-    // closed[i] = true once the node has been popped (i.e. its optimal
-    // f-score is known). Boolean arrays are not used because jsdom's
-    // performance for typed arrays is fine but we want a flat memory
-    // layout; Uint8Array gives us that.
-    const closed = new Uint8Array(n);
-
-    // Open set as a binary heap of node INDICES, ordered by f-score.
-    // We use parallel arrays (heapF) instead of wrapping each entry so
-    // the inner loop is allocation-free.
-    const heap: number[] = [];
-    const heapF: number[] = [];
-    pushHeap(heap, heapF, startIdx, heuristic(nodes[startIdx]!, goalCoord));
+    const closed = new Uint8Array(graph.size);
     let expanded = 0;
     let capped = false;
 
-    while (heap.length > 0) {
-      // Honour the cap. expanded counts pops (not pushes).
-      if (expanded >= this.maxNodes) {
+    while (open.size > 0) {
+      const top = open.pop()!;
+      const current = top.key;
+      if (closed[current]) continue;
+      if (current === goalIdx) {
+        const path = reconstructPath(graph, cameFrom, current);
+        const result: PathfinderResult = {
+          path,
+          stats: {
+            expanded,
+            capped,
+            pathLength: path.length,
+            elapsedMs: nowMs() - t0,
+          },
+        };
+        this.lastStats = result.stats;
+        return result;
+      }
+      closed[current] = 1;
+      expanded += 1;
+      if (expanded > this.maxNodes) {
         capped = true;
         break;
       }
-      const current = popHeap(heap, heapF);
-      expanded++;
-      if (current === goalIdx) {
-        return {
-          path: reconstructPath(nodes, cameFrom, current),
-          stats: { expanded, pathLength: 0, capped: false },
-        };
-      }
-      closed[current] = 1;
-      const gCurrent = gScore[current]!;
-      const neigh = neighbors[current] ?? [];
-      for (let k = 0; k < neigh.length; k++) {
-        const nb = neigh[k]!;
-        if (closed[nb]) continue;
-        const tentativeG = gCurrent + 1; // uniform edge weight
-        if (tentativeG < gScore[nb]!) {
-          cameFrom[nb] = current;
-          gScore[nb] = tentativeG;
-          const f = tentativeG + heuristic(nodes[nb]!, goalCoord);
-          pushHeap(heap, heapF, nb, f);
+      const adj = graph.adjacency[current]!;
+      for (const next of adj) {
+        if (closed[next]) continue;
+        const tentativeG = gScore[current]! + 1; // uniform edge weight
+        if (tentativeG < gScore[next]!) {
+          cameFrom[next] = current;
+          gScore[next] = tentativeG;
+          fScore[next] = tentativeG + manhattan(graph.nodes[next]!, goalNode);
+          open.push(next, fScore[next]!);
         }
       }
     }
 
-    // Exhausted the open set (goal unreachable) or hit the cap.
-    if (capped) return null;
-    // If we got here with a non-empty closed set, the goal is
-    // unreachable from the start. We return null either way — callers
-    // can treat null as "give up, route by other means".
+    // Open set drained or cap hit before reaching goal → no path.
+    this.lastStats = {
+      expanded,
+      capped,
+      pathLength: 0,
+      elapsedMs: nowMs() - t0,
+    };
     return null;
   }
 }
@@ -187,93 +250,38 @@ export class Pathfinder {
 /* Internals                                                                  */
 /* -------------------------------------------------------------------------- */
 
-/** Manhattan distance — admissible on a 4-connected grid. */
-function heuristic(a: TileCoord, b: TileCoord): number {
+function manhattan(a: TileCoord, b: TileCoord): number {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
-/**
- * Walk the `cameFrom` chain from `goalIdx` back to the start, then
- * reverse to get start → goal. Length is bounded by the number of nodes
- * in the graph.
- */
+function coordKey(c: TileCoord): string {
+  return `${c.x},${c.y}`;
+}
+
 function reconstructPath(
-  nodes: ReadonlyArray<TileCoord>,
+  graph: RoadGraph,
   cameFrom: Int32Array,
   goalIdx: number,
 ): TileCoord[] {
-  const out: TileCoord[] = [];
-  let cur: number = goalIdx;
-  // Safety bound: at most `nodes.length` steps. Use a while(true) with
-  // a hard cap so a corrupt `cameFrom` (cycle) cannot hang the engine.
-  const cap = nodes.length + 1;
-  let safety = 0;
-  while (cur !== -1 && safety < cap) {
-    const node = nodes[cur]!;
-    out.push(node);
-    cur = cameFrom[cur]!;
-    safety++;
+  const path: TileCoord[] = [];
+  let cur = goalIdx;
+  for (;;) {
+    path.push(graph.nodes[cur]!);
+    const prev = cameFrom[cur]!;
+    if (prev === -1) break;
+    cur = prev;
   }
-  out.reverse();
-  return out;
+  path.reverse();
+  return path;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Binary heap                                                                 */
-/* -------------------------------------------------------------------------- */
 
 /**
- * Min-heap push. We use parallel arrays (`heap` for indices, `heapF` for
- * their f-score) so we don't allocate a wrapper object per node — this
- * is the hot inner loop of A* and allocation pressure matters.
+ * `performance.now` when available, else `Date.now`. jsdom provides
+ * `performance.now` so tests can rely on it.
  */
-function pushHeap(heap: number[], heapF: number[], idx: number, f: number): void {
-  heap.push(idx);
-  heapF.push(f);
-  siftUp(heap, heapF, heap.length - 1);
-}
-
-/** Min-heap pop: returns the index with the smallest f-score. */
-function popHeap(heap: number[], heapF: number[]): number {
-  const top = heap[0]!;
-  const lastIdx = heap.length - 1;
-  heap[0] = heap[lastIdx]!;
-  heapF[0] = heapF[lastIdx]!;
-  heap.pop();
-  heapF.pop();
-  if (heap.length > 0) siftDown(heap, heapF, 0);
-  return top;
-}
-
-function siftUp(heap: number[], heapF: number[], i: number): void {
-  while (i > 0) {
-    const parent = (i - 1) >> 1;
-    if (heapF[i]! < heapF[parent]!) {
-      swap(heap, heapF, i, parent);
-      i = parent;
-    } else break;
+function nowMs(): number {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
   }
-}
-
-function siftDown(heap: number[], heapF: number[], i: number): void {
-  const n = heap.length;
-  while (true) {
-    const l = i * 2 + 1;
-    const r = l + 1;
-    let smallest = i;
-    if (l < n && heapF[l]! < heapF[smallest]!) smallest = l;
-    if (r < n && heapF[r]! < heapF[smallest]!) smallest = r;
-    if (smallest === i) break;
-    swap(heap, heapF, i, smallest);
-    i = smallest;
-  }
-}
-
-function swap(heap: number[], heapF: number[], a: number, b: number): void {
-  const ia = heap[a]!;
-  const fa = heapF[a]!;
-  heap[a] = heap[b]!;
-  heapF[a] = heapF[b]!;
-  heap[b] = ia;
-  heapF[b] = fa;
+  return Date.now();
 }

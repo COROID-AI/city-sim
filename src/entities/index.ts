@@ -22,3 +22,26 @@ export {
   UNEMPLOYED_LEISURE_START,
   UNEMPLOYED_LEISURE_END,
 } from './Citizen';
+
+export {
+  buildRoadGraph,
+  indexOfCoord,
+  findNearestRoadNode,
+  getOrphanRoads,
+  isRoadTile,
+} from './Road';
+export type { RoadGraph, OrphanReport, RoadWorldView } from './Road';
+
+export {
+  createVehicle,
+  advanceVehicle,
+  vehicleBlocksTile,
+  currentTile,
+  projectedOccupiedTiles,
+  shouldRenderHeadlight,
+} from './Vehicle';
+export type {
+  CreateVehicleOptions,
+  TrafficSnapshot,
+  OccupancySet,
+} from './Vehicle';
