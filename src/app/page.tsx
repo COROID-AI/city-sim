@@ -20,7 +20,7 @@
 
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Camera,
   FIXED_DT,
@@ -38,6 +38,10 @@ import {
 } from '@/systems';
 import { TimeControls } from '@/ui/TimeControls';
 import { Tooltip } from '@/ui/Tooltip';
+import { Dashboard } from '@/ui/Dashboard';
+import { CityLog } from '@/ui/CityLog';
+import { MiniMap } from '@/ui/MiniMap';
+import { SimUiContext, type SimUiHandles } from '@/ui/SimUiContext';
 import { createCitizen, type Citizen } from '@/entities/Citizen';
 
 export default function CitySimPage(): JSX.Element {
@@ -71,13 +75,13 @@ export default function CitySimPage(): JSX.Element {
   // Camera ref for the hover hit-test. Lives outside the rAF loop so
   // the mousemove handler can read the latest viewport / pan / zoom.
   const cameraRef = useRef<Camera | null>(null);
-  // EventBus + EconomySystem refs, populated by the mount effect.
-  // Downstream UI components (Dashboard, CityLog, MiniMap) reach
-  // into these via context or props; for now they are kept local
-  // so the page compiles without forcing a Context shape on this
-  // task.
+  // EventBus + EconomySystem + World refs, populated by the mount
+  // effect. Downstream UI components (Dashboard, CityLog, MiniMap)
+  // read these via SimUiContext. Refs (not React state) are used so
+  // the rAF loop can drive them without re-rendering.
   const simBusRef = useRef<EventBus<SimEventMap> | null>(null);
   const economyRef = useRef<EconomySystem | null>(null);
+  const worldRef = useRef<World | null>(null);
   // Latest hover state, used by the mousemove handler to detect
   // transitions without invoking the React state setter on every
   // mousemove.
@@ -139,6 +143,7 @@ export default function CitySimPage(): JSX.Element {
     // Build the world, camera, renderer, and time system. In a real
     // game this is where you'd seed the generator and load save data.
     const world = new World({ width: 64, height: 64 });
+    worldRef.current = world;
     const camera = new Camera(world.bounds);
     camera.setViewport(window.innerWidth, window.innerHeight);
     const sprites = tryLoadSprites();
@@ -237,6 +242,7 @@ export default function CitySimPage(): JSX.Element {
       window.removeEventListener('mouseleave', handleMouseLeave);
       timeRef.current = null;
       cameraRef.current = null;
+      worldRef.current = null;
       // Drop all bus listeners — useful for hot-reload and the
       // React strict-mode double-effect that runs cleanup once
       // before the second mount.
@@ -250,30 +256,56 @@ export default function CitySimPage(): JSX.Element {
     };
   }, []);
 
+  // The handle bag is rebuilt on every render so it always points
+  // at the *current* refs. This costs nothing (no allocations
+  // beyond a 6-field object) and means we never have to coordinate
+  // a "handles ready" setState with the mount effect that creates
+  // the refs.
+  const handles = useMemo<SimUiHandles>(
+    () => ({
+      world: worldRef.current,
+      camera: cameraRef.current,
+      time: timeRef.current,
+      economy: economyRef.current,
+      bus: simBusRef.current,
+      cityName: 'New City',
+    }),
+    // Re-derive after the mount effect has run by depending on the
+    // refs themselves. They are stable objects once populated; the
+    // re-render is triggered once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [timeRef.current, cameraRef.current, worldRef.current, simBusRef.current, economyRef.current],
+  );
+
   return (
-    <main
-      style={{
-        position: 'fixed',
-        inset: 0,
-        margin: 0,
-        background: 'var(--surface, #0b1220)',
-      }}
-    >
-      <canvas
-        ref={canvasRef}
-        aria-label="City simulation"
-        style={{ display: 'block', width: '100vw', height: '100vh' }}
-      />
-      <TimeControls
-        paused={paused}
-        speed={speed}
-        hour={hour}
-        day={day}
-        onTogglePause={handleTogglePause}
-        onSetSpeed={handleSetSpeed}
-      />
-      <Tooltip citizen={hover.citizen} x={hover.x} y={hover.y} />
-    </main>
+    <SimUiContext.Provider value={handles}>
+      <main
+        style={{
+          position: 'fixed',
+          inset: 0,
+          margin: 0,
+          background: 'var(--surface, #0b1220)',
+        }}
+      >
+        <canvas
+          ref={canvasRef}
+          aria-label="City simulation"
+          style={{ display: 'block', width: '100vw', height: '100vh' }}
+        />
+        <Dashboard />
+        <CityLog />
+        <MiniMap />
+        <TimeControls
+          paused={paused}
+          speed={speed}
+          hour={hour}
+          day={day}
+          onTogglePause={handleTogglePause}
+          onSetSpeed={handleSetSpeed}
+        />
+        <Tooltip citizen={hover.citizen} x={hover.x} y={hover.y} />
+      </main>
+    </SimUiContext.Provider>
   );
 }
 
