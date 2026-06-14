@@ -129,6 +129,43 @@ export interface Citizen {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Vehicles                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Runtime state of a single vehicle. Vehicles are placed on road tiles
+ * and progress through a precomputed path one tile per tick. The
+ * `ownerId` references the citizen that boarded the vehicle — used by
+ * the EconomySystem to attribute per-trip payroll.
+ */
+export type VehicleState =
+  | 'driving'
+  | 'waiting_for_light'
+  | 'waiting_for_vehicle'
+  | 'arrived';
+
+/** A runtime vehicle instance. */
+export interface Vehicle {
+  readonly id: string;
+  /** Citizen id that boarded the vehicle. Null while parked / unowned. */
+  ownerId: string | null;
+  /** Building id the vehicle is heading to (or `null` if idle). */
+  destinationId: string | null;
+  /** Current world position in world units (tile coords + 0.5 for the centre). */
+  position: Vector2;
+  /** Heading in unit-tile/s. Zero while waiting. */
+  velocity: Vector2;
+  /** Current lifecycle state. */
+  state: VehicleState;
+  /**
+   * Tile-coordinate path the vehicle is following. The first entry is
+   * the current / next tile; the last entry is the destination tile.
+   * Empty when the vehicle is idle or has arrived.
+   */
+  path: readonly TileCoord[];
+}
+
+/* -------------------------------------------------------------------------- */
 /* Time                                                                       */
 /* -------------------------------------------------------------------------- */
 

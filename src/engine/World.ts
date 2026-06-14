@@ -1,4 +1,4 @@
-import type { Building, BuildingDef, Citizen, Tile, TileCoord, WorldBounds } from './types';
+import type { Building, BuildingDef, Citizen, Tile, TileCoord, Vehicle, WorldBounds } from './types';
 
 /**
  * The simulation world: a 2D tile grid plus a building map and a citizen list.
@@ -17,6 +17,10 @@ export class World {
   private readonly buildingByOrigin = new Map<string, string>();
   /** Citizens keyed by id, insertion-ordered. */
   private readonly citizens = new Map<string, Citizen>();
+  /** Vehicles keyed by id, insertion-ordered. */
+  private readonly vehicles = new Map<string, Vehicle>();
+  /** Owner index: citizen id -> vehicle id. At most one vehicle per citizen. */
+  private readonly vehicleByOwner = new Map<string, string>();
   /** Building def catalog keyed by id. */
   private readonly buildingDefs = new Map<string, BuildingDef>();
 
@@ -190,6 +194,72 @@ export class World {
 
   get buildingCount(): number {
     return this.buildings.size;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Vehicles                                                                */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Register a vehicle with the world. Returns `false` if a vehicle with
+   * the same id is already registered. If `vehicle.ownerId` is set and
+   * a different vehicle is already owned by that citizen, the existing
+   * vehicle is NOT silently removed — callers must `removeVehicle` it
+   * first (or use `spawnVehicle` which handles the swap).
+   */
+  addVehicle(vehicle: Vehicle): boolean {
+    if (this.vehicles.has(vehicle.id)) return false;
+    if (vehicle.ownerId !== null) {
+      if (this.vehicleByOwner.has(vehicle.ownerId)) {
+        // Same owner is re-registering the same vehicle id? Allow it.
+        if (this.vehicleByOwner.get(vehicle.ownerId) === vehicle.id) {
+          this.vehicles.set(vehicle.id, vehicle);
+          return true;
+        }
+        return false;
+      }
+      this.vehicleByOwner.set(vehicle.ownerId, vehicle.id);
+    }
+    this.vehicles.set(vehicle.id, vehicle);
+    return true;
+  }
+
+  /**
+   * Remove a vehicle by id. The owner index is updated automatically.
+   * Returns `false` if the vehicle didn't exist.
+   */
+  removeVehicle(id: string): boolean {
+    const v = this.vehicles.get(id);
+    if (!v) return false;
+    if (v.ownerId !== null) {
+      this.vehicleByOwner.delete(v.ownerId);
+    }
+    this.vehicles.delete(id);
+    return true;
+  }
+
+  /** Look up a vehicle by id. */
+  getVehicle(id: string): Vehicle | null {
+    return this.vehicles.get(id) ?? null;
+  }
+
+  /**
+   * Look up a vehicle by its `ownerId`. Returns `null` if the citizen
+   * does not currently own a vehicle.
+   */
+  findVehicleByOwner(ownerId: string): Vehicle | null {
+    const id = this.vehicleByOwner.get(ownerId);
+    if (id === undefined) return null;
+    return this.vehicles.get(id) ?? null;
+  }
+
+  /** Iterate over every registered vehicle. */
+  *vehicles_(): IterableIterator<Vehicle> {
+    for (const v of this.vehicles.values()) yield v;
+  }
+
+  get vehicleCount(): number {
+    return this.vehicles.size;
   }
 
   /* ---------------------------------------------------------------------- */

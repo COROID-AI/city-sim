@@ -17,9 +17,14 @@ export type {
   Tile,
   TileCoord,
   TileKind,
+  Vehicle,
+  VehicleState,
   Vector2,
   WorldBounds,
 } from './types';
+
+export { Pathfinder } from './Pathfinder';
+export type { PathfinderOptions, PathfinderStats } from './Pathfinder';
 
 export { World } from './World';
 export { Camera, DEFAULT_MIN_ZOOM, DEFAULT_MAX_ZOOM, DEFAULT_SMOOTHING_RATE, MAX_DT } from './Camera';

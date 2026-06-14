@@ -94,6 +94,27 @@ export interface CityPalette {
   readonly citizenHaloRadius: number;
   /** Radius of the citizen body, in world tiles. */
   readonly citizenBodyRadius: number;
+
+  /* ---------------------------------------------------------------- */
+  /* Vehicles & traffic lights                                         */
+  /* ---------------------------------------------------------------- */
+
+  /** Body fill for a vehicle sprite. */
+  readonly vehicle: string;
+  /** Headlight color (the small forward dot drawn at night). */
+  readonly vehicleHeadlight: string;
+  /** Radius of the vehicle body, in world tiles. */
+  readonly vehicleBodyRadius: number;
+  /** Body fill for a vehicle's roof / cab (slightly darker than body). */
+  readonly vehicleCab: string;
+  /** North-south traffic light active (green) dot color. */
+  readonly trafficLightNS: string;
+  /** East-west traffic light active (green) dot color. */
+  readonly trafficLightEW: string;
+  /** All-red (clearance) phase dot color. */
+  readonly trafficLightAllRed: string;
+  /** Inactive / red light dot color (rendered when a phase is not green). */
+  readonly trafficLightRed: string;
 }
 
 /**
