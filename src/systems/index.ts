@@ -50,3 +50,14 @@ export type {
   NeedSystemWorldView,
   ScheduleMap,
 } from './NeedSystem';
+
+export {
+  MovementSystem,
+  MOVEMENT_TILES_PER_SECOND,
+  MOVEMENT_ARRIVAL_TOLERANCE,
+} from './MovementSystem';
+export type {
+  MovementSystemOptions,
+  MovementSystemWorldView,
+  TargetMap,
+} from './MovementSystem';

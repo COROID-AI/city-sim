@@ -32,6 +32,8 @@ import {
 } from '@/engine';
 import { TimeSystem } from '@/systems';
 import { TimeControls } from '@/ui/TimeControls';
+import { Tooltip } from '@/ui/Tooltip';
+import { createCitizen, type Citizen } from '@/entities/Citizen';
 
 export default function CitySimPage(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -47,9 +49,33 @@ export default function CitySimPage(): JSX.Element {
   const [hour, setHour] = useState(8);
   const [day, setDay] = useState(1);
 
+  // Hover state for the citizen tooltip. We intentionally keep these
+  // in React state (not refs) so the Tooltip can re-render, but the
+  // canvas itself never re-renders — the mousemove handler updates
+  // state only, the frame loop keeps calling `renderer.draw*` on the
+  // same canvas ref.
+  const [hover, setHover] = useState<{ citizen: Citizen | null; x: number; y: number }>({
+    citizen: null,
+    x: 0,
+    y: 0,
+  });
+
   // Mirror refs (mutated by the rAF loop) so we can re-render the HUD
   // without re-rendering the canvas.
   const timeRef = useRef<TimeSystem | null>(null);
+  // Camera ref for the hover hit-test. Lives outside the rAF loop so
+  // the mousemove handler can read the latest viewport / pan / zoom.
+  const cameraRef = useRef<Camera | null>(null);
+  // Latest hover state, used by the mousemove handler to detect
+  // transitions without invoking the React state setter on every
+  // mousemove.
+  const hoverRef = useRef<{ citizen: Citizen | null; x: number; y: number }>({
+    citizen: null,
+    x: 0,
+    y: 0,
+  });
+  // Keep the ref in sync with state so the handler can read it.
+  hoverRef.current = hover;
 
   const handleTogglePause = useCallback((): void => {
     const t = timeRef.current;
@@ -107,6 +133,16 @@ export default function CitySimPage(): JSX.Element {
     const renderer = new Renderer({ tilePixels: TILE_PIXELS, sprites });
     const time = new TimeSystem();
     timeRef.current = time;
+
+    // Seed a few citizens so the hover / tooltip demo has something
+    // to hit. Real cities will populate the world via CityGenerator.
+    const demoCitizens: Citizen[] = [
+      createCitizen({ id: 'c-1', name: 'Alex Chen', position: { x: 10, y: 10 } }),
+      createCitizen({ id: 'c-2', name: 'Pat Rivera', position: { x: 12, y: 10 } }),
+      createCitizen({ id: 'c-3', name: 'Sam Patel', position: { x: 14, y: 10 } }),
+    ];
+    for (const c of demoCitizens) world.addCitizen(c);
+    cameraRef.current = camera;
     // Sync initial HUD state.
     setPaused(time.isPaused());
     setSpeedState(time.getSpeed());
@@ -125,7 +161,7 @@ export default function CitySimPage(): JSX.Element {
       camera.update(realDt);
       const t = time.getTime();
       const daylight = time.daylightFactor();
-      renderer.drawWithLighting(ctx, world, camera, daylight);
+      renderer.drawWithLighting(ctx, world, camera, daylight, t.hour);
       // Throttle HUD mirror to ~5Hz to avoid React re-renders on
       // every animation frame. The minute-level precision is plenty
       // for a clock readout.
@@ -140,10 +176,36 @@ export default function CitySimPage(): JSX.Element {
     });
     loop.start();
 
+    // Hover hit-test: convert a screen-space mouse coord to a citizen
+    // by checking every citizen's projected world position. We do NOT
+    // call `setState` for the no-hover case so React skips re-render
+    // churn when the cursor moves over empty space — only the actual
+    // hover transition triggers a re-render.
+    const handleMouseMove = (e: MouseEvent): void => {
+      const cam = cameraRef.current;
+      if (!cam) return;
+      const hit = pickCitizenAtScreen(world, cam, e.clientX, e.clientY, 6);
+      if (hit) {
+        setHover({ citizen: hit, x: e.clientX, y: e.clientY });
+      } else if (hoverRef.current.citizen !== null) {
+        setHover({ citizen: null, x: e.clientX, y: e.clientY });
+      }
+    };
+    const handleMouseLeave = (): void => {
+      if (hoverRef.current.citizen !== null) {
+        setHover({ citizen: null, x: 0, y: 0 });
+      }
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseleave', handleMouseLeave);
+
     cleanupRef.current = () => {
       loop.stop();
       window.removeEventListener('resize', resize);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseleave', handleMouseLeave);
       timeRef.current = null;
+      cameraRef.current = null;
     };
     return () => {
       cleanupRef.current?.();
@@ -173,8 +235,48 @@ export default function CitySimPage(): JSX.Element {
         onTogglePause={handleTogglePause}
         onSetSpeed={handleSetSpeed}
       />
+      <Tooltip citizen={hover.citizen} x={hover.x} y={hover.y} />
     </main>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Hover hit-test                                                             */
+/* -------------------------------------------------------------------------- */
+
+interface WorldWithCitizens {
+  citizens_(): IterableIterator<Citizen>;
+}
+
+/**
+ * Find the citizen closest to a screen-space (sx, sy) within `tolPx`
+ * pixels. Linear scan — fine for the current scale (tens to a few
+ * hundred citizens). Returns `null` if no citizen is within
+ * tolerance.
+ */
+function pickCitizenAtScreen(
+  world: WorldWithCitizens,
+  camera: Camera,
+  sx: number,
+  sy: number,
+  tolPx: number,
+): Citizen | null {
+  const halfW = camera.viewport.width / 2;
+  const halfH = camera.viewport.height / 2;
+  // World → screen: scale by tilePixels * zoom, then offset.
+  const scale = TILE_PIXELS * camera.zoom;
+  let best: Citizen | null = null;
+  let bestDist = tolPx;
+  for (const c of world.citizens_()) {
+    const csx = (c.position.x - camera.position.x) * scale + halfW;
+    const csy = (c.position.y - camera.position.y) * scale + halfH;
+    const d = Math.hypot(sx - csx, sy - csy);
+    if (d <= bestDist) {
+      best = c;
+      bestDist = d;
+    }
+  }
+  return best;
 }
 
 // `FIXED_DT` is re-exported via `@/engine`; importing it here keeps

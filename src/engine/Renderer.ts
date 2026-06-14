@@ -28,9 +28,17 @@
 import type { Camera } from './Camera';
 import { DEFAULT_PALETTE, colorForTile, type CityPalette } from './palette';
 import type { SpriteAtlas } from './sprites';
-import type { Building, Tile, TileCoord } from './types';
+import type { Building, Citizen, CitizenState, Tile, TileCoord } from './types';
 import { World } from './World';
 import { createRng } from '@/generation/random';
+
+/**
+ * Per-frame hour-of-day slot, populated by `drawWithCitizens` and
+ * read by `draw`. Module-local (not on the class) so the existing
+ * `draw(ctx, world, camera)` signature can stay at 3 parameters and
+ * existing call sites don't have to change.
+ */
+let optionsHour = 12;
 
 /** Pixel size of a single tile on the canvas. */
 export const TILE_PIXELS = 16;
@@ -158,6 +166,11 @@ export class Renderer {
     this.drawGround(ctx, world, view);
     this.drawRoads(ctx, world, view);
     this.drawBuildings(ctx, world, view);
+    // Citizens are drawn in world space; their hour-of-day is required
+    // to decide whether to stamp the night flashlight. We thread it in
+    // via a per-draw parameter so the constructor stays side-effect-free.
+    const hourForCitizens = optionsHour ?? 12;
+    this.drawCitizens(ctx, world, view, hourForCitizens);
 
     ctx.restore();
     ctx.restore();
@@ -175,13 +188,33 @@ export class Renderer {
     world: World,
     camera: Camera,
     daylightFactor: number,
+    hour: number = 12,
   ): void {
-    this.draw(ctx, world, camera);
+    this.drawWithCitizens(ctx, world, camera, hour);
     if (daylightFactor >= 1) return;
     const { viewport } = camera;
     this.drawLightingOverlay(ctx, viewport.width, viewport.height, daylightFactor);
     this.drawWindowLights(ctx, world, camera, daylightFactor);
     this.drawStreetLightGlows(ctx, world, camera, daylightFactor);
+  }
+
+  /**
+   * Convenience: draw the world (ground, roads, buildings, citizens)
+   * without the post-pass lighting. Identical to `drawWithLighting`
+   * with `daylightFactor = 1` except the lighting passes are skipped.
+   */
+  drawWithCitizens(
+    ctx: RendererContext,
+    world: World,
+    camera: Camera,
+    hour: number = 12,
+  ): void {
+    // The base `draw` reads `optionsHour` from a module-local slot so
+    // existing test sites that call `draw(ctx, world, cam)` keep working
+    // unchanged. `drawWithCitizens` is the public entry point that
+    // passes through the hour.
+    optionsHour = hour;
+    this.draw(ctx, world, camera);
   }
 
   /* ---------------------------------------------------------------------- */
@@ -633,6 +666,177 @@ export class Renderer {
     // Roof band along the top edge.
     ctx.fillStyle = this.palette.buildingRoof;
     ctx.fillRect(b.origin.x, b.origin.y, w, 0.12);
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Layer: citizens                                                        */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Paint every citizen whose world position is inside the visible
+   * viewport. Each on-screen citizen is drawn as three primitives:
+   *   1. A radial-gradient halo, colour-coded by the citizen's
+   *      `state` (commuting, working, shopping, resting, leisure,
+   *      idle).
+   *   2. A small filled body square (palette.citizenBody).
+   *   3. A thin outline square (palette.citizenOutline).
+   *
+   * When the supplied `hour` is outside the inclusive day window
+   * [6, 20] the citizen is also stamped with a small flashlight dot
+   * in the direction of travel — a tiny warm spot that hints at
+   * night-time visibility without being a full light source.
+   *
+   * Citizens are drawn in world space (called from inside the
+   * world→screen transform set up by `draw`).
+   */
+  drawCitizens(
+    ctx: RendererContext,
+    world: World,
+    view: { minX: number; minY: number; maxX: number; maxY: number },
+    hour: number = 12,
+  ): void {
+    const isNight = !(hour >= 6 && hour <= 20);
+    const haloRadius = this.palette.citizenHaloRadius;
+    const bodyRadius = this.palette.citizenBodyRadius;
+
+    // Cache a single radial gradient per halo colour / alpha combination
+    // for the lifetime of the call. We deliberately do NOT cache across
+    // frames — different palettes, different alphas — but the inner loop
+    // reuses the same gradient object for every citizen. This is the
+    // standard "create once, fill many" pattern for canvas 2D.
+    const gradientCache = new Map<string, CanvasGradientLike>();
+
+    for (const citizen of world.citizens_()) {
+      const cx = citizen.position.x;
+      const cy = citizen.position.y;
+      // Cull off-screen citizens. We expand the test by the halo radius
+      // so a citizen just off the edge of the viewport still has its
+      // halo drawn.
+      if (cx + haloRadius < view.minX) continue;
+      if (cx - haloRadius > view.maxX) continue;
+      if (cy + haloRadius < view.minY) continue;
+      if (cy - haloRadius > view.maxY) continue;
+
+      const haloColor = this.haloColorForState(citizen.state);
+      const alpha = this.haloAlphaForState(citizen.state);
+      const cacheKey = `${haloColor}|${alpha.toFixed(3)}`;
+
+      let grad = gradientCache.get(cacheKey);
+      if (!grad && ctx.createRadialGradient) {
+        const g = ctx.createRadialGradient(
+          cx,
+          cy,
+          0,
+          cx,
+          cy,
+          haloRadius,
+        );
+        g.addColorStop(0, withAlpha(haloColor, alpha));
+        g.addColorStop(0.65, withAlpha(haloColor, alpha * 0.4));
+        g.addColorStop(1, withAlpha(haloColor, 0));
+        grad = g;
+        gradientCache.set(cacheKey, g);
+      }
+
+      ctx.save();
+      if (grad) {
+        ctx.fillStyle = grad;
+        // Halo is a square big enough to contain the radial gradient.
+        const d = haloRadius * 2;
+        ctx.fillRect(cx - haloRadius, cy - haloRadius, d, d);
+      } else {
+        // Fallback when createRadialGradient is unavailable (e.g. some
+        // unit-test stubs). A flat translucent disc reads as a "halo"
+        // and is good enough for the test assertion that the body
+        // and outline still draw.
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = haloColor;
+        const d = haloRadius * 2;
+        ctx.fillRect(cx - haloRadius, cy - haloRadius, d, d);
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+
+      // Body — small filled square.
+      ctx.save();
+      ctx.fillStyle = this.palette.citizenBody;
+      const bw = bodyRadius * 2;
+      ctx.fillRect(cx - bodyRadius, cy - bodyRadius, bw, bw);
+      // Outline — a 1-px stroke around the body using the palette
+      // outline colour. This is what the hover hit-test uses to find
+      // a citizen (the renderer keeps the outline width constant so
+      // the tooltip can compute a screen-space radius).
+      ctx.strokeStyle = this.palette.citizenOutline;
+      const ow = bodyRadius * 2 + 0.05;
+      ctx.strokeRect(
+        cx - bodyRadius - 0.025,
+        cy - bodyRadius - 0.025,
+        ow,
+        ow,
+      );
+      ctx.restore();
+
+      // Flashlight (night only): a small warm dot offset in the
+      // direction of travel. When velocity is zero we just stamp the
+      // dot to the right of the citizen so they remain visible at
+      // night.
+      if (isNight) {
+        const vx = citizen.velocity.x;
+        const vy = citizen.velocity.y;
+        const vmag = Math.hypot(vx, vy);
+        const fx =
+          vmag > 1e-4 ? cx + (vx / vmag) * (bodyRadius + 0.12) : cx + bodyRadius + 0.12;
+        const fy =
+          vmag > 1e-4 ? cy + (vy / vmag) * (bodyRadius + 0.12) : cy;
+        ctx.save();
+        ctx.fillStyle = this.palette.citizenFlashlight;
+        ctx.fillRect(fx - 0.04, fy - 0.04, 0.08, 0.08);
+        ctx.restore();
+      }
+    }
+  }
+
+  /**
+   * Map a `CitizenState` to its halo colour. Centralised so the
+   * renderer, tests, and the UI agree on the mapping.
+   */
+  private haloColorForState(state: CitizenState): string {
+    switch (state) {
+      case 'commuting':
+        return this.palette.citizenHaloCommute;
+      case 'working':
+        return this.palette.citizenHaloWork;
+      case 'shopping':
+        return this.palette.citizenHaloErrand;
+      case 'resting':
+        return this.palette.citizenHaloIdle;
+      case 'leisure':
+        return this.palette.citizenHaloLeisure;
+      case 'idle':
+        return this.palette.citizenHaloIdle;
+    }
+  }
+
+  /**
+   * Halo alpha per `CitizenState`. Working / commuting halos are the
+   * brightest (the citizen is "in motion"), resting / idle are the
+   * dimmest.
+   */
+  private haloAlphaForState(state: CitizenState): number {
+    switch (state) {
+      case 'commuting':
+        return 0.6;
+      case 'working':
+        return 0.55;
+      case 'shopping':
+        return 0.55;
+      case 'resting':
+        return 0.3;
+      case 'leisure':
+        return 0.5;
+      case 'idle':
+        return 0.3;
+    }
   }
 
   /* ---------------------------------------------------------------------- */

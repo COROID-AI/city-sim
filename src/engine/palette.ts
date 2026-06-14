@@ -71,6 +71,29 @@ export interface CityPalette {
    * gradient is sized relative to this.
    */
   readonly streetlightRadius: number;
+
+  /* ---------------------------------------------------------------- */
+  /* Citizens                                                          */
+  /* ---------------------------------------------------------------- */
+
+  /** Body fill for citizens. */
+  readonly citizenBody: string;
+  /** Warm halo color for citizens engaged in leisure / entertainment. */
+  readonly citizenHaloLeisure: string;
+  /** Halo color for citizens commuting (en-route to work / home). */
+  readonly citizenHaloCommute: string;
+  /** Halo color for citizens working (at a workplace). */
+  readonly citizenHaloWork: string;
+  /** Halo color for citizens on an errand (shopping etc.). */
+  readonly citizenHaloErrand: string;
+  /** Halo color for sleeping / idle citizens. */
+  readonly citizenHaloIdle: string;
+  /** Flashlight cone color used at night to make citizens visible. */
+  readonly citizenFlashlight: string;
+  /** Radius of the citizen halo, in world tiles. */
+  readonly citizenHaloRadius: number;
+  /** Radius of the citizen body, in world tiles. */
+  readonly citizenBodyRadius: number;
 }
 
 /**
@@ -102,6 +125,16 @@ export const DEFAULT_PALETTE: CityPalette = Object.freeze({
   duskSky: '#1a2240',
   maxNightAlpha: 0.6,
   streetlightRadius: 2.2,
+  // Citizen rendering tokens.
+  citizenBody: '#f5d76e',
+  citizenHaloLeisure: '#7cf0a8',
+  citizenHaloCommute: '#3aa0ff',
+  citizenHaloWork: '#ffd17a',
+  citizenHaloErrand: '#e08fff',
+  citizenHaloIdle: '#9aa3b2',
+  citizenFlashlight: '#fff3b0',
+  citizenHaloRadius: 0.55,
+  citizenBodyRadius: 0.18,
 });
 
 /**
