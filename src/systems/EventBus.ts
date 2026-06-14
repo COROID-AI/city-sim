@@ -5,13 +5,6 @@
  * handlers documents this contract.
  */
 
-export interface SimEvent {
-  readonly seq: number;
-  readonly at: number;
-  readonly type: string;
-  readonly payload: unknown;
-}
-
 export interface MoneyChangedPayload {
   readonly delta: number;
   readonly treasury: number;
@@ -62,6 +55,14 @@ export type SimEventOf<K extends SimEventType> = {
   readonly type: K;
   readonly payload: SimEventMap[K];
 };
+
+/**
+ * Discriminated union of every concrete `SimEventOf<K>` for K in SimEventType.
+ * Use this when you need an `events`-style collection whose members can be
+ * of any kind (e.g. the CityLog input array). Each member is still narrowed
+ * via `event.type` for safe payload access.
+ */
+export type SimEvent = SimEventOf<SimEventType>;
 
 type Handler<K extends SimEventType> = (event: SimEventOf<K>) => void;
 

@@ -2,14 +2,21 @@
 
 /**
  * CityLog - scrolling event log fed by the EventBus.
- * Each switch case below handles a *narrowed* event of type SimEventOf<K>,
- * so the payload type is inferred by the discriminated union — no `as`
- * casts and no TS18046 errors under `strict: true`.
+ *
+ * Per-event-type handlers are stored in a typed lookup table keyed by
+ * `SimEventType`. Each entry is typed `(event: SimEventOf<K>) => string`,
+ * so the payload type is *narrowed* by the discriminant with no `as` casts
+ * and no TS18046 errors under `strict: true`.
  * // keep in sync with SimEventMap
  */
 
 import * as React from 'react';
 import type {
+  MoneyChangedPayload,
+  CitizenHiredPayload,
+  ShiftStartedPayload,
+  ShiftEndedPayload,
+  BuildingConstructedPayload,
   SimEventOf,
   SimEventType,
 } from '@/systems/EventBus';
@@ -22,32 +29,42 @@ function isSupportedEvent(
   return event.type !== 'tick';
 }
 
+type SummarizeHandlers = {
+  readonly [K in SupportedEventType]: (event: SimEventOf<K>) => string;
+};
+
+const SUMMARIZERS: SummarizeHandlers = {
+  'money.changed': (event) => {
+    const p = event.payload as MoneyChangedPayload;
+    const sign = p.delta >= 0 ? '+' : '';
+    return `Treasury ${sign}${p.delta} (${p.reason}) -> ${p.treasury}`;
+  },
+  'citizen.hired': (event) => {
+    const p = event.payload as CitizenHiredPayload;
+    return `Citizen ${p.citizenId} hired at ${p.companyType} ${p.companyId}`;
+  },
+  'shift.started': (event) => {
+    const p = event.payload as ShiftStartedPayload;
+    return `Shift started at ${p.companyId} (h${p.hour})`;
+  },
+  'shift.ended': (event) => {
+    const p = event.payload as ShiftEndedPayload;
+    return `Shift ended at ${p.companyId} (h${p.hour})`;
+  },
+  'building.constructed': (event) => {
+    const p = event.payload as BuildingConstructedPayload;
+    return `Built ${p.defId} (${p.buildingId}) at (${p.origin.x},${p.origin.y})`;
+  },
+};
+
 function summarize(event: SimEventOf<SupportedEventType>): string {
-  switch (event.type) {
-    case 'money.changed': {
-      const p = event.payload;
-      const sign = p.delta >= 0 ? '+' : '';
-      return `Treasury ${sign}${p.delta} (${p.reason}) -> ${p.treasury}`;
-    }
-    case 'citizen.hired': {
-      const p = event.payload;
-      return `Citizen ${p.citizenId} hired at ${p.companyType} ${p.companyId}`;
-    }
-    case 'shift.started': {
-      const p = event.payload;
-      return `Shift started at ${p.companyId} (h${p.hour})`;
-    }
-    case 'shift.ended': {
-      const p = event.payload;
-      return `Shift ended at ${p.companyId} (h${p.hour})`;
-    }
-    case 'building.constructed': {
-      const p = event.payload;
-      return `Built ${p.defId} (${p.buildingId}) at (${p.origin.x},${p.origin.y})`;
-    }
-    default:
-      return `${event.type}`;
+  const handler = SUMMARIZERS[event.type] as
+    | ((e: SimEventOf<SupportedEventType>) => string)
+    | undefined;
+  if (handler) {
+    return handler(event);
   }
+  return `${event.type}`;
 }
 
 export interface CityLogProps {
