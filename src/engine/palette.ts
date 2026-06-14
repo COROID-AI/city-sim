@@ -47,6 +47,30 @@ export interface CityPalette {
   readonly warning: string;
   /** Debug grid line color. */
   readonly grid: string;
+
+  /* ---------------------------------------------------------------- */
+  /* Day / night lighting                                              */
+  /* ---------------------------------------------------------------- */
+
+  /** Color of the night overlay applied to the whole viewport at dusk/night. */
+  readonly nightOverlay: string;
+  /** Color of streetlight glow halos drawn on road tiles at night. */
+  readonly streetlightGlow: string;
+  /** Color of building window lights at night. */
+  readonly windowLight: string;
+  /** Sky color at dusk, used as the inner stop of the night radial gradient. */
+  readonly duskSky: string;
+  /**
+   * Maximum alpha (0..1) applied to the night overlay at the deepest
+   * point of the night (midnight). 0.6 is a good default — visible
+   * but still lets the city read through.
+   */
+  readonly maxNightAlpha: number;
+  /**
+   * Streetlight glow radius in *world tiles* (pre-zoom). The radial
+   * gradient is sized relative to this.
+   */
+  readonly streetlightRadius: number;
 }
 
 /**
@@ -71,6 +95,13 @@ export const DEFAULT_PALETTE: CityPalette = Object.freeze({
   accent: '#3aa0ff',
   warning: '#e74c3c',
   grid: 'rgba(255, 255, 255, 0.04)',
+  // Day / night lighting tokens.
+  nightOverlay: '#04060c',
+  streetlightGlow: '#f5b942',
+  windowLight: '#ffd17a',
+  duskSky: '#1a2240',
+  maxNightAlpha: 0.6,
+  streetlightRadius: 2.2,
 });
 
 /**

@@ -96,6 +96,38 @@ class FakeCanvasContext implements RendererContext {
   get imageSmoothingEnabled(): boolean {
     return this.imageSmoothingEnabledFlag;
   }
+  /** Optional createRadialGradient — tracked so we can assert on lighting draws. */
+  radialGradientCalls: Array<{
+    x0: number;
+    y0: number;
+    r0: number;
+    x1: number;
+    y1: number;
+    r1: number;
+    stops: Array<{ offset: number; color: string }>;
+  }> = [];
+  createRadialGradient(
+    x0: number,
+    y0: number,
+    r0: number,
+    x1: number,
+    y1: number,
+    r1: number,
+  ): RendererGradientStub {
+    const stops: Array<{ offset: number; color: string }> = [];
+    const rec = { x0, y0, r0, x1, y1, r1, stops };
+    this.radialGradientCalls.push(rec);
+    const gradient: RendererGradientStub = {
+      addColorStop(offset: number, color: string) {
+        stops.push({ offset, color });
+      },
+    };
+    return gradient;
+  }
+}
+
+interface RendererGradientStub {
+  addColorStop(offset: number, color: string): void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -167,10 +199,11 @@ describe('palette', () => {
     }
   });
 
-  test('all values are non-empty strings (hex, rgba, or named)', () => {
+  test('all string values are non-empty (hex, rgba, or named)', () => {
     for (const value of Object.values(DEFAULT_PALETTE)) {
-      expect(typeof value).toBe('string');
-      expect(value.length).toBeGreaterThan(0);
+      if (typeof value === 'string') {
+        expect(value.length).toBeGreaterThan(0);
+      }
     }
   });
 
@@ -398,5 +431,171 @@ describe('Renderer', () => {
   test('TILE_PIXELS is a positive number', () => {
     expect(typeof TILE_PIXELS).toBe('number');
     expect(TILE_PIXELS).toBeGreaterThan(0);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Lighting tests                                                            */
+/* -------------------------------------------------------------------------- */
+
+describe('Renderer lighting', () => {
+  test('drawLightingOverlay is a no-op at daylightFactor=1', () => {
+    const ctx = new FakeCanvasContext();
+    const r = new Renderer();
+    const before = ctx.fillCalls.length;
+    r.drawLightingOverlay(ctx, 100, 100, 1);
+    // No fills added.
+    expect(ctx.fillCalls.length).toBe(before);
+    // And no gradient was created.
+    expect(ctx.radialGradientCalls.length).toBe(0);
+  });
+
+  test('drawLightingOverlay creates one gradient and one fill at daylightFactor=0', () => {
+    const ctx = new FakeCanvasContext();
+    const r = new Renderer();
+    const before = ctx.fillCalls.length;
+    r.drawLightingOverlay(ctx, 100, 100, 0);
+    // One gradient created, with two color stops.
+    expect(ctx.radialGradientCalls.length).toBe(1);
+    expect(ctx.radialGradientCalls[0]?.stops.length).toBe(2);
+    // Exactly one fillRect added (the overlay).
+    expect(ctx.fillCalls.length).toBe(before + 1);
+    // globalAlpha should match palette.maxNightAlpha (0.6 by default).
+    const lastAlpha = ctx.currentGlobalAlpha;
+    expect(lastAlpha).toBeCloseTo(DEFAULT_PALETTE.maxNightAlpha, 5);
+  });
+
+  test('drawLightingOverlay alpha scales with (1 - daylightFactor) * maxNightAlpha', () => {
+    const ctx = new FakeCanvasContext();
+    const r = new Renderer();
+    r.drawLightingOverlay(ctx, 100, 100, 0.5);
+    const expected = (1 - 0.5) * DEFAULT_PALETTE.maxNightAlpha;
+    expect(ctx.currentGlobalAlpha).toBeCloseTo(expected, 5);
+  });
+
+  test('drawWithLighting skips all lighting passes at full daylight', () => {
+    const ctx = new FakeCanvasContext();
+    const world = new World({ width: 4, height: 4 });
+    const cam = makeCamera(4, 4);
+    new Renderer().drawWithLighting(ctx, world, cam, 1);
+    expect(ctx.radialGradientCalls.length).toBe(0);
+  });
+
+  test('drawWindowLights is deterministic for a given building id', () => {
+    const ctx1 = new FakeCanvasContext();
+    const ctx2 = new FakeCanvasContext();
+    const world = makeWorld(6, 6, (w) => {
+      w.registerBuildingDef(makeDef({ id: 'd1', color: '#abcdef' }));
+      w.addBuilding(makeBuilding({ id: 'stable-id', defId: 'd1', origin: { x: 1, y: 1 }, size: { width: 2, height: 2 } }));
+    });
+    const cam = makeCamera(6, 6);
+    new Renderer().drawWindowLights(ctx1, world, cam, 0);
+    new Renderer().drawWindowLights(ctx2, world, cam, 0);
+    // Both should record the same window-light fill rects.
+    const paletteFills1 = ctx1.fillCalls.filter((c) => c.style === DEFAULT_PALETTE.windowLight);
+    const paletteFills2 = ctx2.fillCalls.filter((c) => c.style === DEFAULT_PALETTE.windowLight);
+    expect(paletteFills1.length).toBe(paletteFills2.length);
+    expect(paletteFills1.length).toBeGreaterThan(0);
+    for (let i = 0; i < paletteFills1.length; i++) {
+      expect(paletteFills1[i]?.x).toBeCloseTo(paletteFills2[i]?.x ?? -1, 5);
+      expect(paletteFills1[i]?.y).toBeCloseTo(paletteFills2[i]?.y ?? -1, 5);
+    }
+  });
+
+  test('drawWindowLights draws nothing at daylightFactor=1', () => {
+    const ctx = new FakeCanvasContext();
+    const world = makeWorld(4, 4, (w) => {
+      w.registerBuildingDef(makeDef({ id: 'd1' }));
+      w.addBuilding(makeBuilding({ id: 'b1', defId: 'd1', origin: { x: 0, y: 0 } }));
+    });
+    const cam = makeCamera(4, 4);
+    new Renderer().drawWindowLights(ctx, world, cam, 1);
+    const windowFills = ctx.fillCalls.filter((c) => c.style === DEFAULT_PALETTE.windowLight);
+    expect(windowFills.length).toBe(0);
+  });
+
+  test('drawWindowLights culls buildings outside the viewport', () => {
+    const ctx = new FakeCanvasContext();
+    const world = makeWorld(100, 100, (w) => {
+      w.registerBuildingDef(makeDef({ id: 'd1' }));
+      w.addBuilding(makeBuilding({ id: 'b1', defId: 'd1', origin: { x: 1, y: 1 } }));
+      w.addBuilding(makeBuilding({ id: 'b2', defId: 'd1', origin: { x: 50, y: 50 } }));
+    });
+    const cam = makeCamera(100, 100);
+    cam.setViewport(4, 4);
+    cam.position = { x: 2, y: 2 };
+    cam.targetPosition.x = 2;
+    cam.targetPosition.y = 2;
+    new Renderer().drawWindowLights(ctx, world, cam, 0);
+    // The far building should not contribute any window fills.
+    const windowFills = ctx.fillCalls.filter((c) => c.style === DEFAULT_PALETTE.windowLight);
+    for (const f of windowFills) {
+      const isFar = f.x >= 49.5 && f.x <= 51.5 && f.y >= 49.5 && f.y <= 51.5;
+      expect(isFar).toBe(false);
+    }
+  });
+
+  test('placeStreetLights skips intersections and water/lot neighbours', () => {
+    // Build a world: a horizontal road at y=1 with an intersection at x=2
+    // and water tiles on the right end.
+    const world = new World({ width: 6, height: 4 });
+    for (let x = 0; x < 6; x++) world.setTile({ x, y: 1 }, 'road');
+    // Add a vertical road at x=2 to create an intersection at (2, 1).
+    for (let y = 0; y < 4; y++) world.setTile({ x: 2, y }, 'road');
+    // Water at (5, 0) and (5, 2) — adjacent to (5, 1) and (4, 1) corners.
+    world.setTile({ x: 5, y: 0 }, 'water');
+    world.setTile({ x: 5, y: 2 }, 'water');
+    const r = new Renderer();
+    const lights = r.placeStreetLights(world);
+    // No light should be at the intersection (2, 1) — it has 4 road neighbours.
+    expect(lights.some((p) => p.x === 2 && p.y === 1)).toBe(false);
+    // The result must be deterministic — calling again returns the same.
+    const lights2 = r.placeStreetLights(world);
+    expect(lights2).toEqual(lights);
+    // And every returned position is actually a road tile.
+    for (const p of lights) {
+      expect(world.getTile(p)?.kind).toBe('road');
+    }
+  });
+
+  test('placeStreetLights places at most every other road tile along a straight road', () => {
+    // 10-tile straight horizontal road.
+    const world = new World({ width: 10, height: 1 });
+    for (let x = 0; x < 10; x++) world.setTile({ x, y: 0 }, 'road');
+    const lights = new Renderer().placeStreetLights(world);
+    // All lights must be on a single row, and they must be at even
+    // x positions only (parity-based staggering).
+    for (const p of lights) {
+      expect(p.y).toBe(0);
+      expect(p.x % 2).toBe(0);
+    }
+    // We expect a lamp at x=0, 2, 4, 6, 8 → 5 lamps. (x=0,2,4,6,8 are
+    // the even positions; x=10 doesn't exist.)
+    expect(lights.length).toBe(5);
+  });
+
+  test('placeStreetLights returns no lights for a roadless world', () => {
+    const world = new World({ width: 4, height: 4 });
+    const lights = new Renderer().placeStreetLights(world);
+    expect(lights).toEqual([]);
+  });
+
+  test('getStreetlightPositions caches results across calls', () => {
+    const world = new World({ width: 4, height: 4 });
+    world.setTile({ x: 1, y: 1 }, 'road');
+    const r = new Renderer();
+    const a = r.getStreetlightPositions(world);
+    const b = r.getStreetlightPositions(world);
+    // Same array reference (cached).
+    expect(a).toBe(b);
+    // Add a building → cache invalidates.
+    world.addBuilding(
+      makeBuilding({ id: 'b1', defId: 'd1', origin: { x: 0, y: 0 } }),
+    );
+    const c = r.getStreetlightPositions(world);
+    // After invalidation a fresh array is returned. The content may
+    // still match because the new building doesn't affect road layout,
+    // but the reference must differ.
+    expect(c).not.toBe(a);
   });
 });

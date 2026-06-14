@@ -38,7 +38,12 @@ export {
   DEFAULT_PALETTE,
   colorForTile,
 } from './Renderer';
-export type { RendererContext, RendererOptions } from './Renderer';
+export type {
+  RendererContext,
+  RendererOptions,
+  CanvasGradientLike,
+  RadialGradientStop,
+} from './Renderer';
 export type { CityPalette } from './palette';
 export {
   tryLoadSprites,

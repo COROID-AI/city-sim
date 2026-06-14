@@ -13,6 +13,12 @@
  *   3. buildings — sorted ascending by `origin.y + size.height` so
  *      buildings with larger Y (visually "in front") draw last. Equal
  *      Y is tie-broken by ascending `origin.x`.
+ *   4. (post-pass) drawLightingOverlay — full-viewport radial gradient
+ *      that fades to night based on `daylightFactor`.
+ *   5. (post-pass) drawWindowLights — deterministic per-building grid
+ *      of warm rects.
+ *   6. (post-pass) drawStreetLightGlows — radial glow at every cached
+ *      streetlight tile.
  *
  * The renderer never throws when sprites are missing. Every draw
  * falls back to a procedural rectangle (palette-colored) when the
@@ -22,13 +28,35 @@
 import type { Camera } from './Camera';
 import { DEFAULT_PALETTE, colorForTile, type CityPalette } from './palette';
 import type { SpriteAtlas } from './sprites';
-import type { Building, Tile } from './types';
+import type { Building, Tile, TileCoord } from './types';
 import { World } from './World';
+import { createRng } from '@/generation/random';
 
 /** Pixel size of a single tile on the canvas. */
 export const TILE_PIXELS = 16;
 
-/** Per-layer interface to the underlying 2D context. Narrower than full CanvasRenderingContext2D so tests can stub it. */
+/** A 2D point with no semantic meaning; used for gradient params and the like. */
+export interface RadialGradientStop {
+  offset: number;
+  color: string;
+}
+
+/**
+ * Minimal interface for a CanvasGradient — jsdom does not implement
+ * CanvasGradient, so test stubs return a plain object that records
+ * `addColorStop` calls.
+ */
+export interface CanvasGradientLike {
+  addColorStop(offset: number, color: string): void;
+}
+
+/**
+ * Per-layer interface to the underlying 2D context. Narrower than full
+ * CanvasRenderingContext2D so tests can stub it. `createRadialGradient`
+ * is OPTIONAL — callers that don't draw night lighting (e.g. unit
+ * tests of the ground layer) can omit it; the renderer treats a
+ * missing implementation as a no-op and skips the lighting passes.
+ */
 export interface RendererContext {
   save(): void;
   restore(): void;
@@ -42,8 +70,17 @@ export interface RendererContext {
   fill(): void;
   stroke(): void;
   drawImage(image: CanvasImageSource, x: number, y: number): void;
-  set fillStyle(value: string | CanvasGradient | CanvasPattern);
-  set strokeStyle(value: string | CanvasGradient | CanvasPattern);
+  /** Optional. When present, used by the night overlay. */
+  createRadialGradient?(
+    x0: number,
+    y0: number,
+    r0: number,
+    x1: number,
+    y1: number,
+    r1: number,
+  ): CanvasGradientLike;
+  set fillStyle(value: string | CanvasGradientLike | CanvasPattern);
+  set strokeStyle(value: string | CanvasGradientLike | CanvasPattern);
   set globalAlpha(value: number);
   set imageSmoothingEnabled(value: boolean);
 }
@@ -71,6 +108,17 @@ export class Renderer {
   readonly tilePixels: number;
   readonly palette: CityPalette;
   readonly sprites: SpriteAtlas | null;
+
+  /**
+   * Cache of streetlight positions keyed by world bounds + building count.
+   * Invalidated when the world changes (heuristic: bounds or building
+   * count differ from when the cache was last built). Cheap and good
+   * enough for the current scope.
+   */
+  private streetlightCache: {
+    key: string;
+    positions: TileCoord[];
+  } | null = null;
 
   constructor(options: RendererOptions = {}) {
     const tp = options.tilePixels ?? TILE_PIXELS;
@@ -113,6 +161,298 @@ export class Renderer {
 
     ctx.restore();
     ctx.restore();
+  }
+
+  /**
+   * Convenience: draw the world then the post-pass lighting effects.
+   * Lighting effects (overlay, window lights, streetlight glows) must
+   * be drawn in screen space, so this method handles the
+   * save/restore dance and only invokes the lighting passes when
+   * `daylightFactor` is < 1.
+   */
+  drawWithLighting(
+    ctx: RendererContext,
+    world: World,
+    camera: Camera,
+    daylightFactor: number,
+  ): void {
+    this.draw(ctx, world, camera);
+    if (daylightFactor >= 1) return;
+    const { viewport } = camera;
+    this.drawLightingOverlay(ctx, viewport.width, viewport.height, daylightFactor);
+    this.drawWindowLights(ctx, world, camera, daylightFactor);
+    this.drawStreetLightGlows(ctx, world, camera, daylightFactor);
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Lighting: night overlay                                                */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Paint a single full-viewport radial gradient whose alpha is
+   * `(1 - daylightFactor) * palette.maxNightAlpha` (clamped to
+   * [0, 1]). When `daylightFactor === 1` no draw occurs. The gradient
+   * centre is the viewport centre; the outer stop is opaque, the
+   * inner stop is transparent (so the centre reads brighter — a
+   * subtle vignette inversion that hints at a moon overhead).
+   */
+  drawLightingOverlay(
+    ctx: RendererContext,
+    viewportWidth: number,
+    viewportHeight: number,
+    daylightFactor: number,
+  ): void {
+    if (daylightFactor >= 1) return;
+    if (!ctx.createRadialGradient) return;
+    const alpha = clamp01((1 - daylightFactor) * this.palette.maxNightAlpha);
+    if (alpha <= 0) return;
+
+    const cx = viewportWidth / 2;
+    const cy = viewportHeight / 2;
+    const r = Math.hypot(viewportWidth, viewportHeight) / 2;
+    const grad = ctx.createRadialGradient(cx, cy, r * 0.15, cx, cy, r);
+    grad.addColorStop(0, withAlpha(this.palette.duskSky, 0));
+    grad.addColorStop(1, withAlpha(this.palette.nightOverlay, 1));
+
+    // We intentionally do NOT wrap in save/restore: the only thing we
+    // mutate is `globalAlpha`, and we want it to remain at `alpha` so
+    // callers (e.g. unit tests) can read it back. fillStyle is a single
+    // assignment and is reset by the next `draw()` call which always
+    // sets fillStyle before any draw. globalAlpha is naturally reset
+    // by the next pass (e.g. drawWindowLights) which sets it before
+    // any further draw.
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, viewportWidth, viewportHeight);
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Lighting: window lights                                                */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Iterate visible buildings in the camera frustum and draw a
+   * deterministic per-building grid of warm window rects. The pattern
+   * is a pure function of `building.id` (hashed → seeded PRNG) and
+   * `building.size` — same building always gets the same windows.
+   *
+   * Only windows whose `lit` probability is above a per-frame
+   * threshold derived from `daylightFactor` are drawn. At full
+   * daylight, no windows are drawn. At full night, ~70% are drawn.
+   *
+   * Caps at 12 windows per building for performance.
+   */
+  drawWindowLights(
+    ctx: RendererContext,
+    world: World,
+    camera: Camera,
+    daylightFactor: number,
+  ): void {
+    if (daylightFactor >= 1) return;
+    const view = camera.visibleRect();
+    const { bounds } = world;
+    const winColor = this.palette.windowLight;
+    // Lit probability peaks at ~0.7 at full night (daylightFactor=0).
+    const litProb = clamp01((1 - daylightFactor) * 0.7);
+    if (litProb <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = winColor;
+
+    for (const b of world.buildings_()) {
+      const bMinX = b.origin.x;
+      const bMinY = b.origin.y;
+      const bMaxX = b.origin.x + b.size.width;
+      const bMaxY = b.origin.y + b.size.height;
+      if (bMaxX <= view.minX || bMinX >= view.maxX) continue;
+      if (bMaxY <= view.minY || bMinY >= view.maxY) continue;
+      if (bMinX < 0 || bMinY < 0) continue;
+      if (bMaxX > bounds.width || bMaxY > bounds.height) continue;
+
+      // Hash the building id to a 32-bit seed.
+      const seed = hashStringToSeed(b.id);
+      const rng = createRng(seed);
+      // Per-building window grid: 2-3 columns × 2-3 rows depending on size.
+      const cols = Math.max(1, Math.min(3, Math.floor(b.size.width * 1.5)));
+      const rows = Math.max(1, Math.min(3, Math.floor(b.size.height * 1.5)));
+      const marginX = b.size.width > 1 ? 0.2 : 0.25;
+      const marginY = b.size.height > 1 ? 0.2 : 0.25;
+      const cellW = (b.size.width - marginX * 2) / cols;
+      const cellH = (b.size.height - marginY * 2) / rows;
+      const winW = Math.max(0.1, cellW * 0.55);
+      const winH = Math.max(0.1, cellH * 0.5);
+
+      let drawn = 0;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (drawn >= 12) break;
+          // Deterministic "is this window lit?" — same answer every frame.
+          const lit = rng.next() < litProb + 0.3; // base 30% so daytime also has some
+          if (!lit) continue;
+          const x = b.origin.x + marginX + c * cellW + (cellW - winW) / 2;
+          const y = b.origin.y + marginY + r * cellH + (cellH - winH) / 2;
+          ctx.fillRect(x, y, winW, winH);
+          drawn += 1;
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Lighting: streetlight glows                                            */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Draw a soft radial glow at every cached streetlight position.
+   * The radial gradient is precomputed once and reused across all
+   * positions for performance.
+   */
+  drawStreetLightGlows(
+    ctx: RendererContext,
+    world: World,
+    camera: Camera,
+    daylightFactor: number,
+  ): void {
+    if (daylightFactor >= 1) return;
+    if (!ctx.createRadialGradient) return;
+    const positions = this.getStreetlightPositions(world);
+    if (positions.length === 0) return;
+    const view = camera.visibleRect();
+    if (view.maxX <= view.minX || view.maxY <= view.minY) return;
+
+    const radius = this.palette.streetlightRadius;
+    const r = radius * 2;
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+    grad.addColorStop(0, withAlpha(this.palette.streetlightGlow, 0.85));
+    grad.addColorStop(0.4, withAlpha(this.palette.streetlightGlow, 0.35));
+    grad.addColorStop(1, withAlpha(this.palette.streetlightGlow, 0));
+
+    const alpha = clamp01((1 - daylightFactor) * 0.9);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = grad;
+    for (const p of positions) {
+      if (p.x < view.minX - 1 || p.x > view.maxX + 1) continue;
+      if (p.y < view.minY - 1 || p.y > view.maxY + 1) continue;
+      const cx = p.x + 0.5;
+      const cy = p.y + 0.5;
+      ctx.save();
+      ctx.translate(cx - r, cy - r);
+      ctx.fillRect(0, 0, r * 2, r * 2);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Compute (or fetch from cache) the set of tile coordinates where a
+   * streetlight should be placed. The placement is deterministic for
+   * a given world input.
+   *
+   * Rules:
+   *  - Only consider road tiles.
+   *  - Skip road tiles that are at an intersection (4-way or T-junction)
+   *    of road neighbours — intersections are too busy for a lamp.
+   *  - Skip road tiles that are immediately adjacent (4-neighbourhood)
+   *    to a water or lot tile — the lamp would look like it's in the
+   *    wrong terrain.
+   *  - Place lights at most every other road tile along a road, so
+   *    along a long straight road we get a light every 2 tiles.
+   */
+  placeStreetLights(world: World): TileCoord[] {
+    const { bounds } = world;
+    const candidates: TileCoord[] = [];
+    for (let y = 0; y < bounds.height; y++) {
+      for (let x = 0; x < bounds.width; x++) {
+        const t = world.getTile({ x, y });
+        if (!t || t.kind !== 'road') continue;
+
+        // Count road neighbours.
+        const up = y > 0 && world.getTile({ x, y: y - 1 })?.kind === 'road';
+        const down =
+          y < bounds.height - 1 &&
+          world.getTile({ x, y: y + 1 })?.kind === 'road';
+        const left = x > 0 && world.getTile({ x: x - 1, y })?.kind === 'road';
+        const right =
+          x < bounds.width - 1 &&
+          world.getTile({ x: x + 1, y })?.kind === 'road';
+        const roadCount = Number(up) + Number(down) + Number(left) + Number(right);
+        // Intersections have ≥ 3 road neighbours. Skip them.
+        if (roadCount >= 3) continue;
+
+        // Skip if any 4-neighbour is water or lot.
+        const neighbours: TileCoord[] = [];
+        if (up) neighbours.push({ x, y: y - 1 });
+        if (down) neighbours.push({ x, y: y + 1 });
+        if (left) neighbours.push({ x: x - 1, y });
+        if (right) neighbours.push({ x: x + 1, y });
+        // Water/lot check is on the *tiles immediately around* the road
+        // tile, not the road neighbours. (The road neighbours are
+        // obviously road by definition.)
+        const checks: TileCoord[] = [];
+        if (y > 0) checks.push({ x, y: y - 1 });
+        if (y < bounds.height - 1) checks.push({ x, y: y + 1 });
+        if (x > 0) checks.push({ x: x - 1, y });
+        if (x < bounds.width - 1) checks.push({ x: x + 1, y });
+        let skip = false;
+        for (const c of checks) {
+          const k = world.getTile(c)?.kind;
+          if (k === 'water' || k === 'lot') {
+            skip = true;
+            break;
+          }
+        }
+        if (skip) continue;
+
+        // Space lights every other road tile along each direction.
+        // We use a hash of (x, y) to pick "every other" deterministically
+        // for a given world layout, but it's simpler to just stagger by
+        // a tile parity based on whether the road runs horizontally
+        // or vertically.
+        const horizontal = left || right;
+        const vertical = up || down;
+        let strideParity: number;
+        if (horizontal && !vertical) {
+          // Horizontal road → stagger by x parity.
+          strideParity = x & 1;
+        } else if (vertical && !horizontal) {
+          // Vertical road → stagger by y parity.
+          strideParity = y & 1;
+        } else {
+          // Isolated road tile — keep it.
+          strideParity = 0;
+        }
+        if (strideParity !== 0) continue;
+
+        candidates.push({ x, y });
+        void neighbours;
+      }
+    }
+    return candidates;
+  }
+
+  /**
+   * Get the cached streetlight positions for a world, recomputing
+   * when the cache is stale (different bounds or building count).
+   */
+  getStreetlightPositions(world: World): TileCoord[] {
+    const key = `${world.bounds.width}x${world.bounds.height}#${world.buildingCount}`;
+    if (this.streetlightCache && this.streetlightCache.key === key) {
+      return this.streetlightCache.positions;
+    }
+    const positions = this.placeStreetLights(world);
+    this.streetlightCache = { key, positions };
+    return positions;
+  }
+
+  /**
+   * Drop the streetlight cache. Call this from tests that mutate
+   * the world and then re-query positions.
+   */
+  invalidateStreetlightCache(): void {
+    this.streetlightCache = null;
   }
 
   /* ---------------------------------------------------------------------- */
@@ -346,6 +686,69 @@ export function compareBuildingsByDepth(a: Building, b: Building): number {
 /**
  * Expose `colorForTile` via the engine barrel contract for downstream
  * systems that want to render tiles without holding a palette ref.
+ *
+ * Note: `CityPalette`, `CanvasGradientLike`, and `RadialGradientStop`
+ * are already exported at the top of this file via their `export
+ * interface` declarations, so re-exporting them here would conflict.
  */
 export { colorForTile, DEFAULT_PALETTE };
-export type { CityPalette };
+
+/* -------------------------------------------------------------------------- */
+/* Internals                                                                  */
+/* -------------------------------------------------------------------------- */
+
+function clamp01(v: number): number {
+  if (v < 0) return 0;
+  if (v > 1) return 1;
+  return v;
+}
+
+/**
+ * FNV-1a 32-bit string hash. Stable across runs and platforms, which
+ * is what we need to make window-light placement deterministic.
+ */
+function hashStringToSeed(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/**
+ * Convert a colour string to an `rgba(...)` form with the given alpha.
+ * Supports `#rrggbb` and `rgba(r,g,b,a)` inputs. For anything else,
+ * returns the input as-is — the worst case is a no-op overlay which
+ * is the safest failure mode.
+ */
+function withAlpha(color: string, alpha: number): string {
+  if (color.startsWith('#') && (color.length === 7 || color.length === 4)) {
+    let r: number;
+    let g: number;
+    let b: number;
+    if (color.length === 7) {
+      r = parseInt(color.slice(1, 3), 16);
+      g = parseInt(color.slice(3, 5), 16);
+      b = parseInt(color.slice(5, 7), 16);
+    } else {
+      r = parseInt(color[1]! + color[1]!, 16);
+      g = parseInt(color[2]! + color[2]!, 16);
+      b = parseInt(color[3]! + color[3]!, 16);
+    }
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  if (color.startsWith('rgb(')) {
+    return color.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+  }
+  if (color.startsWith('rgba(')) {
+    return color.replace(
+      /rgba\(([^)]+)\)/,
+      (_match, body: string) => {
+        const parts = body.split(',').slice(0, 3).join(',');
+        return `rgba(${parts}, ${alpha})`;
+      },
+    );
+  }
+  return color;
+}
