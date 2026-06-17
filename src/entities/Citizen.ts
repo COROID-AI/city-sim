@@ -81,6 +81,11 @@ export function activityToState(activity: Activity): CitizenState {
       return 'leisure';
     case 'errand':
       return 'shopping';
+    default: {
+      // Ensures exhaustive handling if Activity is extended.
+      const _exhaustive: never = activity;
+      return _exhaustive;
+    }
   }
 }
 
