@@ -5,7 +5,7 @@
  * or the `World` class.
  */
 
-import type { Citizen, CitizenState, Vector2, Schedule, Activity } from '@/engine/types';
+import type { Citizen, CitizenState, Vector2, Activity, Schedule } from '@/engine/types';
 
 // Citizen schedule constants are part of the public API and are imported
 // by systems/tests. They are intentionally defined here (not in systems)
