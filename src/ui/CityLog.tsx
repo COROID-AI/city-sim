@@ -1,25 +1,8 @@
 'use client';
 
-/**
- * CityLog — read-only tail of the most recent SimEvents that the
- * player can read while the city is running. The component owns no
- * state of its own; it subscribes to the EventBus in `useSimUi()`
- * and caps the visible entries at 20 (FIFO) so the DOM stays small
- * even on long sessions.
- *
- * Layer rule: this is a React component, allowed to import from
- * React, `src/ui/SimUiContext`, `src/systems/EventBus`, and
- * `src/systems/SimEvents`. It must NOT be imported by `src/systems/`
- * or `src/engine/`.
- */
-
 import { useEffect, useState } from 'react';
 import { useSimUi } from '@/ui/SimUiContext';
-import type { SimEventName, SimEventMap } from '@/systems/SimEvents';
-
-/* ---------------------------------------------------------------- *
- *  Visual constants
- * ---------------------------------------------------------------- */
+import type { SimEventMap, SimEventName } from '@/systems/SimEvents';
 
 const containerStyle: React.CSSProperties = {
   position: 'absolute',
@@ -97,10 +80,6 @@ const summaryStyle: React.CSSProperties = {
   maxWidth: 180,
 };
 
-/* ---------------------------------------------------------------- *
- *  Event decoration
- * ---------------------------------------------------------------- */
-
 const EVENT_LABEL: Record<SimEventName, string> = {
   arrival: 'Arrival',
   company_open: 'Opened',
@@ -121,15 +100,11 @@ const EVENT_DOT_COLOR: Record<SimEventName, string> = {
   citizen_fired: '#fbbf24',
 };
 
-/* ---------------------------------------------------------------- *
- *  Row shape and summarizer
- * ---------------------------------------------------------------- */
-
-interface LogRow {
+type LogRow<K extends SimEventName = SimEventName> = {
   readonly id: number;
-  readonly kind: SimEventName;
-  readonly payload: SimEventMap[SimEventName];
-}
+  readonly kind: K;
+  readonly payload: SimEventMap[K];
+};
 
 let nextId = 0;
 function nextRowId(): number {
@@ -138,45 +113,57 @@ function nextRowId(): number {
 }
 
 function summarize(kind: SimEventName, payload: SimEventMap[SimEventName]): string {
-  // Each branch narrows on the union member.
   switch (kind) {
-    case 'arrival':
-      return `${payload.citizenId} → ${payload.buildingId}`;
+    // Exhaustive switch: all SimEventName variants are covered.
+    default: {
+      const _never: never = kind;
+      return String(_never);
+    }
+    case 'arrival': {
+      const p = payload as SimEventMap['arrival'];
+      return `${p.citizenId} → ${p.buildingId}`;
+    }
     case 'company_open':
-    case 'company_close':
-      return `${payload.name} (day ${payload.day})`;
-    case 'traffic_jam':
-      return `severity ${payload.severity}`;
-    case 'new_day':
-      return `treasury ${payload.treasury}`;
+    case 'company_close': {
+      const p = payload as SimEventMap['company_open'];
+      return `${p.name} (day ${p.day})`;
+    }
+    case 'traffic_jam': {
+      const p = payload as SimEventMap['traffic_jam'];
+      return `severity ${p.severity}`;
+    }
+    case 'new_day': {
+      const p = payload as SimEventMap['new_day'];
+      return `treasury ${p.treasury}`;
+    }
     case 'citizen_hired':
-    case 'citizen_fired':
-      return `${payload.citizenId} @ ${payload.buildingId}`;
-    default:
-      return '';
+    case 'citizen_fired': {
+      const p = payload as SimEventMap['citizen_hired'];
+      return `${p.citizenId} @ ${p.buildingId}`;
+    }
   }
 }
 
-/* ---------------------------------------------------------------- *
- *  Component
- * ---------------------------------------------------------------- */
-
-export function CityLog(): JSX.Element {
+export function CityLog(): React.ReactElement {
   const { bus } = useSimUi();
   const [entries, setEntries] = useState<readonly LogRow[]>([]);
 
   useEffect(() => {
     if (!bus) return undefined;
+
     const MAX_ENTRIES = 20;
-    const onAny = (kind: SimEventName, payload: SimEventMap[SimEventName]): void => {
+
+    const onAny = <K extends SimEventName>(kind: K, payload: SimEventMap[K]): void => {
       setEntries((prev) => {
-        const next: LogRow[] = [{ id: nextRowId(), kind, payload }, ...prev];
+        const next: LogRow<K>[] = [{ id: nextRowId(), kind, payload }, ...prev] as LogRow<K>[];
         return next.length > MAX_ENTRIES ? next.slice(0, MAX_ENTRIES) : next;
       });
     };
-    const offs: Array<() => void> = (Object.keys(EVENT_LABEL) as SimEventName[]).map((k) =>
-      bus.on(k, (payload) => onAny(k, payload)),
+
+    const offs = (Object.keys(EVENT_LABEL) as SimEventName[]).map((k) =>
+      bus.on(k, (payload) => onAny(k, payload as SimEventMap[typeof k])),
     );
+
     return () => {
       for (const off of offs) off();
     };

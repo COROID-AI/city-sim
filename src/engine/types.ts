@@ -209,3 +209,11 @@ export interface WorldBounds {
   readonly width: number;
   readonly height: number;
 }
+
+// Re-export RoadGraph for tests and consumers that import from the engine type barrel.
+export type { RoadGraph, RoadWorldView, OrphanReport } from '@/entities/Road';
+
+// Preserve backwards-compatibility with older test/consumer imports.
+// `TileCoord` is defined in the core geometry section of this file.
+export type { TileCoord };
+

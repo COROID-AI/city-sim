@@ -30,7 +30,11 @@ module.exports = {
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
-  },
+    '^@/engine/utils$': '<rootDir>/src/engine/utils.ts',
+    '^@/engine/types$': '<rootDir>/src/engine/types.ts',
+    '^@/engine/(.*)$': '<rootDir>/src/engine/$1',
+    '^@/ui/(.*)$': '<rootDir>/src/ui/$1',
+  }
   transform: {
     '^.+\\.(ts|tsx)$': [
       'ts-jest',

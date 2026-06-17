@@ -92,7 +92,7 @@ function computeRect(
   };
 }
 
-export function MiniMap(): JSX.Element {
+export function MiniMap(): React.ReactElement {
   const { world, camera } = useSimUi();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // Cached "static" tile+building layer. Re-stamped only when

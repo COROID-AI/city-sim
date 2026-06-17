@@ -129,7 +129,7 @@ function DeltaChip({ delta }: { delta: number }): JSX.Element {
  * Dashboard component — call it with no props; it pulls all state
  * from the SimUiContext.
  */
-export function Dashboard(): JSX.Element {
+export function Dashboard(): React.ReactElement {
   const handles = useSimUi();
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const prevTreasuryRef = useState<{ value: number | null }>({ value: null })[0];

@@ -19,7 +19,8 @@
     "paths": {
       "@/*": ["src/*"]
     },
-    "types": ["node", "jest"]
+    "jsx": "react-jsx",
+    "types": ["node", "jest", "@testing-library/jest-dom", "react", "react-dom"]
   },
   "include": ["src/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist", ".next", "out"]

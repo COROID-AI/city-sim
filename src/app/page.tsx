@@ -44,7 +44,7 @@ import { MiniMap } from '@/ui/MiniMap';
 import { SimUiContext, type SimUiHandles } from '@/ui/SimUiContext';
 import { createCitizen, type Citizen } from '@/entities/Citizen';
 
-export default function CitySimPage(): JSX.Element {
+export default function CitySimPage(): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // Hold the active loop and renderer across renders so the effect
   // cleanup can stop / dispose them.
