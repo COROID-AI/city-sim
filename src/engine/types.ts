@@ -107,6 +107,27 @@ export type CitizenState =
   | 'resting'
   | 'leisure';
 
+/**
+ * Higher-level schedule activity vocabulary used by the citizen activity
+ * picker.
+ */
+export type Activity =
+  | 'sleeping'
+  | 'commuting'
+  | 'working'
+  | 'errand'
+  | 'leisure';
+
+export interface ScheduleBlock {
+  readonly start: number;
+  readonly end: number;
+}
+
+export interface Schedule {
+  readonly work: ScheduleBlock | null;
+  readonly id: string;
+}
+
 export interface Citizen {
   readonly id: string;
   /** Display name. */
@@ -212,8 +233,3 @@ export interface WorldBounds {
 
 // Re-export RoadGraph for tests and consumers that import from the engine type barrel.
 export type { RoadGraph, RoadWorldView, OrphanReport } from '@/entities/Road';
-
-// Preserve backwards-compatibility with older test/consumer imports.
-// `TileCoord` is defined in the core geometry section of this file.
-export type { TileCoord };
-

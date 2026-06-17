@@ -115,10 +115,9 @@ function nextRowId(): number {
 function summarize(kind: SimEventName, payload: SimEventMap[SimEventName]): string {
   switch (kind) {
     // Exhaustive switch: all SimEventName variants are covered.
-    default: {
-      const _never: never = kind;
-      return String(_never);
-    }
+    default:
+      // Should never happen because EVENT_LABEL and SimEventName are in sync.
+      return String(kind);
     case 'arrival': {
       const p = payload as SimEventMap['arrival'];
       return `${p.citizenId} → ${p.buildingId}`;

@@ -6,6 +6,21 @@
  */
 
 import type { Citizen, CitizenState, Vector2, Schedule, Activity } from '@/engine/types';
+
+// Citizen schedule constants are part of the public API and are imported
+// by systems/tests. They are intentionally defined here (not in systems)
+// so the citizen activity picker stays the single source of truth.
+export const SLEEP_START_HOUR = 22;
+export const SLEEP_END_HOUR = 6;
+export const MORNING_COMMUTE_START = 7;
+export const MORNING_COMMUTE_END = 9;
+export const EVENING_COMMUTE_START = 17;
+export const EVENING_COMMUTE_END = 19;
+export const EVENING_LEISURE_START = 19;
+export const UNEMPLOYED_ERRAND_START = 10;
+export const UNEMPLOYED_ERRAND_END = 13;
+export const UNEMPLOYED_LEISURE_START = 13;
+export const UNEMPLOYED_LEISURE_END = 20;
 import { clamp01 } from '@/engine/utils';
 
 export interface CreateCitizenOptions {
@@ -26,6 +41,10 @@ export interface CreateCitizenOptions {
 }
 
 export function createCitizen(options: CreateCitizenOptions): Citizen {
+  if (options == null) {
+    throw new RangeError('createCitizen: options is required');
+  }
+
   return {
     id: options.id,
     name: options.name ?? options.id,
@@ -65,6 +84,13 @@ export function activityToState(activity: Activity): CitizenState {
   }
 }
 
+// Re-export the Citizen shape type for consumers/tests.
+export type { Citizen } from '@/engine/types';
+
+// Re-export Activity so callers can reference it as `entities/Citizen`.
+export type { Activity } from '@/engine/types';
+
+
 export function pickActivityFor(
   hour: number,
   isEmployed: boolean,
@@ -73,21 +99,34 @@ export function pickActivityFor(
   if (!Number.isFinite(hour)) throw new RangeError(`pickActivityFor: hour must be a finite number (got ${hour})`);
   const h = ((hour % 24) + 24) % 24;
 
-  // schedule is expected to have either a work window or be empty.
-  if (isEmployed) {
-    // Work window overlaps schedule.work.{start,end}
-    const work = schedule.work;
-    if (work && h >= work.start && h < work.end) return 'working';
-
-    // Simple fallback life cycle.
-    if (h >= 6 && h < 9) return 'commuting';
-    if (h >= 17 && h < 20) return 'commuting';
-    if (h >= 20 || h < 6) return 'sleeping';
-    return 'leisure';
+  // Unemployed: use the published constants + wrap-safe comparisons.
+  if (!isEmployed) {
+    if (isWithinWindow(h, SLEEP_START_HOUR, SLEEP_END_HOUR)) return 'sleeping';
+    if (h >= UNEMPLOYED_ERRAND_START && h < UNEMPLOYED_ERRAND_END) return 'errand';
+    if (h >= UNEMPLOYED_LEISURE_START && h < UNEMPLOYED_LEISURE_END) return 'leisure';
+    // Remaining hours after the constant windows.
+    return 'sleeping';
   }
 
-  // Unemployed: midday errand slot + leisure evenings.
-  if (h >= 10 && h < 13) return 'errand';
-  if (h >= 20 || h < 6) return 'sleeping';
+  // Employed: work overrides other activities in its block.
+  const work = schedule.work;
+  if (work && h >= work.start && h < work.end) return 'working';
+
+  // Commute windows.
+  if (h >= MORNING_COMMUTE_START && h < MORNING_COMMUTE_END) return 'commuting';
+  if (h >= EVENING_COMMUTE_START && h < EVENING_COMMUTE_END) return 'commuting';
+
+  // Sleep window wraps midnight.
+  if (isWithinWindow(h, SLEEP_START_HOUR, SLEEP_END_HOUR)) return 'sleeping';
+
+  // Leisure during the remaining day.
   return 'leisure';
+}
+
+function isWithinWindow(hour: number, startHour: number, endHour: number): boolean {
+  const h = hour;
+  // If end is > start: normal window [start, end).
+  if (endHour > startHour) return h >= startHour && h < endHour;
+  // Otherwise window wraps midnight: [start, 24) ∪ [0, end).
+  return h >= startHour || h < endHour;
 }

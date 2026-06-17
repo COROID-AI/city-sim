@@ -103,7 +103,8 @@ function formatDelta(delta: number): string {
  * follows the dark HUD aesthetic without hardcoding colors that
  * should live in the palette.
  */
-function DeltaChip({ delta }: { delta: number }): JSX.Element {
+function DeltaChip({ delta }: { delta: number }): React.ReactElement {
+
   const color = delta > 0
     ? 'var(--accent, #3aa0ff)'
     : delta < 0
