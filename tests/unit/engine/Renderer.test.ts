@@ -81,7 +81,9 @@ class FakeCanvasContext implements RendererContext {
   rect(): void {/* no-op */}
   fill(): void {/* no-op */}
   stroke(): void {/* no-op */}
-  drawImage(image: CanvasImageSource, x: number, y: number): void {
+  drawImage(image: CanvasImageSource, x: number, y: number, w?: number, h?: number): void {
+    void w;
+    void h;
     this.drawImageCalls.push({ x, y, image });
   }
   set fillStyle(v: string) { this.currentFillStyle = v; }

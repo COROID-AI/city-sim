@@ -41,8 +41,8 @@ const TILE_COLOR: Readonly<Record<TileKind, string>> = {
   ground: '#1c2536',
   road: '#3a4658',
   water: '#1e4f7a',
-  park: '#2f6f4a',
-  lot: '#2a3140',
+  park: '#5a9e6f',
+  lot: '#e2e6ec',
 };
 
 const BUILDING_COLOR = '#4a5b78';

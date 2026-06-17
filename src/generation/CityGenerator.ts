@@ -98,6 +98,7 @@ export class CityGenerator {
     const world = new World(bounds);
     const zones = computeZoneLayout(bounds);
     const roads = buildRoadNetwork(world, zones);
+    paintZoneTiles(world, zones);
     const names = new NameGenerator(rng);
     const placer = new BuildingPlacer(world, rng, names);
     const buildings = placer.placeInZones(zones, { density: options.density });
@@ -212,6 +213,24 @@ export function readCityBenchmark(): CityBenchmark | null {
 function pickRandom<T>(items: readonly T[], rng: Rng): T | null {
   if (items.length === 0) return null;
   return rng.pick(items);
+}
+
+/**
+ * Paint zone interiors as developable lots (or park greenery). Road
+ * tiles painted by `buildRoadNetwork` are left untouched.
+ */
+function paintZoneTiles(world: World, zones: readonly Zone[]): void {
+  for (const zone of zones) {
+    const kind = zone.kind === 'park' ? 'park' : 'lot';
+    for (let y = zone.origin.y; y <= zone.end.y; y++) {
+      for (let x = zone.origin.x; x <= zone.end.x; x++) {
+        const tile = world.getTile({ x, y });
+        if (tile?.kind === 'ground') {
+          world.setTile({ x, y }, kind);
+        }
+      }
+    }
+  }
 }
 
 // Re-export the road collector so callers can re-derive the road set

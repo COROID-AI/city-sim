@@ -77,7 +77,13 @@ export interface RendererContext {
   rect(x: number, y: number, w: number, h: number): void;
   fill(): void;
   stroke(): void;
-  drawImage(image: CanvasImageSource, x: number, y: number): void;
+  drawImage(
+    image: CanvasImageSource,
+    x: number,
+    y: number,
+    w?: number,
+    h?: number,
+  ): void;
   /** Optional. When present, used by the night overlay. */
   createRadialGradient?(
     x0: number,
@@ -518,14 +524,22 @@ export class Renderer {
       for (let x = x0; x < x1; x++) {
         const tile: Tile | null = world.getTile({ x, y });
         if (!tile) continue;
-        if (tile.kind !== 'ground') continue;
-        if (groundSprite) {
-          this.drawSpriteSafe(ctx, groundSprite, x, y);
+        if (tile.kind === 'road') continue;
+        const spriteForKind =
+          tile.kind === 'ground'
+            ? groundSprite
+            : this.sprites?.[tile.kind] ?? null;
+        if (spriteForKind) {
+          this.drawSpriteSafe(ctx, spriteForKind, x, y);
         } else {
-          // Subtle variation so flat ground reads as terrain, not as a
-          // single flat color. Checker by tile parity.
-          const alt = (x + y) & 1;
-          ctx.fillStyle = alt ? this.palette.groundAlt : this.palette.ground;
+          if (tile.kind === 'ground') {
+            // Subtle variation so flat ground reads as terrain, not as a
+            // single flat color. Checker by tile parity.
+            const alt = (x + y) & 1;
+            ctx.fillStyle = alt ? this.palette.groundAlt : this.palette.ground;
+          } else {
+            ctx.fillStyle = colorForTile(this.palette, tile.kind);
+          }
           this.fillTile(ctx, x, y);
         }
       }
@@ -935,7 +949,8 @@ export class Renderer {
     y: number,
   ): void {
     try {
-      ctx.drawImage(image, x, y);
+      // One world tile = 1×1 in the current transform (scaled by tilePixels).
+      ctx.drawImage(image, x, y, 1, 1);
     } catch {
       // Swallow: image not yet ready / tainted / unsupported source.
     }

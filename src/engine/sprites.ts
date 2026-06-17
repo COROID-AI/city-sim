@@ -80,8 +80,10 @@ export function tryLoadSprites(base: string = SPRITE_BASE): SpriteAtlas {
       img.decoding = 'async';
       // Attach handlers BEFORE assigning src so we never miss the event.
       img.onload = () => {
-        // Only stamp the slot on success; failures keep the null.
-        atlas[key] = img;
+        // Reject zero-dimension decodes (broken files, HTML SPA fallbacks).
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          atlas[key] = img;
+        }
       };
       img.onerror = () => {
         // Leave the slot null. Renderer falls back to procedural rects.

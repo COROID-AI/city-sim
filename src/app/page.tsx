@@ -27,22 +27,27 @@ import {
   GameLoop,
   Renderer,
   TILE_PIXELS,
-  tryLoadSprites,
   World,
 } from '@/engine';
 import {
   EconomySystem,
   EventBus,
+  MovementSystem,
+  NeedSystem,
   TimeSystem,
+  DEFAULT_REAL_TO_SIM_RATIO,
   type SimEventMap,
 } from '@/systems';
+import type { Schedule } from '@/systems/ScheduleGenerator';
+import { CityGenerator } from '@/generation';
 import { TimeControls } from '@/ui/TimeControls';
 import { Tooltip } from '@/ui/Tooltip';
 import { Dashboard } from '@/ui/Dashboard';
 import { CityLog } from '@/ui/CityLog';
 import { MiniMap } from '@/ui/MiniMap';
 import { SimUiContext, type SimUiHandles } from '@/ui/SimUiContext';
-import { createCitizen, type Citizen } from '@/entities/Citizen';
+import type { Citizen } from '@/entities/Citizen';
+import type { Vector2 } from '@/engine/types';
 
 export default function CitySimPage(): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -140,16 +145,20 @@ export default function CitySimPage(): React.ReactElement {
     resize();
     window.addEventListener('resize', resize);
 
-    // Build the world, camera, renderer, and time system. In a real
-    // game this is where you'd seed the generator and load save data.
-    const world = new World({ width: 64, height: 64 });
+    // Generate a full procedural city (roads, zones, buildings, citizens).
+    const city = new CityGenerator().generate({ seed: 42 });
+    const world = city.world;
     worldRef.current = world;
     const camera = new Camera(world.bounds);
     camera.setViewport(window.innerWidth, window.innerHeight);
-    const sprites = tryLoadSprites();
-    const renderer = new Renderer({ tilePixels: TILE_PIXELS, sprites });
+    camera.panTo(world.bounds.width / 2, world.bounds.height / 2);
+    const renderer = new Renderer({ tilePixels: TILE_PIXELS });
     const time = new TimeSystem();
     timeRef.current = time;
+
+    const movement = new MovementSystem();
+    const needSystem = new NeedSystem();
+    const schedules = city.schedules;
 
     // EventBus + EconomySystem. The bus is the single integration
     // point between the sim and the React UI: producers (economy,
@@ -164,14 +173,8 @@ export default function CitySimPage(): React.ReactElement {
     simBusRef.current = simBus;
     economyRef.current = economy;
 
-    // Seed a few citizens so the hover / tooltip demo has something
-    // to hit. Real cities will populate the world via CityGenerator.
-    const demoCitizens: Citizen[] = [
-      createCitizen({ id: 'c-1', name: 'Alex Chen', position: { x: 10, y: 10 } }),
-      createCitizen({ id: 'c-2', name: 'Pat Rivera', position: { x: 12, y: 10 } }),
-      createCitizen({ id: 'c-3', name: 'Sam Patel', position: { x: 14, y: 10 } }),
-    ];
-    for (const c of demoCitizens) world.addCitizen(c);
+    // Seed commute targets from citizen schedules.
+    updateCommuteTargets(world, movement, schedules, time.getTime().hour);
     cameraRef.current = camera;
     // Sync initial HUD state.
     setPaused(time.isPaused());
@@ -186,12 +189,13 @@ export default function CitySimPage(): React.ReactElement {
     let lastHudUpdate = 0;
     loop.setFixedStepCallback((dt: number) => {
       time.tick(dt);
-      // The economy rolls over on day change. `tick(day, hour)` is
-      // idempotent for the same day, so it's safe to call on every
-      // fixed step. We do not emit `new_day` on the very first tick
-      // before any time has elapsed (day stays at 1 on tick 0).
       const t = time.getTime();
+      const simSeconds = dt * time.getSpeed() * DEFAULT_REAL_TO_SIM_RATIO;
+      const simHours = simSeconds / 3600;
       economy.tick(t.day, t.hour);
+      needSystem.tick(world, simHours, schedules, t.hour);
+      updateCommuteTargets(world, movement, schedules, t.hour);
+      movement.update(world, simSeconds);
     });
     loop.setFrameCallback((realDt: number) => {
       camera.update(realDt);
@@ -268,7 +272,7 @@ export default function CitySimPage(): React.ReactElement {
       time: timeRef.current,
       economy: economyRef.current,
       bus: simBusRef.current,
-      cityName: 'New City',
+      cityName: 'Coroid City',
     }),
     // Re-derive after the mount effect has run by depending on the
     // refs themselves. They are stable objects once populated; the
@@ -345,6 +349,44 @@ function pickCitizenAtScreen(
     }
   }
   return best;
+}
+
+function buildingCenter(
+  world: { getBuilding(id: string): { origin: { x: number; y: number }; size: { width: number; height: number } } | null },
+  buildingId: string | null,
+): Vector2 | null {
+  if (!buildingId) return null;
+  const b = world.getBuilding(buildingId);
+  if (!b) return null;
+  return {
+    x: b.origin.x + b.size.width / 2,
+    y: b.origin.y + b.size.height / 2,
+  };
+}
+
+function isInWorkBlock(hour: number, schedule: Schedule): boolean {
+  const work = schedule.work;
+  if (!work) return false;
+  return hour >= work.start && hour < work.end;
+}
+
+function updateCommuteTargets(
+  world: { citizens_(): IterableIterator<Citizen>; getBuilding(id: string): { origin: { x: number; y: number }; size: { width: number; height: number } } | null },
+  movement: MovementSystem,
+  schedules: ReadonlyMap<string, Schedule>,
+  hour: number,
+): void {
+  for (const citizen of world.citizens_()) {
+    const schedule = schedules.get(citizen.id);
+    const atWork = schedule ? isInWorkBlock(hour, schedule) : false;
+    const destId = atWork ? citizen.workId : citizen.homeId;
+    const target = buildingCenter(world, destId);
+    if (target) {
+      movement.setTarget(citizen, target.x, target.y);
+    } else {
+      movement.clearTarget(citizen);
+    }
+  }
 }
 
 // `FIXED_DT` is re-exported via `@/engine`; importing it here keeps
