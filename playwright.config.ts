@@ -1,7 +1,7 @@
 /**
  * Playwright config for the city-sim end-to-end smoke test.
  *
- * The smoke spec (`tests/e2e/city-smoke.spec.ts`) boots the Next.js
+ * The smoke spec (`tests/e2e/city-smoke.spec.ts`) boots the Vite
  * dev server, clicks the canvas five times, waits 30 s, then asserts
  * that the CityLog overlay has rendered at least 5 entries and that
  * no console errors fired during the run.
@@ -40,9 +40,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // Boots `next dev` so the page renders the live simulation. If
-    // a static export is preferred, swap to `npx http-server out -p ${PORT}`.
-    command: `npx next dev -p ${PORT}`,
+    command: `npm run dev -- --port ${PORT}`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     stdout: 'pipe',
