@@ -22,7 +22,11 @@ export type AppErrorCode =
   | 'INVALID_RECOMMENDATION_SCORE'
   | 'INVALID_RECOMMENDATION_CONFIDENCE'
   | 'INVALID_RECOMMENDATION_SURFACE'
-  | 'RECOMMENDATION_NOT_FOUND';
+  | 'RECOMMENDATION_NOT_FOUND'
+  // Recommendation review lifecycle codes (additive).
+  | 'INVALID_REVIEW_STATUS'
+  | 'INVALID_REVIEW_TRANSITION'
+  | 'REVIEW_NOT_FOUND';
 
 export class AppError extends Error {
   public readonly code: AppErrorCode;
