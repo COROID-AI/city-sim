@@ -26,7 +26,14 @@ export type AppErrorCode =
   // Recommendation review lifecycle codes (additive).
   | 'INVALID_REVIEW_STATUS'
   | 'INVALID_REVIEW_TRANSITION'
-  | 'REVIEW_NOT_FOUND';
+  | 'REVIEW_NOT_FOUND'
+  // Implementation phase lifecycle codes (additive).
+  | 'INVALID_PHASE'
+  | 'INVALID_PHASE_STATUS'
+  | 'INVALID_PHASE_TRANSITION'
+  | 'INVALID_PHASE_TASK'
+  | 'DUPLICATE_PHASE'
+  | 'PHASE_NOT_FOUND';
 
 export class AppError extends Error {
   public readonly code: AppErrorCode;
