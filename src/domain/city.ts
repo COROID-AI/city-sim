@@ -1,3 +1,5 @@
+import type { Recommendation } from './recommendation.js';
+
 export type MetricKey =
   | 'safety'
   | 'walkability'
@@ -13,7 +15,14 @@ export type AppErrorCode =
   | 'INVALID_OPPORTUNITY_STATUS'
   | 'OPPORTUNITY_NOT_FOUND'
   | 'OPPORTUNITY_ALREADY_ACCEPTED'
-  | 'CITY_INVALID_STATE';
+  | 'CITY_INVALID_STATE'
+  // Recommendation validation / lifecycle codes (additive).
+  | 'INVALID_RECOMMENDATION'
+  | 'INVALID_RECOMMENDATION_EVIDENCE'
+  | 'INVALID_RECOMMENDATION_SCORE'
+  | 'INVALID_RECOMMENDATION_CONFIDENCE'
+  | 'INVALID_RECOMMENDATION_SURFACE'
+  | 'RECOMMENDATION_NOT_FOUND';
 
 export class AppError extends Error {
   public readonly code: AppErrorCode;
@@ -35,6 +44,9 @@ export type Opportunity = Readonly<{
   status: OpportunityStatus;
   // Downstream tasks may add more fields; keep contract additive.
   metrics?: Partial<Record<MetricKey, number>>;
+  // Optional repository-backed recommendation. Backwards compatible:
+  // existing Opportunity values without this field remain valid.
+  recommendation?: Recommendation;
 }>;
 
 export type City = Readonly<{
