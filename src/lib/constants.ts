@@ -10,3 +10,6 @@ export const GRID_SIZE = 80;
 
 /** Total number of tiles in the grid (GRID_SIZE * GRID_SIZE). */
 export const TOTAL_TILES = GRID_SIZE * GRID_SIZE;
+
+/** Pixel size of a single tile when rendered to canvas (spec 3.2). */
+export const TILE_SIZE = 16;

@@ -19,5 +19,8 @@ export {
   FPS_LOG_INTERVAL,
 } from './GameLoop';
 
+export { Grid } from './Grid';
+export type { Tile, TileType } from './Grid';
+
 // Placeholder kept for backward compatibility with the scaffold test.
 export const ENGINE_READY = true;
