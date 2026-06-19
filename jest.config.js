@@ -16,14 +16,12 @@ module.exports = {
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['html', 'lcov', 'text', 'text-summary'],
+  // Global threshold: passes vacuously (0/0) while src/engine and src/systems
+  // are empty, and enforces >=80% once those modules land. Per-glob thresholds
+  // (e.g. './src/engine/') fail in Jest 29 when a glob matches no files
+  // ("Coverage data ... was not found"), so the global key is used instead.
   coverageThreshold: {
-    './src/engine/': {
-      branches: 80,
-      functions: 80,
-      lines: 80,
-      statements: 80,
-    },
-    './src/systems/': {
+    global: {
       branches: 80,
       functions: 80,
       lines: 80,
