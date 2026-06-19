@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import '../globals.css';
 
 export const metadata: Metadata = {
-  title: 'City Sim',
+  title: 'Coroid City',
   description: 'Browser-based city simulation',
 };
 
