@@ -16,6 +16,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
+    "types": ["@testing-library/jest-dom", "jest", "node"],
     "incremental": true,
     "baseUrl": ".",
     "paths": {
