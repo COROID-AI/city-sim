@@ -3,7 +3,13 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
   roots: ['<rootDir>/src'],
-  testMatch: ['<rootDir>/src/**/__tests__/**/*.test.ts?(x)'],
+  // Acceptance criterion: src/**/__tests__/**/*.test.ts(x).
+  // Also include colocated per-module .test.ts files (spec 9.1) so every
+  // engine/system module ships its unit test next to the source.
+  testMatch: [
+    '<rootDir>/src/**/__tests__/**/*.test.ts?(x)',
+    '<rootDir>/src/**/*.{test,spec}.ts?(x)',
+  ],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
@@ -13,14 +19,28 @@ module.exports = {
     'src/engine/**/*.{ts,tsx}',
     'src/systems/**/*.{ts,tsx}',
     '!src/**/*.d.ts',
+    '!src/**/*.{test,spec}.{ts,tsx}',
+    '!src/**/__tests__/**',
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['html', 'lcov', 'text', 'text-summary'],
-  // Global threshold: passes vacuously (0/0) while src/engine and src/systems
-  // are empty, and enforces >=80% once those modules land. Per-glob thresholds
-  // (e.g. './src/engine/') fail in Jest 29 when a glob matches no files
-  // ("Coverage data ... was not found"), so the global key is used instead.
+  // Per-glob thresholds enforce >=80% coverage for the engine and systems
+  // modules (spec: >=80% gate for src/engine/** and src/systems/**). Each
+  // directory ships a placeholder module + colocated test so the globs resolve
+  // to instrumented files and the threshold is evaluated against real data.
   coverageThreshold: {
+    './src/engine/': {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    './src/systems/': {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
     global: {
       branches: 80,
       functions: 80,
