@@ -6,3 +6,9 @@ export type {
   ZoneBounds,
   ZoneType,
 } from './CityGenerator';
+
+export { placeBuildingsInZone, placeAllBuildings, NEIGHBORHOOD } from './BuildingPlacer';
+export type {
+  PlaceBuildingsInZoneOptions,
+  PlaceAllBuildingsOptions,
+} from './BuildingPlacer';

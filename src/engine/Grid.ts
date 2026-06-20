@@ -21,7 +21,8 @@ export type TileType =
   | 'commercial'
   | 'industrial'
   | 'entertainment'
-  | 'park';
+  | 'park'
+  | 'building';
 
 /** A single tile in the grid. Carries its own (x,y) coordinates. */
 export interface Tile {
