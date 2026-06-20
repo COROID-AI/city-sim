@@ -20,6 +20,10 @@ export {
 } from './GameLoop';
 
 export { Grid } from './Grid';
+
+// Re-export generation entrypoints for convenience.
+export { generateCity } from '../generation/CityGenerator';
+export type { CityGenerationResult, GeneratedZone, ZoneType } from '../generation/CityGenerator';
 export type { Tile, TileType } from './Grid';
 
 // Placeholder kept for backward compatibility with the scaffold test.
