@@ -21,6 +21,9 @@ export {
 
 export { Grid } from './Grid';
 
+export { Renderer, PALETTE } from './Renderer';
+export type { Camera } from './Renderer';
+
 // Re-export generation entrypoints for convenience.
 export { generateCity } from '../generation/CityGenerator';
 export type { CityGenerationResult, GeneratedZone, ZoneType } from '../generation/CityGenerator';
