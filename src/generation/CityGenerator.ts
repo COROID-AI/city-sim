@@ -3,10 +3,7 @@ import {
   DEFAULT_GRID_WIDTH,
   DEFAULT_SEED,
   EMPLOYMENT_ZONES,
-  MAIN_ROAD_INTERVAL,
   MAIN_ROAD_WIDTH,
-  SECONDARY_ROAD_INTERVAL,
-  SECONDARY_ROAD_WIDTH,
   STREET_LIGHT_INTERVAL,
   ZONE_BOUNDS,
   ZONE_TYPES,
@@ -19,7 +16,6 @@ import type {
   Building,
   Citizen,
   StreetLight,
-  TileType,
   Vehicle,
   ZoneBounds,
   ZoneType,
@@ -59,30 +55,8 @@ function makeZoneRecord(): Record<ZoneType, ZoneBounds> {
   };
 }
 
-function setZonesOnGrid(grid: Grid, zones: Record<ZoneType, ZoneBounds>): void {
-  for (const zoneType of ZONE_TYPES) {
-    const b = zones[zoneType];
-    for (let y = b.minY; y < b.maxY; y += 1) {
-      for (let x = b.minX; x < b.maxX; x += 1) {
-        // Don't tag roads/streets as zones.
-        const v = grid.getTile(x, y);
-        if (v === TileTypeEnum.Road) continue;
-        grid.setTile(x, y, grid.getTile(x, y) ?? 0);
-      }
-    }
-  }
-}
-
 function isRoad(grid: Grid, x: number, y: number): boolean {
   return grid.getTile(x, y) === TileTypeEnum.Road || grid.getTile(x, y) === (TileTypeEnum.Road | TileTypeEnum.StreetLight);
-}
-
-function getZoneAt(zones: Record<ZoneType, ZoneBounds>, x: number, y: number): ZoneType | undefined {
-  for (const z of ZONE_TYPES) {
-    const b = zones[z];
-    if (x >= b.minX && x < b.maxX && y >= b.minY && y < b.maxY) return z;
-  }
-  return undefined;
 }
 
 function computeBuildableCells(zones: Record<ZoneType, ZoneBounds>, grid: Grid): Array<{ x: number; y: number; zone: ZoneType }> {
@@ -186,8 +160,8 @@ function placeBuildingsInZone(grid: Grid, zones: Record<ZoneType, ZoneBounds>, r
   // Greedy: shuffle buildable cells by PRNG and try placing.
   for (let i = buildable.length - 1; i > 0; i -= 1) {
     const j = Math.floor(rand() * (i + 1));
-    const tmp = buildable[i]!;
-    buildable[i] = buildable[j]!;
+    const tmp = buildable[i] ?? buildable[0]!;
+    buildable[i] = buildable[j] ?? buildable[0]!;
     buildable[j] = tmp;
   }
 
@@ -334,7 +308,10 @@ function spawnVehicles(grid: Grid, rand: () => number): Vehicle[] {
   const roadTiles: Array<{ x: number; y: number }> = [];
   for (let y = 0; y < grid.height; y += 1) {
     for (let x = 0; x < grid.width; x += 1) {
-      if (grid.getTile(x, y) === TileTypeEnum.Road) roadTiles.push({ x, y });
+      const v = grid.getTile(x, y);
+      if (v === TileTypeEnum.Road || v === (TileTypeEnum.Road | TileTypeEnum.StreetLight)) {
+        roadTiles.push({ x, y });
+      }
     }
   }
 

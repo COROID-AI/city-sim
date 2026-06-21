@@ -51,15 +51,15 @@ describe('GameLoop', () => {
     // fixedDt = 50ms -> 100ms accumulates -> 2 updates
     expect(update).toHaveBeenCalledTimes(2);
 
-    const firstCtx = update.mock.calls[0]?.[0] as { fixedDtMs: number; elapsedMs: number }; 
+    const firstCtx = update.mock.calls[0]?.[0] as { fixedDtMs: number; elapsedMs: number } | undefined;
     expect(firstCtx).toBeDefined();
-    const secondCtx = update.mock.calls[1]?.[0] as { fixedDtMs: number; elapsedMs: number }; 
+    const secondCtx = update.mock.calls[1]?.[0] as { fixedDtMs: number; elapsedMs: number } | undefined;
     expect(secondCtx).toBeDefined();
 
-    expect(firstCtx.fixedDtMs).toBe(50);
-    expect(firstCtx.elapsedMs).toBe(50);
-    expect(secondCtx.fixedDtMs).toBe(50);
-    expect(secondCtx.elapsedMs).toBe(50);
+    expect(firstCtx!.fixedDtMs).toBe(50);
+    expect(firstCtx!.elapsedMs).toBe(50);
+    expect(secondCtx!.fixedDtMs).toBe(50);
+    expect(secondCtx!.elapsedMs).toBe(50);
   });
 
   it('renders every rAF tick even when no fixed update fires', () => {
