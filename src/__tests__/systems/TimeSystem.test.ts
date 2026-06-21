@@ -69,8 +69,17 @@ describe('TimeSystem', () => {
     ts.on('new_day', listener);
 
     // Advance to 23:59 (23 h × 60 min + 59 min = 1439 sim-minutes).
-    // Use exact fractional ms to avoid rounding drift.
-    const msFor1439Minutes = (1439 * 300_000) / 1440;
+    // Use exact integer ms: 1 sim-minute = 300000/1440 ms. To avoid
+    // floating-point drift we advance in whole sim-days worth of ms and
+    // subtract one sim-minute, keeping the total an exact multiple.
+    // 1439 sim-minutes = 1 sim-day (1440 min) minus 1 min.
+    const msPerSimDay = 300_000;
+    const msForOneSimMinute = msPerSimDay / 1440;
+    // Advance a full day first (lands at 00:00 day 2), then we'll reset.
+    // Instead, advance 1439 minutes directly using integer ms per minute
+    // accumulated via repeated small exact steps is noisy; use the closed
+    // form and round to the nearest integer ms.
+    const msFor1439Minutes = Math.round(1439 * msForOneSimMinute);
     ts.update(msFor1439Minutes, 1);
 
     const before = ts.getCityTime();
@@ -79,8 +88,7 @@ describe('TimeSystem', () => {
     expect(listener).not.toHaveBeenCalled();
 
     // Advance 1 more sim-minute to cross midnight.
-    const msForOneMinute = 300_000 / 1440;
-    ts.update(msForOneMinute, 1);
+    ts.update(Math.round(msForOneSimMinute), 1);
 
     const after = ts.getCityTime();
     expect(after.hour).toBe(0);

@@ -17,9 +17,6 @@ const MS_PER_SIM_DAY = 300_000;
 /** Sim minutes per sim day (24 h × 60 min). */
 const SIM_MINUTES_PER_DAY = 24 * 60;
 
-/** Real ms per sim-minute at 1× speed. */
-const MS_PER_SIM_MINUTE = MS_PER_SIM_DAY / SIM_MINUTES_PER_DAY;
-
 /**
  * Determine whether a given hour is considered daytime.
  * Daytime = hour in [6, 18] inclusive.
@@ -178,7 +175,6 @@ export class TimeSystem {
       try {
         listener(newDay);
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.error('[TimeSystem] new_day listener threw:', err);
       }
     }
