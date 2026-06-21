@@ -17,6 +17,25 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
+  // Explicit transform ensures .tsx files (JSX) are compiled correctly.
+  // ts-jest needs jsx: 'react-jsx' so it can transform JSX without an explicit
+  // React import (Next.js App Router uses the automatic JSX runtime).
+  transform: {
+    '^.+\\.(ts|tsx)$': [
+      'ts-jest',
+      {
+        tsconfig: {
+          jsx: 'react-jsx',
+          esModuleInterop: true,
+          module: 'commonjs',
+          target: 'ES2022',
+          moduleResolution: 'node',
+          skipLibCheck: true,
+          strict: true,
+        },
+      },
+    ],
+  },
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
