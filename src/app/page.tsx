@@ -1,23 +1,37 @@
 'use client';
 
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { TopBar } from '@/ui/TopBar';
 import { CityLog } from '@/ui/CityLog';
 import { TimeControls } from '@/ui/TimeControls';
 import { MiniMap } from '@/ui/MiniMap';
 import { Tooltip } from '@/ui/Tooltip';
+import { GameEngine } from '@/engine/GameEngine';
 
 /**
  * Home page — city simulation mount point.
  *
  * Per spec section 5.5, the <canvas> and the React UI overlay are decoupled:
- * the canvas ref is mounted here but is NOT driven by React state. The
- * downstream GameEngine task will grab `canvasRef.current` imperatively and
- * run its own rAF loop without touching React. Therefore this component uses
- * `useRef` only — no `useState`, `useEffect`, or `requestAnimationFrame`.
+ * the canvas is driven imperatively by the GameEngine via its own rAF loop,
+ * NOT by React state. A single useEffect boots the GameEngine on mount
+ * (generating the city + starting the render loop) and disposes it on unmount.
  */
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // Boot the engine: generates the city, creates camera/renderer/loop,
+    // and attaches pan/zoom input handlers. start() begins the rAF loop.
+    const engine = new GameEngine(canvas);
+    engine.start();
+
+    return () => {
+      engine.dispose();
+    };
+  }, []);
 
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-slate-900">
