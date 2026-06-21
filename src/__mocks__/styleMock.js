@@ -1,3 +1,4 @@
-// Stub CSS/SCSS imports for Jest/jsdom so component tests don't fail on
-// stylesheet requires.
-module.exports = {};
+// Jest-only CSS/SCSS module stub for jsdom.
+//
+// This file must be lint/Node-safe under ESM and CJS tooling.
+export default {};

@@ -1,26 +1,49 @@
+'use client';
+
+import { useRef } from 'react';
+import { TopBar } from '@/ui/TopBar';
+import { CityLog } from '@/ui/CityLog';
+import { TimeControls } from '@/ui/TimeControls';
+import { MiniMap } from '@/ui/MiniMap';
+import { Tooltip } from '@/ui/Tooltip';
+
+/**
+ * Home page — city simulation mount point.
+ *
+ * Per spec section 5.5, the <canvas> and the React UI overlay are decoupled:
+ * the canvas ref is mounted here but is NOT driven by React state. The
+ * downstream GameEngine task will grab `canvasRef.current` imperatively and
+ * run its own rAF loop without touching React. Therefore this component uses
+ * `useRef` only — no `useState`, `useEffect`, or `requestAnimationFrame`.
+ */
 export default function Home() {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
   return (
-    <main
-      id="city-sim-boot"
-      className="flex min-h-screen flex-col items-center justify-center gap-4 p-8"
-    >
-      <h1 className="text-4xl font-bold text-slate-100">City Sim</h1>
+    <main className="relative h-screen w-screen overflow-hidden bg-slate-900">
       {/*
-       * Smoke-test target canvas. The id="city-canvas" is stable so the
-       * Playwright E2E test (src/__tests__/e2e/city-smoke.spec.ts) keeps
-       * passing when the downstream page-implementation task replaces this.
+       * Full-screen simulation canvas. The id="city-canvas" and
+       * data-testid="city-canvas" are stable contracts consumed by the
+       * scaffold unit test and the Playwright E2E smoke test.
        */}
       <canvas
+        ref={canvasRef}
         id="city-canvas"
         data-testid="city-canvas"
-        width={1024}
-        height={640}
-        className="border border-slate-700 bg-slate-900"
+        className="absolute inset-0 h-full w-full"
         aria-label="City simulation canvas"
       />
-      <p className="text-lg text-slate-400">
-        Initializing simulation engine&hellip;
-      </p>
+
+      {/* React UI overlay layer. Purely presentational placeholders; the
+       * engine wiring task will populate these without changing the DOM
+       * contract (stable data-testid attributes). */}
+      <div className="pointer-events-none absolute inset-0">
+        <TopBar />
+        <CityLog />
+        <TimeControls />
+        <MiniMap />
+        <Tooltip />
+      </div>
     </main>
   );
 }
