@@ -36,6 +36,14 @@ export interface VehicleState {
 export interface CityTime {
   tick: number;
   elapsedMs: number;
+  /** Hour of day (0–23). */
+  hour: number;
+  /** Minute of hour (0–59). */
+  minute: number;
+  /** Day counter, starting at 1. */
+  day: number;
+  /** True when hour is in [6, 18] inclusive. */
+  isDaytime: boolean;
 }
 
 export interface CityEconomy {

@@ -1,7 +1,8 @@
 /**
  * Systems module barrel.
  *
- * Intentionally empty — downstream tasks will add simulation systems here.
- * The file exists so `src/systems/` is import-safe.
+ * Re-exports all simulation systems for convenient imports.
  */
-export {};
+
+export { TimeSystem } from './TimeSystem';
+export type { TimeEventListener } from './TimeSystem';
