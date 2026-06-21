@@ -1,6 +1,6 @@
 import { Renderer } from '@/engine/Renderer';
 import { createWorld } from '@/engine/World';
-import type { Building, ZoneType } from '@/engine/types';
+import type { Building, ZoneBounds, ZoneType } from '@/engine/types';
 import { ZONE_BOUNDS } from '@/constants';
 
 type MockFillRect = { x: number; y: number; w: number; h: number; style: string };
@@ -74,7 +74,7 @@ describe('Renderer', () => {
 
     // First fillRect is ground, then roads (none), then buildings.
     const groundFill = records.fillRects[0];
-    expect(groundFill.style).toBe('#e8e0d5');
+    expect(groundFill?.style).toBe('#e8e0d5');
 
     const buildingFills = records.fillRects.slice(1); // no roads drawn in this test world
     const stylesInOrder = buildingFills.map((r) => r.style);
@@ -91,7 +91,7 @@ describe('Renderer', () => {
       industrial: { ...ZONE_BOUNDS.industrial, type: 'industrial' },
       entertainment: { ...ZONE_BOUNDS.entertainment, type: 'entertainment' },
       park: { ...ZONE_BOUNDS.park, type: 'park' },
-    } as unknown as Record<ZoneType, unknown>);
+    } as unknown as Record<ZoneType, ZoneBounds>);
 
     const renderer = new Renderer(ctx, 10);
     renderer.render(world, { x: 7, y: 11, zoom: 2 });
@@ -101,6 +101,6 @@ describe('Renderer', () => {
     expect(records.scale).toEqual([[2, 2]]);
 
     const first = records.fillRects[0];
-    expect(first.style).toBe('#e8e0d5');
+    expect(first?.style).toBe('#e8e0d5');
   });
 });
