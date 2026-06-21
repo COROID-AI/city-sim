@@ -51,8 +51,10 @@ describe('GameLoop', () => {
     // fixedDt = 50ms -> 100ms accumulates -> 2 updates
     expect(update).toHaveBeenCalledTimes(2);
 
-    const firstCtx = update.mock.calls[0][0] as { fixedDtMs: number; elapsedMs: number };
-    const secondCtx = update.mock.calls[1][0] as { fixedDtMs: number; elapsedMs: number };
+    const firstCtx = update.mock.calls[0]?.[0] as { fixedDtMs: number; elapsedMs: number }; 
+    expect(firstCtx).toBeDefined();
+    const secondCtx = update.mock.calls[1]?.[0] as { fixedDtMs: number; elapsedMs: number }; 
+    expect(secondCtx).toBeDefined();
 
     expect(firstCtx.fixedDtMs).toBe(50);
     expect(firstCtx.elapsedMs).toBe(50);

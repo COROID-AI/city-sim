@@ -55,7 +55,7 @@ describe('GameLoop', () => {
   };
 
   it('fires update at 20 Hz: ~20 calls over a 1000 ms window (±2) with fixedDtMs === 50', () => {
-    const update = jest.fn<(ctx: UpdateContext) => void>();
+    const update = jest.fn((_: UpdateContext) => undefined)
     const render = jest.fn();
 
     const loop = new GameLoop(update, render);
