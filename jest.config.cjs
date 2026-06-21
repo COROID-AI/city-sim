@@ -3,7 +3,7 @@
  *
  * The project is ESM ("type": "module" in package.json), but Jest uses a
  * CommonJS runtime by default. ts-jest compiles TypeScript on the fly, so we
- * keep this file as `.cjs` with `module.exports` and let the `preset` handle
+ * keep this file as `.js` with `module.exports` and let the `preset` handle
  * the transform. This avoids the classic "Cannot use import statement outside
  * a module" error that appears when jest.config is ESM.
  *
@@ -17,6 +17,9 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
+  // Explicit transform ensures .tsx files (JSX) are compiled correctly.
+  // ts-jest needs jsx: 'react-jsx' so it can transform JSX without an explicit
+  // React import (Next.js App Router uses the automatic JSX runtime).
   transform: {
     '^.+\\.(ts|tsx)$': [
       'ts-jest',
