@@ -16,8 +16,9 @@
  *  NeedSystem. WALK_SPEED is expressed in tiles per sim-second, so the
  *  per-step travel distance is `WALK_SPEED * (deltaSimMs / 1000)`.
  */
-import type { Building, Vector2 } from '@/engine/types';
+import type { Building, CityTime, Vector2 } from '@/engine/types';
 import type { Citizen } from '@/entities/Citizen';
+import type { EventBus } from '@/systems/EventBus';
 
 /** Walking speed in tiles per simulation second. */
 export const WALK_SPEED = 2;
@@ -58,6 +59,10 @@ export function buildingCenter(building: Building | undefined): Vector2 | null {
 export interface MovementUpdateOptions {
   /** Map of building id -> Building, used to resolve target positions. */
   buildings: Map<string, Building>;
+  /** Optional EventBus for publishing citizen_arrived events. */
+  eventBus?: EventBus | null;
+  /** Current simulation time snapshot (required when eventBus is set). */
+  time?: CityTime;
 }
 
 /**
@@ -75,11 +80,10 @@ export interface MovementUpdateOptions {
 export function updateMovement(
   citizens: ReadonlyArray<Citizen>,
   deltaSimMs: number,
-  // Reserved for future target resolution (e.g. pathfinder lookups).
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _options: MovementUpdateOptions,
+  options: MovementUpdateOptions,
 ): void {
   if (deltaSimMs <= 0) return;
+  const { eventBus, time } = options;
 
   // Tiles travelled this step = speed (tiles/sec) * elapsed (sec).
   const stepDistance = WALK_SPEED * (deltaSimMs / 1000);
@@ -101,6 +105,7 @@ export function updateMovement(
       citizen.setPosition({ x: target.x, y: target.y });
       citizen.targetPosition = null;
       citizen.commuteMode = 'foot';
+      emitArrived(eventBus, time, citizen, target);
       continue;
     }
 
@@ -117,8 +122,31 @@ export function updateMovement(
       citizen.setPosition({ x: target.x, y: target.y });
       citizen.targetPosition = null;
       citizen.commuteMode = 'foot';
+      emitArrived(eventBus, time, citizen, target);
     }
   }
+}
+
+/**
+ * Publish a citizen_arrived event for the given citizen (no-op when no
+ * EventBus or time snapshot is configured).
+ */
+function emitArrived(
+  eventBus: EventBus | null | undefined,
+  time: CityTime | undefined,
+  citizen: Citizen,
+  position: Vector2,
+): void {
+  if (!eventBus || !time) return;
+  eventBus.emit({
+    type: 'citizen_arrived',
+    time,
+    data: {
+      citizenId: citizen.id,
+      position: { x: position.x, y: position.y },
+      activity: citizen.activity,
+    },
+  });
 }
 
 /**

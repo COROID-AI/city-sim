@@ -7,10 +7,12 @@ import { Renderer } from '@/engine/Renderer';
 import { TILE_SIZE } from '@/engine/World';
 import { generateCity } from '@/generation/CityGenerator';
 import { extractRoadGraph } from '@/entities/Road';
+import { EventBus } from '@/systems/EventBus';
 import { TrafficSystem } from '@/systems/TrafficSystem';
 import { CommuteSystem } from '@/systems/CommuteSystem';
 import { MovementSystem } from '@/systems/MovementSystem';
 import { TimeSystem } from '@/systems/TimeSystem';
+import { BusinessHoursSystem } from '@/systems/BusinessHoursSystem';
 import TimeControls from '@/ui/TimeControls';
 import Tooltip, { type TooltipContent } from '@/ui/Tooltip';
 import type { Building } from '@/engine/types';
@@ -43,6 +45,9 @@ export default function Home() {
   // boolean state flag gates rendering until the engine exists (the ref is
   // null on the very first render, before useEffect runs).
   const timeSystemRef = useRef<TimeSystem | null>(null);
+  // EventBus ref exposed for downstream UI components (e.g. CityLog) to
+  // subscribe via eventBusRef.current?.on('*', handler).
+  const eventBusRef = useRef<EventBus | null>(null);
   const [engineReady, setEngineReady] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipContent | null>(null);
 
@@ -65,13 +70,19 @@ export default function Home() {
     const world = generateCity(80, 80);
     const renderer = new Renderer(ctx, world);
 
+    // EventBus — central pub/sub hub for all city events (spec §3.1).
+    const eventBus = new EventBus();
+    eventBusRef.current = eventBus;
+
     // Build the road graph + traffic + commute systems for vehicle handoff.
     const graph = extractRoadGraph(world.grid);
-    const traffic = new TrafficSystem({ graph });
-    const commute = new CommuteSystem(world, { graph, traffic });
+    const traffic = new TrafficSystem({ graph, eventBus });
+    const commute = new CommuteSystem(world, { graph, traffic, eventBus });
     const movement = new MovementSystem();
+    // BusinessHoursSystem emits company_opened/closed at hour 8 and 18.
+    const businessHours = new BusinessHoursSystem(world, { eventBus });
     // TimeSystem drives the day/night cycle; start at 1x speed.
-    const timeSystem = new TimeSystem();
+    const timeSystem = new TimeSystem(eventBus);
     timeSystem.setSpeed(1);
     timeSystemRef.current = timeSystem;
     setEngineReady(true);
@@ -265,11 +276,17 @@ export default function Home() {
         // Advance the simulation clock by one fixed step. TimeSystem applies
         // its own speed multiplier, so GameLoop stays at speed 1.
         timeSystem.update(SIMULATION_STEP);
-        const hour = timeSystem.getTime().hour;
+        const time = timeSystem.getTime();
+        const hour = time.hour;
         // Drive citizen movement, traffic, and the commute handoff.
-        movement.update(world.citizens, SIMULATION_STEP, { buildings: world.buildings });
-        traffic.update(SIMULATION_STEP);
-        commute.update(hour);
+        movement.update(world.citizens, SIMULATION_STEP, {
+          buildings: world.buildings,
+          eventBus,
+          time,
+        });
+        traffic.update(SIMULATION_STEP, time);
+        commute.update(hour, time);
+        businessHours.update(time);
       },
       render: (alpha) => {
         // Push the latest camera AND time state into the renderer BEFORE

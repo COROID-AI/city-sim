@@ -16,8 +16,9 @@
  * vehicle. The number of active vehicles is capped at floor(employed/5) with
  * a hard maximum of MAX_VEHICLES (20).
  */
-import type { Building, RoadGraph, RoadNode } from '@/engine/types';
+import type { Building, CityTime, RoadGraph, RoadNode } from '@/engine/types';
 import type { Citizen } from '@/entities/Citizen';
+import type { EventBus } from '@/systems/EventBus';
 import { Vehicle } from '@/entities/Vehicle';
 import type { World } from '@/engine/World';
 import { Pathfinder } from '@/engine/Pathfinder';
@@ -41,6 +42,8 @@ export interface CommuteSystemOptions {
   graph: RoadGraph;
   /** TrafficSystem to register/deregister vehicles. */
   traffic: TrafficSystem;
+  /** Optional EventBus for publishing citizen_arrived events. */
+  eventBus?: EventBus | null;
   /** Optional RNG for deterministic vehicle colors in tests. */
   rng?: () => number;
 }
@@ -51,6 +54,7 @@ export class CommuteSystem {
   private readonly world: World;
   private readonly pathfinder: Pathfinder;
   private readonly rng: () => number;
+  private readonly eventBus: EventBus | null;
 
   constructor(world: World, options: CommuteSystemOptions) {
     this.world = world;
@@ -58,6 +62,7 @@ export class CommuteSystem {
     this.traffic = options.traffic;
     this.pathfinder = new Pathfinder(this.graph);
     this.rng = options.rng ?? Math.random;
+    this.eventBus = options.eventBus ?? null;
   }
 
   /** Current maximum allowed vehicles based on employed population. */
@@ -68,9 +73,10 @@ export class CommuteSystem {
 
   /**
    * Per-step update. Drives the commute state machine for all citizens.
-   * @param hour Current simulation hour [0..23].
+   * @param hour    Current simulation hour [0..23].
+   * @param time    Optional simulation time snapshot (used for event payloads).
    */
-  update(hour: number): void {
+  update(hour: number, time?: CityTime): void {
     const isCommuteHour = hour === COMMUTE_START_HOUR || hour === WORK_END_HOUR;
 
     for (const citizen of this.world.citizens) {
@@ -98,7 +104,7 @@ export class CommuteSystem {
           this.handleToRoad(citizen);
           break;
         case 'inVehicle':
-          this.handleInVehicle(citizen);
+          this.handleInVehicle(citizen, time);
           break;
         case 'arrived':
           citizen.commuteState = 'none';
@@ -220,7 +226,7 @@ export class CommuteSystem {
   }
 
   /** State `inVehicle`: when the vehicle arrives, restore the citizen. */
-  private handleInVehicle(citizen: Citizen): void {
+  private handleInVehicle(citizen: Citizen, time?: CityTime): void {
     if (!citizen.vehicleId) {
       citizen.commuteState = 'none';
       citizen.setVisible(true);
@@ -255,6 +261,21 @@ export class CommuteSystem {
     citizen.commuteState = 'arrived';
     citizen.commuteMode = 'foot';
     citizen.targetPosition = null;
+
+    // Publish citizen_arrived for the vehicle-commuting citizen.
+    if (this.eventBus && time) {
+      const pos = citizen.getPosition();
+      this.eventBus.emit({
+        type: 'citizen_arrived',
+        time,
+        data: {
+          citizenId: citizen.id,
+          position: { x: pos.x, y: pos.y },
+          activity: citizen.activity,
+          destination: dest?.id,
+        },
+      });
+    }
   }
 
   /**

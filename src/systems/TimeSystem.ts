@@ -23,6 +23,7 @@
  *    delegate to it without breaking its public API.
  */
 import type { CityTime } from '@/engine/types';
+import type { EventBus } from '@/systems/EventBus';
 
 /** Available simulation speed multipliers. */
 export type SpeedMultiplier = 0 | 1 | 2 | 5;
@@ -73,8 +74,19 @@ export class TimeSystem {
   /** Current speed multiplier (0 = paused). */
   private speed: SpeedMultiplier = 1;
 
+  /** Optional EventBus for city-wide event publication. */
+  private readonly eventBus: EventBus | null;
+
   /** Listeners keyed by event type. */
   private readonly listeners = new Map<string, Set<TimeListener>>();
+
+  /**
+   * @param eventBus Optional EventBus. When provided, new_day events are also
+   *   published to it (in addition to the self-contained listener API).
+   */
+  constructor(eventBus: EventBus | null = null) {
+    this.eventBus = eventBus;
+  }
 
   /**
    * Advance simulation time by a real-time delta.
@@ -91,7 +103,9 @@ export class TimeSystem {
     const newDay = Math.floor(this.totalMs / MS_PER_DAY);
 
     if (newDay > prevDay) {
-      this.emit(NEW_DAY_EVENT, { day: newDay, time: this.getTime() });
+      const time = this.getTime();
+      this.emit(NEW_DAY_EVENT, { day: newDay, time });
+      this.eventBus?.emit({ type: 'new_day', time, data: { day: newDay } });
     }
   }
 

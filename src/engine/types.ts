@@ -279,14 +279,76 @@ export interface TrafficLightProvider {
 }
 
 /**
- * A discrete simulation event emitted by systems (e.g. building placed,
- * citizen spawned, economy threshold crossed).
+ * Discriminated union of all city simulation events (spec §5.3).
+ *
+ * Each variant carries a literal `type` and a typed `data` payload so that
+ * consumers can narrow on `event.type` with full type safety.
  */
-export interface CityEvent {
-  /** Unique event type identifier. */
-  type: string;
-  /** Simulation time at which the event occurred. */
+
+/** A citizen reached their movement/commute destination. */
+export interface CitizenArrivedEvent {
+  type: 'citizen_arrived';
   time: CityTime;
-  /** Arbitrary typed payload. */
-  data: Record<string, unknown>;
+  data: {
+    citizenId: string;
+    position: Vector2;
+    activity: CitizenState;
+    /** Destination building id, when known. */
+    destination?: string;
+  };
 }
+
+/** A commercial/industrial building opened for business (hour 8). */
+export interface CompanyOpenedEvent {
+  type: 'company_opened';
+  time: CityTime;
+  data: {
+    buildingId: string;
+    buildingType: BuildingType;
+  };
+}
+
+/** A commercial/industrial building closed for business (hour 18). */
+export interface CompanyClosedEvent {
+  type: 'company_closed';
+  time: CityTime;
+  data: {
+    buildingId: string;
+    buildingType: BuildingType;
+  };
+}
+
+/** Traffic congestion was detected (stopped vehicle count exceeded threshold). */
+export interface TrafficJamEvent {
+  type: 'traffic_jam';
+  time: CityTime;
+  data: {
+    stoppedCount: number;
+    totalVehicles: number;
+    /** Nearest intersection node id, or null when unknown. */
+    location: string | null;
+  };
+}
+
+/** The simulation day counter incremented (midnight rollover). */
+export interface NewDayEvent {
+  type: 'new_day';
+  time: CityTime;
+  data: {
+    day: number;
+  };
+}
+
+/**
+ * A discrete simulation event emitted by systems. Discriminated union of all
+ * typed variants above.
+ */
+export type CityEvent =
+  | CitizenArrivedEvent
+  | CompanyOpenedEvent
+  | CompanyClosedEvent
+  | TrafficJamEvent
+  | NewDayEvent;
+
+/** All valid city event type identifiers. */
+export type CityEventType = CityEvent['type'];

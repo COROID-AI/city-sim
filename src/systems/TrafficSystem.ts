@@ -20,6 +20,7 @@
  *  `deltaSimMs` each step.
  */
 import type {
+  CityTime,
   RoadGraph,
   RoadNode,
   TrafficLightProvider,
@@ -30,9 +31,17 @@ import {
   STOP_DISTANCE,
   Vehicle,
 } from '@/entities/Vehicle';
+import type { EventBus } from '@/systems/EventBus';
 
 /** Maximum number of vehicles the system will track (spec §7.5). */
 export const MAX_VEHICLES = 20;
+
+/**
+ * Minimum stopped-vehicle count before a traffic jam is reported.
+ * The effective threshold is `Math.min(TRAFFIC_JAM_MIN, ceil(total*0.5))`,
+ * which avoids noise when only 1–2 vehicles are active.
+ */
+export const TRAFFIC_JAM_MIN = 5;
 
 /** Simulation milliseconds per simulation second. */
 const MS_PER_SECOND = 1000;
@@ -147,6 +156,8 @@ function approachDirection(from: RoadNode, to: RoadNode): 'ns' | 'ew' {
 export interface TrafficSystemOptions {
   /** Road graph used to look up intersection nodes. */
   graph?: RoadGraph;
+  /** Optional EventBus for publishing traffic_jam events. */
+  eventBus?: EventBus | null;
   /** Initial elapsed simulation ms (for deterministic testing). */
   initialElapsedMs?: number;
 }
@@ -158,6 +169,12 @@ export class TrafficSystem implements TrafficLightProvider {
   /** Road graph used to resolve intersection nodes. */
   private readonly graph: RoadGraph | null;
 
+  /** Optional EventBus for publishing traffic_jam events. */
+  private readonly eventBus: EventBus | null;
+
+  /** Whether a traffic jam is currently active (debounce flag). */
+  private jamActive = false;
+
   /** Accumulated simulation ms since the system started (drives phases). */
   private elapsedMs: number;
 
@@ -168,6 +185,7 @@ export class TrafficSystem implements TrafficLightProvider {
 
   constructor(options: TrafficSystemOptions = {}) {
     this.graph = options.graph ?? null;
+    this.eventBus = options.eventBus ?? null;
     this.elapsedMs = options.initialElapsedMs ?? 0;
     this.currentPhase = phaseForElapsed(this.elapsedMs);
   }
@@ -266,8 +284,9 @@ export class TrafficSystem implements TrafficLightProvider {
    * Advance the traffic-light clock and all managed vehicles by one step.
    *
    * @param deltaSimMs Simulation milliseconds elapsed this step.
+   * @param time       Optional simulation time snapshot (for event payloads).
    */
-  update(deltaSimMs: number): void {
+  update(deltaSimMs: number, time?: CityTime): void {
     if (deltaSimMs <= 0) return;
 
     // 1. Advance the global phase clock.
@@ -278,6 +297,9 @@ export class TrafficSystem implements TrafficLightProvider {
     for (const vehicle of this.vehicles) {
       this.updateVehicle(vehicle, deltaSimMs);
     }
+
+    // 3. Detect traffic jams (debounced — fires once per jam session).
+    this.detectJam(time);
   }
 
   /**
@@ -386,5 +408,39 @@ export class TrafficSystem implements TrafficLightProvider {
   private resolveNode(nodeId: string): RoadNode | null {
     if (!this.graph) return null;
     return this.graph.nodes.get(nodeId) ?? null;
+  }
+
+  /**
+   * Detect a traffic jam: emit `traffic_jam` once when the stopped-vehicle
+   * count crosses the dynamic threshold, and reset when congestion clears.
+   *
+   * The threshold is `Math.min(TRAFFIC_JAM_MIN, ceil(total*0.5))` so that a
+   * handful of vehicles cannot spuriously trigger a jam.
+   */
+  private detectJam(time?: CityTime): void {
+    if (!this.eventBus) return;
+    const total = this.vehicles.length;
+    if (total === 0) {
+      this.jamActive = false;
+      return;
+    }
+    const stoppedCount = this.vehicles.filter((v) => v.isStopped).length;
+    const threshold = Math.min(TRAFFIC_JAM_MIN, Math.ceil(total * 0.5));
+    const isJam = stoppedCount >= threshold;
+
+    if (isJam && !this.jamActive && time) {
+      this.jamActive = true;
+      this.eventBus.emit({
+        type: 'traffic_jam',
+        time,
+        data: {
+          stoppedCount,
+          totalVehicles: total,
+          location: null,
+        },
+      });
+    } else if (!isJam) {
+      this.jamActive = false;
+    }
   }
 }
