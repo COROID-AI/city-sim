@@ -10,6 +10,7 @@
  */
 import { Grid, World } from '@/engine/World';
 import {
+  computeCitizenCount,
   generateCity,
   placeGridRoads,
   MAIN_ROAD_INTERVAL,
@@ -209,5 +210,81 @@ describe('BuildingPlacer determinism', () => {
         isAdjacentToRoad(grid, b.x, b.y, b.width, b.height),
       ).toBe(true);
     }
+  });
+});
+
+describe('CityGenerator citizen spawning', () => {
+  const world = generateCity(80, 80);
+
+  it('spawns between 50 and 100 citizens', () => {
+    expect(world.citizens.length).toBeGreaterThanOrEqual(50);
+    expect(world.citizens.length).toBeLessThanOrEqual(100);
+  });
+
+  it('every citizen has a homeId pointing to a valid residential building', () => {
+    for (const citizen of world.citizens) {
+      expect(citizen.homeId).not.toBeNull();
+      const home = world.buildings.get(citizen.homeId!);
+      expect(home).toBeDefined();
+      expect(home!.zone).toBe('residential');
+    }
+  });
+
+  it('every citizen has a 24-entry schedule with jitter in [-30, 30]', () => {
+    for (const citizen of world.citizens) {
+      expect(citizen.schedule).toHaveLength(24);
+      for (const entry of citizen.schedule) {
+        expect(entry.jitterMinutes).toBeGreaterThanOrEqual(-30);
+        expect(entry.jitterMinutes).toBeLessThanOrEqual(30);
+      }
+    }
+  });
+
+  it('employed citizens have a workplaceId pointing to a job building', () => {
+    const employmentZones = new Set<ZoneType>([
+      'commercial',
+      'industrial',
+      'entertainment',
+    ]);
+    for (const citizen of world.citizens) {
+      if (citizen.employed) {
+        expect(citizen.workplaceId).not.toBeNull();
+        const wp = world.buildings.get(citizen.workplaceId!);
+        expect(wp).toBeDefined();
+        expect(employmentZones.has(wp!.zone)).toBe(true);
+      } else {
+        expect(citizen.workplaceId).toBeNull();
+      }
+    }
+  });
+
+  it('every citizen starts positioned at the center of their home building', () => {
+    for (const citizen of world.citizens) {
+      const home = world.buildings.get(citizen.homeId!)!;
+      const pos = citizen.getPosition();
+      expect(pos.x).toBeCloseTo(home.x + home.width / 2, 5);
+      expect(pos.y).toBeCloseTo(home.y + home.height / 2, 5);
+    }
+  });
+
+  it('produces deterministic citizen count for the same seed', () => {
+    const a = generateCity(80, 80, { seed: 42 });
+    const b = generateCity(80, 80, { seed: 42 });
+    expect(a.citizens.length).toBe(b.citizens.length);
+  });
+
+  it('computeCitizenCount caps at MAX_CITIZENS', () => {
+    // Build a fake building list with huge residential capacity.
+    const fakeBuilding = {
+      id: 'r1',
+      type: 'apartment' as const,
+      zone: 'residential' as const,
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      def: { capacity: 1000 } as never,
+    };
+    expect(computeCitizenCount([fakeBuilding])).toBe(100);
   });
 });

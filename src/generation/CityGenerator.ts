@@ -13,8 +13,9 @@
  *
  * Determinism: a fixed default seed makes `generateCity(80,80)` reproducible.
  */
-import type { Zone, ZoneType } from '@/engine/types';
+import type { Building, Zone, ZoneType } from '@/engine/types';
 import { World } from '@/engine/World';
+import { Citizen } from '@/entities/Citizen';
 import {
   mulberry32,
   placeBuildings,
@@ -34,6 +35,105 @@ export const SECONDARY_ROAD_WIDTH = 1;
 
 /** Default target building count for an 80x80 city. */
 export const DEFAULT_BUILDING_TARGET = 40;
+
+/** Maximum number of citizens the city will spawn. */
+export const MAX_CITIZENS = 100;
+
+/**
+ * Residential capacity divisor: one citizen is spawned per this many units of
+ * residential capacity (spec §7.1 step 6).
+ */
+export const CITIZENS_PER_CAPACITY = 2;
+
+/** Zone types that provide jobs for employed citizens. */
+const EMPLOYMENT_ZONES: ReadonlySet<ZoneType> = new Set([
+  'commercial',
+  'industrial',
+  'entertainment',
+]);
+
+/**
+ * Compute the number of citizens to spawn for the placed buildings.
+ *
+ * Formula: floor(totalResidentialCapacity / CITIZENS_PER_CAPACITY), capped at
+ * {@link MAX_CITIZENS}. Residential capacity is the sum of `def.capacity` over
+ * all residential buildings.
+ *
+ * @param buildings The placed building instances.
+ * @returns The citizen count to spawn (>= 0).
+ */
+export function computeCitizenCount(buildings: ReadonlyArray<Building>): number {
+  let residentialCapacity = 0;
+  for (const b of buildings) {
+    if (b.zone === 'residential') {
+      residentialCapacity += b.def.capacity;
+    }
+  }
+  return Math.min(
+    MAX_CITIZENS,
+    Math.floor(residentialCapacity / CITIZENS_PER_CAPACITY),
+  );
+}
+
+/**
+ * Spawn the citizen population into the world.
+ *
+ * Each citizen is assigned:
+ *  - A `homeId` pointing to a residential building (round-robin over the
+ *    residential buildings, weighted by capacity).
+ *  - An initial position at the center of their home building.
+ *  - Employment status + `workplaceId`: ~70% are employed and assigned a job
+ *    building (commercial / industrial / entertainment); the rest are
+ *    unemployed. Employment is deterministic given the seeded RNG.
+ *  - An auto-generated 24-hour schedule (via the Citizen constructor).
+ *
+ * @param world     The world to populate (citizens are added via addCitizen).
+ * @param buildings The placed building instances.
+ * @param rng       Seeded RNG for deterministic employment / assignment.
+ */
+export function spawnCitizens(
+  world: World,
+  buildings: ReadonlyArray<Building>,
+  rng: () => number,
+): void {
+  const count = computeCitizenCount(buildings);
+  if (count <= 0) return;
+
+  const residential = buildings.filter((b) => b.zone === 'residential');
+  const workplaces = buildings.filter((b) => EMPLOYMENT_ZONES.has(b.zone));
+
+  if (residential.length === 0) return;
+
+  // Build a weighted home pool so larger residential buildings get more
+  // residents (one slot per unit of capacity).
+  const homePool: Building[] = [];
+  for (const b of residential) {
+    const slots = Math.max(1, b.def.capacity);
+    for (let i = 0; i < slots; i++) homePool.push(b);
+  }
+
+  for (let i = 0; i < count; i++) {
+    const home = homePool[Math.floor(rng() * homePool.length)] ?? residential[0]!;
+    const employed = workplaces.length > 0 && rng() < 0.7;
+    const workplace = employed
+      ? workplaces[Math.floor(rng() * workplaces.length)]! ?? null
+      : null;
+
+    const homePos = {
+      x: home.x + home.width / 2,
+      y: home.y + home.height / 2,
+    };
+
+    const citizen = new Citizen(homePos, {
+      id: `citizen-${i}`,
+      employed,
+      homeId: home.id,
+      workplaceId: workplace ? workplace.id : null,
+      rng,
+    });
+    world.addCitizen(citizen);
+  }
+}
 
 /**
  * Draw the grid-pattern road network onto the grid.
@@ -93,12 +193,18 @@ export function placeGridRoads(world: World): void {
 export function defineZones(): Zone[] {
   // Blocks between secondary roads are ~7 tiles wide (8-1). We pick generous
   // interior rectangles that avoid road columns/rows.
+  // Residential is duplicated across several blocks so that total residential
+  // capacity comfortably exceeds 100 (needed for >=50 citizens at the spec's
+  // 1-per-2-units ratio). The 80x80 map has ample room in the lower half.
   const zones: Array<Zone & { type: ZoneType }> = [
     { type: 'residential', x: 2, y: 2, width: 12, height: 12 },
     { type: 'commercial', x: 18, y: 2, width: 12, height: 12 },
     { type: 'industrial', x: 2, y: 18, width: 12, height: 12 },
     { type: 'entertainment', x: 18, y: 18, width: 12, height: 12 },
     { type: 'park', x: 34, y: 2, width: 12, height: 12 },
+    { type: 'residential', x: 34, y: 18, width: 12, height: 12 },
+    { type: 'residential', x: 2, y: 34, width: 12, height: 12 },
+    { type: 'residential', x: 18, y: 34, width: 12, height: 12 },
   ];
   return zones;
 }
@@ -142,6 +248,9 @@ export function generateCity(
   for (const building of buildings) {
     world.addBuilding(building);
   }
+
+  // 4. Citizens (spec §7.1 step 6).
+  spawnCitizens(world, buildings, rng);
 
   return world;
 }

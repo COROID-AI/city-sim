@@ -15,7 +15,7 @@
  * movement are handled by downstream systems (Pathfinder, movement) which read
  * `activity` and route accordingly.
  */
-import type { CitizenState, Vector2 } from '@/engine/types';
+import type { CitizenState, CommuteMode, ScheduleEntry, Vector2 } from '@/engine/types';
 import { Entity } from '@/entities/Entity';
 import { NameGenerator } from '@/generation/NameGenerator';
 import {
@@ -23,6 +23,11 @@ import {
   type Needs,
   type DestinationContext,
 } from '@/systems/NeedSystem';
+import {
+  generateSchedule,
+  getScheduleActivity,
+  type RngFn,
+} from '@/systems/ScheduleGenerator';
 
 /** Hour at which the morning commute begins. */
 export const COMMUTE_START_HOUR = 8;
@@ -61,12 +66,45 @@ export class Citizen extends Entity {
   /** Current need values (mutated by NeedSystem). */
   readonly needs: Needs;
 
+  /**
+   * Id of the residential building this citizen lives in, or null before
+   * spawning/assignment. Set by CityGenerator.
+   */
+  homeId: string | null;
+
+  /**
+   * Id of the workplace building for employed citizens, or null for
+   * unemployed / unassigned citizens. Set by CityGenerator.
+   */
+  workplaceId: string | null;
+
+  /**
+   * Per-citizen daily schedule (24 entries, one per hour). Auto-generated on
+   * construction unless explicitly provided.
+   */
+  readonly schedule: ScheduleEntry[];
+
+  /**
+   * World-space position the citizen is currently walking towards, or null if
+   * the citizen has no active destination. Set by downstream movement/AI
+   * systems; cleared when the citizen arrives.
+   */
+  targetPosition: Vector2 | null;
+
+  /**
+   * Current commute mode. Defaults to `foot`; MovementSystem flips this to
+   * `vehicle` when the distance to target exceeds 20 tiles (stub — no actual
+   * Vehicle entity is spawned until Phase 5).
+   */
+  commuteMode: CommuteMode;
+
   /** Owning NeedSystem instance used for decay/replenish. */
   private readonly needSystem: NeedSystem;
 
   /**
    * @param position Initial world position.
-   * @param options  Optional configuration.
+   * @param options  Optional configuration. All new fields default sensibly
+   *                 so existing callers (and tests) that omit them keep working.
    */
   constructor(
     position: Vector2 = { x: 0, y: 0 },
@@ -76,6 +114,10 @@ export class Citizen extends Entity {
       employed?: boolean;
       needs?: Needs;
       needSystem?: NeedSystem;
+      homeId?: string | null;
+      workplaceId?: string | null;
+      schedule?: ScheduleEntry[];
+      rng?: RngFn;
     } = {},
   ) {
     super(position, options.id);
@@ -84,6 +126,29 @@ export class Citizen extends Entity {
     this.needs = options.needs ?? NeedSystem.createDefaultNeeds();
     this.needSystem = options.needSystem ?? new NeedSystem();
     this.activity = 'sleeping';
+    this.homeId = options.homeId ?? null;
+    this.workplaceId = options.workplaceId ?? null;
+    this.schedule =
+      options.schedule ?? generateSchedule(this.employed, options.rng);
+    this.targetPosition = null;
+    this.commuteMode = 'foot';
+  }
+
+  /**
+   * Resolve the activity for a given hour from this citizen's generated
+   * schedule (preferred source, includes per-citizen jitter).
+   */
+  getScheduleActivity(hour: number): CitizenState {
+    return getScheduleActivity(this.schedule, hour);
+  }
+
+  /**
+   * Set the world-space target the citizen should walk towards.
+   * Resets commuteMode to `foot`; MovementSystem may upgrade it to `vehicle`.
+   */
+  setTarget(target: Vector2 | null): void {
+    this.targetPosition = target === null ? null : { x: target.x, y: target.y };
+    this.commuteMode = 'foot';
   }
 
   /**

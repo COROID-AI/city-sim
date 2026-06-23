@@ -6,8 +6,9 @@
  */
 import { Citizen } from '@/entities/Citizen';
 import { Entity } from '@/entities/Entity';
-import { NeedSystem, NEED_MAX } from '@/systems/NeedSystem';
+import { NEED_MAX } from '@/systems/NeedSystem';
 import { FIRST_NAMES, LAST_NAMES } from '@/generation/NameGenerator';
+import { mulberry32 } from '@/generation/BuildingPlacer';
 
 describe('Entity (base class)', () => {
   it('assigns a unique auto-generated id', () => {
@@ -186,6 +187,63 @@ describe('Citizen', () => {
       c.update(60_000, 2); // hour 2 -> sleeping -> home
       // decay -0.15, replenish +2.0 => net +1.85
       expect(c.needs.energy).toBeCloseTo(50 - 0.15 + 2.0, 5);
+    });
+  });
+
+  describe('schedule & spawning fields', () => {
+    it('auto-generates a 24-entry schedule on construction', () => {
+      const c = new Citizen({ x: 0, y: 0 }, { rng: mulberry32(1) });
+      expect(c.schedule).toHaveLength(24);
+      for (let h = 0; h < 24; h++) {
+        expect(c.schedule[h].hour).toBe(h);
+        expect(c.schedule[h].jitterMinutes).toBeGreaterThanOrEqual(-30);
+        expect(c.schedule[h].jitterMinutes).toBeLessThanOrEqual(30);
+      }
+    });
+
+    it('defaults homeId/workplaceId to null and commuteMode to foot', () => {
+      const c = new Citizen();
+      expect(c.homeId).toBeNull();
+      expect(c.workplaceId).toBeNull();
+      expect(c.commuteMode).toBe('foot');
+      expect(c.targetPosition).toBeNull();
+    });
+
+    it('accepts homeId and workplaceId via options', () => {
+      const c = new Citizen({ x: 0, y: 0 }, {
+        homeId: 'home-1',
+        workplaceId: 'work-1',
+        employed: true,
+      });
+      expect(c.homeId).toBe('home-1');
+      expect(c.workplaceId).toBe('work-1');
+    });
+
+    it('getScheduleActivity reads from the generated schedule', () => {
+      const c = new Citizen({ x: 0, y: 0 }, { employed: true, rng: mulberry32(1) });
+      expect(c.getScheduleActivity(9)).toBe('working');
+      expect(c.getScheduleActivity(12)).toBe('eating');
+    });
+
+    it('setTarget sets targetPosition and resets commuteMode to foot', () => {
+      const c = new Citizen({ x: 0, y: 0 });
+      c.commuteMode = 'vehicle';
+      c.setTarget({ x: 5, y: 5 });
+      expect(c.targetPosition).toEqual({ x: 5, y: 5 });
+      expect(c.commuteMode).toBe('foot');
+    });
+
+    it('setTarget(null) clears the target', () => {
+      const c = new Citizen({ x: 0, y: 0 });
+      c.setTarget({ x: 5, y: 5 });
+      c.setTarget(null);
+      expect(c.targetPosition).toBeNull();
+    });
+
+    it('schedule is deterministic when constructed with a seeded rng', () => {
+      const a = new Citizen({ x: 0, y: 0 }, { rng: mulberry32(42) });
+      const b = new Citizen({ x: 0, y: 0 }, { rng: mulberry32(42) });
+      expect(a.schedule).toEqual(b.schedule);
     });
   });
 });

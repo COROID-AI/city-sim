@@ -98,6 +98,32 @@ export type CitizenState =
   | 'entertaining'
   | 'wandering';
 
+/**
+ * A single hour-block in a citizen's daily schedule (spec §7.2).
+ *
+ * Each entry maps one hour of the day to an activity, with a per-citizen
+ * jitter offset (in minutes, range [-30, +30]) so that not every citizen
+ * starts their commute at exactly 08:00.
+ */
+export interface ScheduleEntry {
+  /** Hour of the day [0..23] this entry applies to. */
+  hour: number;
+  /** Activity performed during this hour. */
+  activity: CitizenState;
+  /** Per-citizen jitter in minutes, clamped to [-30, +30]. */
+  jitterMinutes: number;
+}
+
+/**
+ * How a citizen is currently travelling to their target.
+ *  - `foot`:  walking (default)
+ *  - `vehicle`: driving (set by MovementSystem when distance > 20 tiles)
+ *
+ * NOTE: `vehicle` is a stub flag only. Phase 5 (TrafficSystem) reads this and
+ * spawns the actual Vehicle entity; no Vehicle is created here.
+ */
+export type CommuteMode = 'foot' | 'vehicle';
+
 /** Movement / activity state of a vehicle. */
 export type VehicleState =
   | 'driving'

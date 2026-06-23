@@ -10,6 +10,7 @@
  *    road-connectivity check used by generation and tests.
  */
 import type { Building, Tile, TileType, Zone } from './types';
+import type { Citizen } from '@/entities/Citizen';
 
 /** Edge length of one tile in world units (used by the Renderer). */
 export const TILE_SIZE = 16;
@@ -161,6 +162,8 @@ export class World {
   readonly grid: Grid;
   readonly buildings: Map<string, Building> = new Map();
   readonly zones: Zone[] = [];
+  /** All spawned citizens in the city. */
+  readonly citizens: Citizen[] = [];
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -180,5 +183,13 @@ export class World {
         }
       }
     }
+  }
+
+  /**
+   * Register a citizen in the world. Mirrors {@link addBuilding}.
+   * The citizen is appended to {@link citizens} and keyed by id for lookup.
+   */
+  addCitizen(citizen: Citizen): void {
+    this.citizens.push(citizen);
   }
 }
