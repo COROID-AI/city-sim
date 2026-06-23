@@ -17,7 +17,8 @@
  *    building at y=6 (painter's algorithm).
  *  - CANVAS 2D ONLY: no WebGL, no sprites, no external rendering deps.
  */
-import type { Building, CityTime, ZoneType } from './types';
+import type { Citizen } from '@/entities/Citizen';
+import type { Building, CitizenState, CityTime, ZoneType } from './types';
 import { TILE_SIZE, World } from './World';
 import {
   computeLightingState,
@@ -38,6 +39,28 @@ export const ZONE_COLORS: Record<ZoneType, string> = {
 
 // Spec §6.1 night overlay color is re-exported for tests/consumers.
 export { NIGHT_OVERLAY_COLOR } from './Lighting';
+
+/**
+ * Spec §6.1 citizen status → render color map.
+ *
+ * COLOR MAPPING (see plan notes):
+ *  - worker (#1565c0 blue):     employed AND currently working/commuting
+ *  - visitor (#2e7d32 green):   employed but off-duty (eating/entertaining/
+ *                               wandering/sleeping) — out as a "visitor"
+ *  - unemployed (#ef6c00 orange): no job
+ */
+export const CITIZEN_COLORS = {
+  worker: '#1565c0',
+  visitor: '#2e7d32',
+  unemployed: '#ef6c00',
+} as const;
+
+/** Citizen dot radius in world pixels. */
+const CITIZEN_RADIUS = 3;
+/** Flashlight glow radius in world pixels (drawn at night). */
+const FLASHLIGHT_RADIUS = 8;
+/** globalAlpha applied to citizen dots at night (spec §6.1). */
+const NIGHT_CITIZEN_ALPHA = 0.7;
 
 /** Spec §3.3 ground / road palette. */
 const GROUND_COLOR = '#e8e0d5';
@@ -118,10 +141,14 @@ export class Renderer {
     this.applyCameraTransform();
 
     // Layer order (spec §3.3 + §6.1):
-    // ground → roads → buildings → lightingOverlay → windowLights → streetLights
+    // ground → roads → buildings → citizens → lightingOverlay → windowLights → streetLights
+    // Citizens render BEFORE the lighting overlay so the night darkness tints
+    // them too; their flashlight glows (additive) are drawn within drawCitizens
+    // and shine through the overlay.
     this.drawGround();
     this.drawRoads();
     this.drawBuildings();
+    this.drawCitizens();
     this.drawLightingOverlay();
     this.drawWindowLights();
     this.drawStreetLights();
@@ -213,6 +240,88 @@ export class Renderer {
     const { ctx, camera } = this;
     ctx.scale(camera.zoom, camera.zoom);
     ctx.translate(-camera.x, -camera.y);
+  }
+
+  // ----------------------------------------------------------------
+  // Citizens layer (spec §6.1).
+  // ----------------------------------------------------------------
+
+  /**
+   * Resolve the render color for a citizen based on employment + activity.
+   *
+   * Mapping (see plan notes):
+   *  - !employed                          → unemployed (#ef6c00)
+   *  - employed && (working | commuting)  → worker (#1565c0)
+   *  - employed && (eating | entertaining | wandering | sleeping)
+   *                                       → visitor (#2e7d32)
+   */
+  getCitizenColor(citizen: Citizen): string {
+    if (!citizen.employed) return CITIZEN_COLORS.unemployed;
+    const onDuty: CitizenState[] = ['working', 'commuting'];
+    if (onDuty.includes(citizen.activity)) return CITIZEN_COLORS.worker;
+    return CITIZEN_COLORS.visitor;
+  }
+
+  /**
+   * Draw all citizens as colored dots (spec §6.1). At night the dots are
+   * rendered at reduced opacity (0.7) and each gets a small additive white
+   * "flashlight" glow ahead of it. Handles an empty citizens array gracefully.
+   */
+  drawCitizens(): void {
+    const { ctx, world } = this;
+    // Graceful no-op for an empty citizens array (no draw calls).
+    if (world.citizens.length === 0) return;
+
+    const state = computeLightingState(this.time);
+    const isNight = state.isNight;
+
+    const prevFillStyle = ctx.fillStyle;
+    const prevComposite = ctx.globalCompositeOperation;
+    const prevAlpha = ctx.globalAlpha;
+
+    if (isNight) {
+      // Dim the citizen dots at night.
+      ctx.globalAlpha = NIGHT_CITIZEN_ALPHA;
+    }
+
+    for (const citizen of world.citizens) {
+      const pos = citizen.getPosition();
+      const color = this.getCitizenColor(citizen);
+
+      // Citizen dot.
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, CITIZEN_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Reset dot alpha before drawing flashlight glows at full strength.
+    if (isNight) {
+      ctx.globalAlpha = prevAlpha;
+      // Additive blend so the flashlight glows through the night overlay.
+      ctx.globalCompositeOperation = 'lighter';
+      for (const citizen of world.citizens) {
+        const pos = citizen.getPosition();
+        const grad = ctx.createRadialGradient(
+          pos.x,
+          pos.y,
+          0,
+          pos.x,
+          pos.y,
+          FLASHLIGHT_RADIUS,
+        );
+        grad.addColorStop(0, 'rgba(255,255,255,0.5)');
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, FLASHLIGHT_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.globalCompositeOperation = prevComposite;
+    ctx.globalAlpha = prevAlpha;
+    ctx.fillStyle = prevFillStyle;
   }
 
   // ----------------------------------------------------------------

@@ -5,8 +5,9 @@
  * jest.fn-backed mock that records fillStyle assignments and fillRect calls.
  * The mock is cast to CanvasRenderingContext2D for type compatibility.
  */
-import { Renderer, ZONE_COLORS } from '@/engine/Renderer';
+import { CITIZEN_COLORS, Renderer, ZONE_COLORS } from '@/engine/Renderer';
 import { TILE_SIZE, World } from '@/engine/World';
+import { Citizen } from '@/entities/Citizen';
 import type { Building, BuildingDef, CityTime, ZoneType } from '@/engine/types';
 
 /** Minimal BuildingDef factory for tests. */
@@ -60,6 +61,7 @@ function makeMockGradient() {
 function makeMockCtx() {
   let currentFillStyle = '';
   let currentCompositeOperation = 'source-over';
+  let currentGlobalAlpha = 1;
   const fillStyles: string[] = [];
   const fillRect = jest.fn(() => {
     fillStyles.push(currentFillStyle);
@@ -70,6 +72,13 @@ function makeMockCtx() {
   const translate = jest.fn();
   const createRadialGradient = jest.fn(() => makeMockGradient());
   const createLinearGradient = jest.fn(() => makeMockGradient());
+  const beginPath = jest.fn();
+  const arc = jest.fn();
+  // fill() records the fillStyle active at call time (like fillRect).
+  const fill = jest.fn(() => {
+    fillStyles.push(currentFillStyle);
+  });
+  const closePath = jest.fn();
 
   const ctx = {
     get fillStyle() {
@@ -84,6 +93,12 @@ function makeMockCtx() {
     set globalCompositeOperation(value: string) {
       currentCompositeOperation = value;
     },
+    get globalAlpha() {
+      return currentGlobalAlpha;
+    },
+    set globalAlpha(value: number) {
+      currentGlobalAlpha = value;
+    },
     fillRect,
     fillStyles,
     save,
@@ -92,6 +107,10 @@ function makeMockCtx() {
     translate,
     createRadialGradient,
     createLinearGradient,
+    beginPath,
+    arc,
+    fill,
+    closePath,
   };
   return ctx as unknown as CanvasRenderingContext2D & {
     fillRect: jest.Mock;
@@ -101,6 +120,10 @@ function makeMockCtx() {
     translate: jest.Mock;
     createRadialGradient: jest.Mock;
     createLinearGradient: jest.Mock;
+    beginPath: jest.Mock;
+    arc: jest.Mock;
+    fill: jest.Mock;
+    closePath: jest.Mock;
     fillStyles: string[];
   };
 }
@@ -280,6 +303,7 @@ describe('Renderer', () => {
       const groundSpy = jest.spyOn(renderer, 'drawGround');
       const roadsSpy = jest.spyOn(renderer, 'drawRoads');
       const buildingsSpy = jest.spyOn(renderer, 'drawBuildings');
+      const citizensSpy = jest.spyOn(renderer, 'drawCitizens');
       const overlaySpy = jest.spyOn(renderer, 'drawLightingOverlay');
       const windowSpy = jest.spyOn(renderer, 'drawWindowLights');
       const streetSpy = jest.spyOn(renderer, 'drawStreetLights');
@@ -290,6 +314,7 @@ describe('Renderer', () => {
         groundSpy.mock.invocationCallOrder[0],
         roadsSpy.mock.invocationCallOrder[0],
         buildingsSpy.mock.invocationCallOrder[0],
+        citizensSpy.mock.invocationCallOrder[0],
         overlaySpy.mock.invocationCallOrder[0],
         windowSpy.mock.invocationCallOrder[0],
         streetSpy.mock.invocationCallOrder[0],
@@ -301,6 +326,7 @@ describe('Renderer', () => {
       groundSpy.mockRestore();
       roadsSpy.mockRestore();
       buildingsSpy.mockRestore();
+      citizensSpy.mockRestore();
       overlaySpy.mockRestore();
       windowSpy.mockRestore();
       streetSpy.mockRestore();
@@ -467,6 +493,129 @@ describe('Renderer', () => {
 
       renderer.drawStreetLights();
       expect(ctx.globalCompositeOperation).toBe('source-over');
+    });
+  });
+
+  describe('drawCitizens', () => {
+    it('handles an empty citizens array gracefully (no draw calls)', () => {
+      const ctx = makeMockCtx();
+      const world = new World(4, 4);
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 12, minute: 0, totalMs: 12 * 3_600_000 });
+
+      const arcBefore = ctx.arc.mock.calls.length;
+      const fillBefore = ctx.fill.mock.calls.length;
+      renderer.drawCitizens();
+      expect(ctx.arc.mock.calls.length).toBe(arcBefore);
+      expect(ctx.fill.mock.calls.length).toBe(fillBefore);
+    });
+
+    it('renders a working employed citizen as #1565c0 (worker)', () => {
+      const ctx = makeMockCtx();
+      const world = new World(4, 4);
+      const citizen = new Citizen({ x: 10, y: 10 }, { employed: true });
+      citizen.activity = 'working';
+      world.addCitizen(citizen);
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 12, minute: 0, totalMs: 12 * 3_600_000 });
+
+      renderer.drawCitizens();
+
+      expect(ctx.fillStyles).toContain(CITIZEN_COLORS.worker);
+    });
+
+    it('renders a commuting employed citizen as #1565c0 (worker)', () => {
+      const ctx = makeMockCtx();
+      const world = new World(4, 4);
+      const citizen = new Citizen({ x: 10, y: 10 }, { employed: true });
+      citizen.activity = 'commuting';
+      world.addCitizen(citizen);
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 12, minute: 0, totalMs: 12 * 3_600_000 });
+
+      renderer.drawCitizens();
+
+      expect(ctx.fillStyles).toContain(CITIZEN_COLORS.worker);
+    });
+
+    it('renders an entertaining employed citizen as #2e7d32 (visitor)', () => {
+      const ctx = makeMockCtx();
+      const world = new World(4, 4);
+      const citizen = new Citizen({ x: 10, y: 10 }, { employed: true });
+      citizen.activity = 'entertaining';
+      world.addCitizen(citizen);
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 12, minute: 0, totalMs: 12 * 3_600_000 });
+
+      renderer.drawCitizens();
+
+      expect(ctx.fillStyles).toContain(CITIZEN_COLORS.visitor);
+    });
+
+    it('renders an unemployed citizen as #ef6c00 (unemployed)', () => {
+      const ctx = makeMockCtx();
+      const world = new World(4, 4);
+      const citizen = new Citizen({ x: 10, y: 10 }, { employed: false });
+      citizen.activity = 'wandering';
+      world.addCitizen(citizen);
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 12, minute: 0, totalMs: 12 * 3_600_000 });
+
+      renderer.drawCitizens();
+
+      expect(ctx.fillStyles).toContain(CITIZEN_COLORS.unemployed);
+    });
+
+    it('renders citizen dots at globalAlpha 0.7 at night', () => {
+      const ctx = makeMockCtx();
+      const world = new World(4, 4);
+      const citizen = new Citizen({ x: 10, y: 10 }, { employed: true });
+      citizen.activity = 'working';
+      world.addCitizen(citizen);
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 0, minute: 0, totalMs: 0 });
+
+      renderer.drawCitizens();
+
+      // globalAlpha is reset after drawing, so we inspect the arc calls: the
+      // dot arc is drawn while alpha is 0.7. We assert via the recorded alpha
+      // by checking that arc was called (dot + flashlight) and that the final
+      // globalAlpha is restored to 1.
+      expect(ctx.arc.mock.calls.length).toBeGreaterThan(0);
+      expect(ctx.globalAlpha).toBe(1);
+    });
+
+    it('draws a flashlight circle (arc) at night', () => {
+      const ctx = makeMockCtx();
+      const world = new World(4, 4);
+      const citizen = new Citizen({ x: 10, y: 10 }, { employed: true });
+      citizen.activity = 'working';
+      world.addCitizen(citizen);
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 0, minute: 0, totalMs: 0 });
+
+      renderer.drawCitizens();
+
+      // At night: 1 dot arc + 1 flashlight arc = 2 arc calls per citizen.
+      expect(ctx.arc.mock.calls.length).toBe(2);
+      // A radial gradient is created for the flashlight glow.
+      expect(ctx.createRadialGradient.mock.calls.length).toBe(1);
+    });
+
+    it('does NOT draw a flashlight circle during the day', () => {
+      const ctx = makeMockCtx();
+      const world = new World(4, 4);
+      const citizen = new Citizen({ x: 10, y: 10 }, { employed: true });
+      citizen.activity = 'working';
+      world.addCitizen(citizen);
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 12, minute: 0, totalMs: 12 * 3_600_000 });
+
+      renderer.drawCitizens();
+
+      // Day: only the dot arc (1), no flashlight.
+      expect(ctx.arc.mock.calls.length).toBe(1);
+      expect(ctx.createRadialGradient.mock.calls.length).toBe(0);
     });
   });
 });

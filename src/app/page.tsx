@@ -8,6 +8,8 @@ import { TILE_SIZE } from '@/engine/World';
 import { generateCity } from '@/generation/CityGenerator';
 import { TimeSystem } from '@/systems/TimeSystem';
 import TimeControls from '@/ui/TimeControls';
+import Tooltip, { type TooltipContent } from '@/ui/Tooltip';
+import type { Building } from '@/engine/types';
 
 /**
  * Root page for the City Simulation.
@@ -38,6 +40,7 @@ export default function Home() {
   // null on the very first render, before useEffect runs).
   const timeSystemRef = useRef<TimeSystem | null>(null);
   const [engineReady, setEngineReady] = useState(false);
+  const [tooltip, setTooltip] = useState<TooltipContent | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -86,12 +89,76 @@ export default function Home() {
     };
 
     const onMouseMove = (e: MouseEvent) => {
-      if (!dragging) return;
-      const dx = e.clientX - lastMouseX;
-      const dy = e.clientY - lastMouseY;
-      lastMouseX = e.clientX;
-      lastMouseY = e.clientY;
-      camera.pan(dx, dy);
+      if (dragging) {
+        const dx = e.clientX - lastMouseX;
+        const dy = e.clientY - lastMouseY;
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+        camera.pan(dx, dy);
+        return;
+      }
+
+      // Hover detection (spec §6.4): convert the screen cursor to world
+      // coordinates via camera.screenToWorld() and hit-test citizens first
+      // (nearest within a radius), then buildings (point-in-rect).
+      const rect = canvas.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      const worldPos = camera.screenToWorld(screenX, screenY);
+
+      // Citizen hit-test: nearest citizen within HIT_RADIUS world px.
+      const HIT_RADIUS = 6;
+      let nearestCitizen = null;
+      let nearestDist = HIT_RADIUS;
+      for (const c of world.citizens) {
+        const p = c.getPosition();
+        const d = Math.hypot(p.x - worldPos.x, p.y - worldPos.y);
+        if (d <= nearestDist) {
+          nearestDist = d;
+          nearestCitizen = c;
+        }
+      }
+      if (nearestCitizen) {
+        setTooltip({ kind: 'citizen', citizen: nearestCitizen, x: screenX, y: screenY });
+        return;
+      }
+
+      // Building hit-test: point-in-rect (world tile → world px).
+      let hitBuilding: Building | null = null;
+      for (const b of world.buildings.values()) {
+        const bx = b.x * TILE_SIZE;
+        const by = b.y * TILE_SIZE;
+        const bw = b.width * TILE_SIZE;
+        const bh = b.height * TILE_SIZE;
+        if (
+          worldPos.x >= bx &&
+          worldPos.x < bx + bw &&
+          worldPos.y >= by &&
+          worldPos.y < by + bh
+        ) {
+          hitBuilding = b;
+          break;
+        }
+      }
+      if (hitBuilding) {
+        // Occupancy: count citizens whose home/workplace matches this building.
+        let occupancy = 0;
+        for (const c of world.citizens) {
+          if (c.homeId === hitBuilding.id || c.workplaceId === hitBuilding.id) {
+            occupancy++;
+          }
+        }
+        setTooltip({
+          kind: 'building',
+          building: hitBuilding,
+          occupancy,
+          x: screenX,
+          y: screenY,
+        });
+        return;
+      }
+
+      setTooltip(null);
     };
 
     const endDrag = () => {
@@ -237,6 +304,10 @@ export default function Home() {
       {engineReady && timeSystemRef.current ? (
         <TimeControls timeSystem={timeSystemRef.current} />
       ) : null}
+
+      {/* Hover tooltip (spec §6.4). Positioned near the cursor with a dark
+          translucent background. */}
+      <Tooltip content={tooltip} />
     </main>
   );
 }
