@@ -28,6 +28,7 @@ import {
   WINDOW_LIGHT_COLOR,
   type LightingState,
 } from './Lighting';
+import type { SpriteLoader } from './SpriteLoader';
 
 /** Spec §6.1 zone → render color map. */
 export const ZONE_COLORS: Record<ZoneType, string> = {
@@ -96,14 +97,49 @@ export interface CameraTransform {
 export interface RendererOptions {
   /** Optional camera; defaults to identity (no pan/zoom). */
   camera?: CameraTransform;
+  /** Optional sprite loader; when a sprite is available it is drawn instead of the procedural shape. */
+  spriteLoader?: SpriteLoader;
+}
+
+/**
+ * Viewport culling margin: entities within the visible rect expanded by this
+ * fraction (10%) on each side are still drawn. Accounts for entity movement
+ * between frames and partially-visible edge entities.
+ */
+const VIEWPORT_MARGIN = 0.1;
+
+/** Per-frame draw statistics (exposed for benchmarking/tests). */
+export interface RendererStats {
+  buildingsDrawn: number;
+  buildingsCulled: number;
+  citizensDrawn: number;
+  citizensCulled: number;
+  vehiclesDrawn: number;
+  vehiclesCulled: number;
 }
 
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly world: World;
   private camera: CameraTransform;
+  /** Optional sprite loader for image-based rendering (procedural fallback). */
+  private readonly spriteLoader?: SpriteLoader;
   /** Current city time used for lighting computation. Defaults to noon. */
   private time: CityTime = { day: 0, hour: 12, minute: 0, totalMs: 0 };
+
+  /** Viewport dimensions for culling. 0 = culling disabled (draw all). */
+  private viewportWidth = 0;
+  private viewportHeight = 0;
+
+  /** Per-frame draw statistics (reset each render call). */
+  private stats: RendererStats = {
+    buildingsDrawn: 0,
+    buildingsCulled: 0,
+    citizensDrawn: 0,
+    citizensCulled: 0,
+    vehiclesDrawn: 0,
+    vehiclesCulled: 0,
+  };
 
   constructor(
     ctx: CanvasRenderingContext2D,
@@ -113,11 +149,77 @@ export class Renderer {
     this.ctx = ctx;
     this.world = world;
     this.camera = options.camera ?? { x: 0, y: 0, zoom: 1 };
+    this.spriteLoader = options.spriteLoader;
   }
 
   /** Update the active camera transform (used by the downstream Camera task). */
   setCamera(camera: CameraTransform): void {
     this.camera = camera;
+  }
+
+  /**
+   * Set the viewport dimensions used for culling. Called each frame by the
+   * host (page.tsx) with the canvas size. When either dimension is 0, culling
+   * is disabled (all entities drawn) — this preserves backward compatibility
+   * with tests that never call setViewport.
+   */
+  setViewport(width: number, height: number): void {
+    this.viewportWidth = width;
+    this.viewportHeight = height;
+  }
+
+  /**
+   * Return the per-frame draw statistics (buildings/citizens/vehicles drawn
+   * vs culled). Reset at the start of each render().
+   */
+  getStats(): RendererStats {
+    return this.stats;
+  }
+
+  /**
+   * Compute the visible world rect (with +10% margin) for culling, or null if
+   * culling is disabled (viewport dimensions are 0). The rect is in world
+   * PIXEL coordinates (matching entity positions).
+   */
+  private getVisibleRect(): {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+  } | null {
+    if (this.viewportWidth === 0 || this.viewportHeight === 0) return null;
+    const zoom = this.camera.zoom || 1;
+    // Visible world span = viewport / zoom.
+    const viewW = this.viewportWidth / zoom;
+    const viewH = this.viewportHeight / zoom;
+    const marginX = viewW * VIEWPORT_MARGIN;
+    const marginY = viewH * VIEWPORT_MARGIN;
+    return {
+      minX: this.camera.x - marginX,
+      minY: this.camera.y - marginY,
+      maxX: this.camera.x + viewW + marginX,
+      maxY: this.camera.y + viewH + marginY,
+    };
+  }
+
+  /** True if culling is enabled and the given world-pixel rect is outside view. */
+  private isRectCulled(
+    px: number,
+    py: number,
+    pw: number,
+    ph: number,
+  ): boolean {
+    const rect = this.getVisibleRect();
+    if (!rect) return false;
+    // No overlap → culled.
+    return px + pw < rect.minX || px > rect.maxX || py + ph < rect.minY || py > rect.maxY;
+  }
+
+  /** True if culling is enabled and the given world-pixel point is outside view. */
+  private isPointCulled(px: number, py: number): boolean {
+    const rect = this.getVisibleRect();
+    if (!rect) return false;
+    return px < rect.minX || px > rect.maxX || py < rect.minY || py > rect.maxY;
   }
 
   /**
@@ -137,6 +239,15 @@ export class Renderer {
    */
   render(alpha: number): void {
     void alpha; // Reserved for future interpolated entity positions.
+    // Reset per-frame draw statistics.
+    this.stats = {
+      buildingsDrawn: 0,
+      buildingsCulled: 0,
+      citizensDrawn: 0,
+      citizensCulled: 0,
+      vehiclesDrawn: 0,
+      vehiclesCulled: 0,
+    };
     const { ctx } = this;
     ctx.save();
     this.applyCameraTransform();
@@ -211,14 +322,29 @@ export class Renderer {
     const sorted = this.sortByDepth(buildings);
 
     for (const building of sorted) {
+      const px = building.x * TILE_SIZE;
+      const py = building.y * TILE_SIZE;
+      const pw = building.width * TILE_SIZE;
+      const ph = building.height * TILE_SIZE;
+
+      // Viewport culling: skip buildings entirely outside the visible rect.
+      if (this.isRectCulled(px, py, pw, ph)) {
+        this.stats.buildingsCulled++;
+        continue;
+      }
+      this.stats.buildingsDrawn++;
+
+      // Sprite path: if a sprite is available for this building type, draw it.
+      const sprite = this.spriteLoader?.get('building', building.type);
+      if (sprite) {
+        ctx.drawImage(sprite, px, py, pw, ph);
+        continue;
+      }
+
+      // Procedural fallback: colored rectangle keyed by zone.
       const color = ZONE_COLORS[building.zone] ?? building.def.color;
       ctx.fillStyle = color;
-      ctx.fillRect(
-        building.x * TILE_SIZE,
-        building.y * TILE_SIZE,
-        building.width * TILE_SIZE,
-        building.height * TILE_SIZE,
-      );
+      ctx.fillRect(px, py, pw, ph);
     }
   }
 
@@ -286,17 +412,53 @@ export class Renderer {
       ctx.globalAlpha = NIGHT_CITIZEN_ALPHA;
     }
 
+    // BATCHED CITIZEN DRAWS (spec §8 Phase 7):
+    // Group visible, on-screen citizens by color so all dots sharing a color
+    // are drawn in a single beginPath()+fill() cycle. This reduces N fill()
+    // calls and N fillStyle changes to at most 3 (one per color class).
+    const groups = new Map<string, Array<{ x: number; y: number }>>();
     for (const citizen of world.citizens) {
       // Skip invisible citizens (inside a vehicle during commute, spec §7.2).
       if (!citizen.visible) continue;
       const pos = citizen.getPosition();
+      // Viewport culling: skip citizens outside the visible rect.
+      if (this.isPointCulled(pos.x, pos.y)) {
+        this.stats.citizensCulled++;
+        continue;
+      }
+      this.stats.citizensDrawn++;
       const color = this.getCitizenColor(citizen);
+      let group = groups.get(color);
+      if (!group) {
+        group = [];
+        groups.set(color, group);
+      }
+      group.push({ x: pos.x, y: pos.y });
+    }
 
-      // Citizen dot.
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, CITIZEN_RADIUS, 0, Math.PI * 2);
-      ctx.fill();
+    for (const [color, dots] of groups) {
+      // If a sprite is available for this citizen color, draw each via
+      // drawImage; otherwise batch all arcs into one path + fill.
+      const sprite = this.spriteLoader?.get('citizen', color);
+      if (sprite) {
+        for (const d of dots) {
+          ctx.drawImage(
+            sprite,
+            d.x - CITIZEN_RADIUS,
+            d.y - CITIZEN_RADIUS,
+            CITIZEN_RADIUS * 2,
+            CITIZEN_RADIUS * 2,
+          );
+        }
+      } else {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        for (const d of dots) {
+          ctx.moveTo(d.x + CITIZEN_RADIUS, d.y);
+          ctx.arc(d.x, d.y, CITIZEN_RADIUS, 0, Math.PI * 2);
+        }
+        ctx.fill();
+      }
     }
 
     // Reset dot alpha before drawing flashlight glows at full strength.
@@ -358,14 +520,27 @@ export class Renderer {
       const w = Renderer.VEHICLE_WIDTH * TILE_SIZE;
       const h = Renderer.VEHICLE_HEIGHT * TILE_SIZE;
 
+      // Viewport culling: skip vehicles outside the visible rect.
+      if (this.isRectCulled(px - w / 2, py - h / 2, w, h)) {
+        this.stats.vehiclesCulled++;
+        continue;
+      }
+      this.stats.vehiclesDrawn++;
+
       // Orientation from velocity vector (default horizontal when zero).
       const angle = Math.atan2(vehicle.velocity.y, vehicle.velocity.x);
 
       ctx.save();
       ctx.translate(px, py);
       ctx.rotate(angle);
-      ctx.fillStyle = vehicle.color;
-      ctx.fillRect(-w / 2, -h / 2, w, h);
+      // Sprite path: if a sprite is available for this vehicle color, draw it.
+      const sprite = this.spriteLoader?.get('vehicle', vehicle.color);
+      if (sprite) {
+        ctx.drawImage(sprite, -w / 2, -h / 2, w, h);
+      } else {
+        ctx.fillStyle = vehicle.color;
+        ctx.fillRect(-w / 2, -h / 2, w, h);
+      }
       ctx.restore();
     }
 

@@ -8,6 +8,8 @@
 import { CITIZEN_COLORS, Renderer, ZONE_COLORS } from '@/engine/Renderer';
 import { TILE_SIZE, World } from '@/engine/World';
 import { Citizen } from '@/entities/Citizen';
+import { Vehicle } from '@/entities/Vehicle';
+import type { SpriteLoader } from '@/engine/SpriteLoader';
 import type { Building, BuildingDef, CityTime, ZoneType } from '@/engine/types';
 
 /** Minimal BuildingDef factory for tests. */
@@ -79,6 +81,9 @@ function makeMockCtx() {
     fillStyles.push(currentFillStyle);
   });
   const closePath = jest.fn();
+  const moveTo = jest.fn();
+  const drawImage = jest.fn();
+  const rotate = jest.fn();
 
   const ctx = {
     get fillStyle() {
@@ -111,6 +116,9 @@ function makeMockCtx() {
     arc,
     fill,
     closePath,
+    moveTo,
+    drawImage,
+    rotate,
   };
   return ctx as unknown as CanvasRenderingContext2D & {
     fillRect: jest.Mock;
@@ -124,6 +132,9 @@ function makeMockCtx() {
     arc: jest.Mock;
     fill: jest.Mock;
     closePath: jest.Mock;
+    moveTo: jest.Mock;
+    drawImage: jest.Mock;
+    rotate: jest.Mock;
     fillStyles: string[];
   };
 }
@@ -616,6 +627,159 @@ describe('Renderer', () => {
       // Day: only the dot arc (1), no flashlight.
       expect(ctx.arc.mock.calls.length).toBe(1);
       expect(ctx.createRadialGradient.mock.calls.length).toBe(0);
+    });
+  });
+
+  // ------------------------------------------------------------------
+  // Viewport culling + batched citizen draws + sprite path (spec §8).
+  // ------------------------------------------------------------------
+  describe('viewport culling', () => {
+    it('draws all entities when setViewport is NOT called (backward compat)', () => {
+      const ctx = makeMockCtx();
+      const world = new World(20, 20);
+      // Place buildings far apart.
+      world.buildings.set('b1', makeBuilding('b1', 'residential', 1, 1));
+      world.buildings.set('b2', makeBuilding('b2', 'residential', 18, 18));
+      const renderer = new Renderer(ctx, world);
+      renderer.render(0);
+      const stats = renderer.getStats();
+      // No viewport → no culling → both drawn.
+      expect(stats.buildingsDrawn).toBe(2);
+      expect(stats.buildingsCulled).toBe(0);
+    });
+
+    it('skips buildings outside the camera visible rect + 10% margin', () => {
+      const ctx = makeMockCtx();
+      const world = new World(40, 40);
+      world.buildings.set('b1', makeBuilding('b1', 'residential', 1, 1));
+      world.buildings.set('b2', makeBuilding('b2', 'residential', 38, 38));
+      const renderer = new Renderer(ctx, world);
+      // Viewport covers only the top-left corner (world px 0..320).
+      renderer.setViewport(320, 320);
+      renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+      renderer.render(0);
+      const stats = renderer.getStats();
+      expect(stats.buildingsDrawn).toBe(1);
+      expect(stats.buildingsCulled).toBe(1);
+    });
+
+    it('skips citizens outside the camera visible rect', () => {
+      const ctx = makeMockCtx();
+      const world = new World(40, 40);
+      const c1 = new Citizen({ x: 10, y: 10 }, { employed: true });
+      c1.activity = 'working';
+      const c2 = new Citizen({ x: 1000, y: 1000 }, { employed: true });
+      c2.activity = 'working';
+      world.addCitizen(c1);
+      world.addCitizen(c2);
+      const renderer = new Renderer(ctx, world);
+      renderer.setViewport(320, 320);
+      renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+      renderer.render(0);
+      const stats = renderer.getStats();
+      expect(stats.citizensDrawn).toBe(1);
+      expect(stats.citizensCulled).toBe(1);
+    });
+
+    it('skips vehicles outside the camera visible rect', () => {
+      const ctx = makeMockCtx();
+      const world = new World(40, 40);
+      const v1 = new Vehicle({ x: 5, y: 5 }, { velocity: { x: 1, y: 0 }, color: '#ff0000' });
+      const v2 = new Vehicle({ x: 500, y: 500 }, { velocity: { x: 1, y: 0 }, color: '#ff0000' });
+      world.addVehicle(v1);
+      world.addVehicle(v2);
+      const renderer = new Renderer(ctx, world);
+      renderer.setViewport(320, 320);
+      renderer.setCamera({ x: 0, y: 0, zoom: 1 });
+      renderer.render(0);
+      const stats = renderer.getStats();
+      expect(stats.vehiclesDrawn).toBe(1);
+      expect(stats.vehiclesCulled).toBe(1);
+    });
+  });
+
+  describe('batched citizen draws', () => {
+    it('groups citizens by color into a single fill() per color', () => {
+      const ctx = makeMockCtx();
+      const world = new World(20, 20);
+      // 3 workers (same color).
+      for (let i = 0; i < 3; i++) {
+        const c = new Citizen({ x: 10 + i * 5, y: 10 }, { employed: true });
+        c.activity = 'working';
+        world.addCitizen(c);
+      }
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 12, minute: 0, totalMs: 12 * 3_600_000 });
+      renderer.drawCitizens();
+      // 3 citizens, 1 color → exactly 1 fill() call for the dots.
+      expect(ctx.fill.mock.calls.length).toBe(1);
+      // 3 arcs in the single path.
+      expect(ctx.arc.mock.calls.length).toBe(3);
+    });
+
+    it('produces at most 3 fill() calls (one per color class)', () => {
+      const ctx = makeMockCtx();
+      const world = new World(20, 20);
+      // Mix of worker, visitor, unemployed.
+      const worker = new Citizen({ x: 10, y: 10 }, { employed: true });
+      worker.activity = 'working';
+      const visitor = new Citizen({ x: 20, y: 10 }, { employed: true });
+      visitor.activity = 'eating';
+      const unemployed = new Citizen({ x: 30, y: 10 }, { employed: false });
+      world.addCitizen(worker);
+      world.addCitizen(visitor);
+      world.addCitizen(unemployed);
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 12, minute: 0, totalMs: 12 * 3_600_000 });
+      renderer.drawCitizens();
+      // At most 3 fill() calls (one per color class).
+      expect(ctx.fill.mock.calls.length).toBeLessThanOrEqual(3);
+    });
+
+    it('skips invisible citizens in the batched draw loop', () => {
+      const ctx = makeMockCtx();
+      const world = new World(20, 20);
+      const visible = new Citizen({ x: 10, y: 10 }, { employed: true });
+      visible.activity = 'working';
+      const hidden = new Citizen({ x: 20, y: 10 }, { employed: true });
+      hidden.activity = 'working';
+      hidden.visible = false;
+      world.addCitizen(visible);
+      world.addCitizen(hidden);
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 12, minute: 0, totalMs: 12 * 3_600_000 });
+      renderer.drawCitizens();
+      // Only 1 arc for the visible citizen.
+      expect(ctx.arc.mock.calls.length).toBe(1);
+    });
+  });
+
+  describe('sprite integration', () => {
+    it('uses drawImage when a building sprite is available', () => {
+      const ctx = makeMockCtx();
+      const drawImage = jest.fn();
+      (ctx as unknown as { drawImage: jest.Mock }).drawImage = drawImage;
+      const world = new World(10, 10);
+      world.buildings.set('b1', makeBuilding('b1', 'residential', 1, 1));
+      const fakeSprite = {} as HTMLImageElement;
+      const spriteLoader = { get: jest.fn(() => fakeSprite) } as unknown as SpriteLoader;
+      const renderer = new Renderer(ctx, world, { spriteLoader });
+      renderer.drawBuildings();
+      expect(drawImage).toHaveBeenCalled();
+      // Procedural fillRect should NOT have been called for the building body.
+      // (drawGround is not called here, so fillRect calls are only from buildings.)
+      expect(spriteLoader.get).toHaveBeenCalledWith('building', 'house');
+    });
+
+    it('falls back to procedural draw when no sprite is available', () => {
+      const ctx = makeMockCtx();
+      const world = new World(10, 10);
+      world.buildings.set('b1', makeBuilding('b1', 'residential', 1, 1));
+      const spriteLoader = { get: jest.fn(() => null) } as unknown as SpriteLoader;
+      const renderer = new Renderer(ctx, world, { spriteLoader });
+      renderer.drawBuildings();
+      // Procedural fillRect was called for the building.
+      expect(ctx.fillRect).toHaveBeenCalled();
     });
   });
 });

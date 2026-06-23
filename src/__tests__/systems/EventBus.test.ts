@@ -181,4 +181,30 @@ describe('EventBus', () => {
       expect(calls).toEqual(['second']);
     });
   });
+
+  describe('getAndResetEventCount', () => {
+    it('returns cumulative count and resets to 0', () => {
+      bus.emit(makeEvent('new_day'));
+      bus.emit(makeEvent('citizen_arrived'));
+      bus.emit(makeEvent('company_opened'));
+      expect(bus.getAndResetEventCount()).toBe(3);
+      // Counter reset — next call returns 0.
+      expect(bus.getAndResetEventCount()).toBe(0);
+    });
+
+    it('counts events emitted after a reset', () => {
+      bus.emit(makeEvent('new_day'));
+      bus.getAndResetEventCount();
+      bus.emit(makeEvent('new_day'));
+      bus.emit(makeEvent('new_day'));
+      expect(bus.getAndResetEventCount()).toBe(2);
+    });
+
+    it('clear() resets the event counter', () => {
+      bus.emit(makeEvent('new_day'));
+      bus.emit(makeEvent('new_day'));
+      bus.clear();
+      expect(bus.getAndResetEventCount()).toBe(0);
+    });
+  });
 });

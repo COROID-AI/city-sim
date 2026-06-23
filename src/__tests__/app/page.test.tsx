@@ -8,22 +8,37 @@ import Home from '@/app/page';
  */
 function mockCanvasContext(): void {
   const noop = () => {};
-  const ctx = {
-    save: noop,
-    restore: noop,
-    scale: noop,
-    translate: noop,
-    fillRect: noop,
-    clearRect: noop,
-    set fillStyle(_v: string) {},
-    get fillStyle(): string {
-      return '';
+  // Use a Proxy so ANY Canvas2D method/property access returns a noop/no-op,
+  // avoiding "ctx.X is not a function" errors as the Renderer grows.
+  const ctx = new Proxy(
+    {
+      canvas: null,
+      set fillStyle(_v: string) {},
+      get fillStyle(): string {
+        return '';
+      },
+      set strokeStyle(_v: string) {},
+      get strokeStyle(): string {
+        return '';
+      },
+      set globalAlpha(_v: number) {},
+      get globalAlpha(): number {
+        return 1;
+      },
+      set globalCompositeOperation(_v: string) {},
+      get globalCompositeOperation(): string {
+        return 'source-over';
+      },
     },
-    set strokeStyle(_v: string) {},
-    get strokeStyle(): string {
-      return '';
+    {
+      get(target, prop) {
+        if (prop in target) {
+          return (target as Record<string | symbol, unknown>)[prop];
+        }
+        return noop;
+      },
     },
-  };
+  );
   HTMLCanvasElement.prototype.getContext = jest
     .fn()
     .mockReturnValue(ctx) as unknown as typeof HTMLCanvasElement.prototype.getContext;

@@ -26,6 +26,12 @@ export class EventBus {
   private readonly channels = new Map<string, Set<EventHandler>>();
 
   /**
+   * Cumulative count of emitted events (all types). Used by BenchmarkReporter
+   * to compute event throughput per second. Reset via getAndResetEventCount().
+   */
+  private eventCount = 0;
+
+  /**
    * Subscribe to events of a specific `type`, or to all events via `'*'`.
    *
    * @returns An unsubscribe function (idempotent — safe to call multiple times).
@@ -64,10 +70,23 @@ export class EventBus {
     if (wildcard) {
       for (const handler of [...wildcard]) handler(event);
     }
+    this.eventCount++;
+  }
+
+  /**
+   * Return the cumulative event count since the last call and reset the counter
+   * to zero. Used by BenchmarkReporter to compute events-per-second over each
+   * 10s reporting interval.
+   */
+  getAndResetEventCount(): number {
+    const count = this.eventCount;
+    this.eventCount = 0;
+    return count;
   }
 
   /** Remove all handlers from all channels (test/reset helper). */
   clear(): void {
     this.channels.clear();
+    this.eventCount = 0;
   }
 }

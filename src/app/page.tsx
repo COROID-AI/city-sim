@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Camera } from '@/engine/Camera';
 import { GameLoop, SIMULATION_STEP } from '@/engine/GameLoop';
 import { Renderer } from '@/engine/Renderer';
+import { spriteLoader } from '@/engine/SpriteLoader';
+import { BenchmarkReporter } from '@/engine/BenchmarkReporter';
 import { TILE_SIZE } from '@/engine/World';
 import { generateCity } from '@/generation/CityGenerator';
 import { extractRoadGraph } from '@/entities/Road';
@@ -77,7 +79,7 @@ export default function Home() {
     // Generate the city and build the renderer + camera + loop.
     const world = generateCity(80, 80);
     worldRef.current = world;
-    const renderer = new Renderer(ctx, world);
+    const renderer = new Renderer(ctx, world, { spriteLoader });
 
     // EventBus — central pub/sub hub for all city events (spec §3.1).
     const eventBus = new EventBus();
@@ -303,11 +305,21 @@ export default function Home() {
         // drawing so pan/zoom and day/night lighting update live each frame.
         renderer.setCamera(camera.getTransform());
         renderer.setTime(timeSystem.getTime());
+        // Update viewport dimensions each frame so culling tracks canvas size.
+        renderer.setViewport(canvas.width, canvas.height);
         renderer.render(alpha);
       },
     });
 
     loop.start();
+
+    // BenchmarkReporter writes window.__CITY_BENCHMARK__ every 10s (spec §8).
+    const benchmark = new BenchmarkReporter({
+      gameLoop: loop,
+      world,
+      eventBus,
+    });
+    benchmark.start();
 
     return () => {
       window.removeEventListener('resize', resize);
@@ -320,6 +332,7 @@ export default function Home() {
       canvas.removeEventListener('touchend', onTouchEnd);
       canvas.removeEventListener('touchcancel', onTouchEnd);
       loop.stop();
+      benchmark.stop();
     };
   }, []);
 
