@@ -27,6 +27,8 @@ export type TileType =
   | 'residential'
   | 'commercial'
   | 'industrial'
+  | 'entertainment'
+  | 'park'
   | 'water';
 
 /**
@@ -38,6 +40,7 @@ export type BuildingType =
   | 'shop'
   | 'office'
   | 'factory'
+  | 'cinema'
   | 'park'
   | 'road';
 
@@ -118,6 +121,48 @@ export interface CityEconomy {
   jobs: number;
   /** Overall happiness / approval rating [0..100]. */
   happiness: number;
+}
+
+/** Zoning district categories. */
+export type ZoneType =
+  | 'residential'
+  | 'commercial'
+  | 'industrial'
+  | 'entertainment'
+  | 'park';
+
+/** A rectangular zoning district on the grid. */
+export interface Zone {
+  /** District category. */
+  type: ZoneType;
+  /** Top-left column. */
+  x: number;
+  /** Top-left row. */
+  y: number;
+  /** Width in tiles. */
+  width: number;
+  /** Height in tiles. */
+  height: number;
+}
+
+/** A runtime building instance placed on the grid. */
+export interface Building {
+  /** Unique instance id. */
+  id: string;
+  /** Building category. */
+  type: BuildingType;
+  /** Owning zone type. */
+  zone: ZoneType;
+  /** Top-left column of the footprint. */
+  x: number;
+  /** Top-left row of the footprint. */
+  y: number;
+  /** Footprint width in tiles. */
+  width: number;
+  /** Footprint height in tiles. */
+  height: number;
+  /** Static definition backing this instance. */
+  def: BuildingDef;
 }
 
 /**
