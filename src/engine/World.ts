@@ -11,6 +11,7 @@
  */
 import type { Building, Tile, TileType, Zone } from './types';
 import type { Citizen } from '@/entities/Citizen';
+import type { Vehicle } from '@/entities/Vehicle';
 
 /** Edge length of one tile in world units (used by the Renderer). */
 export const TILE_SIZE = 16;
@@ -164,6 +165,8 @@ export class World {
   readonly zones: Zone[] = [];
   /** All spawned citizens in the city. */
   readonly citizens: Citizen[] = [];
+  /** All active vehicles in the city (spec §7.2). */
+  readonly vehicles: Vehicle[] = [];
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -191,5 +194,16 @@ export class World {
    */
   addCitizen(citizen: Citizen): void {
     this.citizens.push(citizen);
+  }
+
+  /** Register a vehicle in the world. */
+  addVehicle(vehicle: Vehicle): void {
+    this.vehicles.push(vehicle);
+  }
+
+  /** Remove a vehicle from the world. */
+  removeVehicle(vehicle: Vehicle): void {
+    const idx = this.vehicles.indexOf(vehicle);
+    if (idx >= 0) this.vehicles.splice(idx, 1);
   }
 }

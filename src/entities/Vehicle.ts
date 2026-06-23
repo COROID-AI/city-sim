@@ -16,6 +16,27 @@
  *  `speed * (deltaSimMs / 1000)`.
  */
 import type { RoadNode, VehicleState, Vector2 } from '@/engine/types';
+
+/**
+ * Bright vehicle color palette (spec §6.1). Each vehicle picks one at spawn.
+ */
+export const VEHICLE_COLORS = [
+  '#f44336', // red
+  '#ffeb3b', // yellow
+  '#2196f3', // blue
+  '#4caf50', // green
+  '#e91e63', // pink
+  '#ff9800', // orange
+] as const;
+
+/**
+ * Pick a deterministic-ish random color from {@link VEHICLE_COLORS}.
+ * @param rng Optional RNG (defaults to Math.random).
+ */
+export function randomVehicleColor(rng: () => number = Math.random): string {
+  return VEHICLE_COLORS[Math.floor(rng() * VEHICLE_COLORS.length)]!;
+}
+
 import { Entity } from '@/entities/Entity';
 
 /** Default vehicle speed in tiles per simulation second (spec §7.5). */
@@ -52,6 +73,10 @@ export interface VehicleOptions {
    * citizen-vehicle handoff task; null for unassigned / test vehicles.
    */
   citizenId?: string | null;
+  /** Render color from the {@link VEHICLE_COLORS} palette. */
+  color?: string;
+  /** Initial velocity vector (defaults to {x:0, y:0}). */
+  velocity?: Vector2;
 }
 
 export class Vehicle extends Entity {
@@ -81,6 +106,19 @@ export class Vehicle extends Entity {
   citizenId: string | null;
 
   /**
+   * Render color (spec §6.1 bright palette). Assigned at spawn via
+   * {@link randomVehicleColor} unless explicitly provided.
+   */
+  color: string;
+
+  /**
+   * Current velocity vector (tiles per sim-second). Used by the Renderer to
+   * orient the vehicle rectangle. Defaults to {0,0}; TrafficSystem updates it
+   * each step as the vehicle moves between path nodes.
+   */
+  velocity: Vector2;
+
+  /**
    * @param position Initial world-space position.
    * @param options  Optional configuration (see {@link VehicleOptions}).
    */
@@ -92,6 +130,8 @@ export class Vehicle extends Entity {
     this.isStopped = options.isStopped ?? false;
     this.currentNodeIndex = options.currentNodeIndex ?? 0;
     this.citizenId = options.citizenId ?? null;
+    this.color = options.color ?? randomVehicleColor();
+    this.velocity = options.velocity ? { ...options.velocity } : { x: 0, y: 0 };
   }
 
   /**

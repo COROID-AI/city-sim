@@ -6,6 +6,10 @@ import { GameLoop, SIMULATION_STEP } from '@/engine/GameLoop';
 import { Renderer } from '@/engine/Renderer';
 import { TILE_SIZE } from '@/engine/World';
 import { generateCity } from '@/generation/CityGenerator';
+import { extractRoadGraph } from '@/entities/Road';
+import { TrafficSystem } from '@/systems/TrafficSystem';
+import { CommuteSystem } from '@/systems/CommuteSystem';
+import { MovementSystem } from '@/systems/MovementSystem';
 import { TimeSystem } from '@/systems/TimeSystem';
 import TimeControls from '@/ui/TimeControls';
 import Tooltip, { type TooltipContent } from '@/ui/Tooltip';
@@ -60,6 +64,12 @@ export default function Home() {
     // Generate the city and build the renderer + camera + loop.
     const world = generateCity(80, 80);
     const renderer = new Renderer(ctx, world);
+
+    // Build the road graph + traffic + commute systems for vehicle handoff.
+    const graph = extractRoadGraph(world.grid);
+    const traffic = new TrafficSystem({ graph });
+    const commute = new CommuteSystem(world, { graph, traffic });
+    const movement = new MovementSystem();
     // TimeSystem drives the day/night cycle; start at 1x speed.
     const timeSystem = new TimeSystem();
     timeSystem.setSpeed(1);
@@ -255,6 +265,11 @@ export default function Home() {
         // Advance the simulation clock by one fixed step. TimeSystem applies
         // its own speed multiplier, so GameLoop stays at speed 1.
         timeSystem.update(SIMULATION_STEP);
+        const hour = timeSystem.getTime().hour;
+        // Drive citizen movement, traffic, and the commute handoff.
+        movement.update(world.citizens, SIMULATION_STEP, { buildings: world.buildings });
+        traffic.update(SIMULATION_STEP);
+        commute.update(hour);
       },
       render: (alpha) => {
         // Push the latest camera AND time state into the renderer BEFORE

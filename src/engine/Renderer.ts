@@ -18,6 +18,7 @@
  *  - CANVAS 2D ONLY: no WebGL, no sprites, no external rendering deps.
  */
 import type { Citizen } from '@/entities/Citizen';
+import type { Vehicle } from '@/entities/Vehicle';
 import type { Building, CitizenState, CityTime, ZoneType } from './types';
 import { TILE_SIZE, World } from './World';
 import {
@@ -148,6 +149,7 @@ export class Renderer {
     this.drawGround();
     this.drawRoads();
     this.drawBuildings();
+    this.drawVehicles();
     this.drawCitizens();
     this.drawLightingOverlay();
     this.drawWindowLights();
@@ -285,6 +287,8 @@ export class Renderer {
     }
 
     for (const citizen of world.citizens) {
+      // Skip invisible citizens (inside a vehicle during commute, spec §7.2).
+      if (!citizen.visible) continue;
       const pos = citizen.getPosition();
       const color = this.getCitizenColor(citizen);
 
@@ -301,6 +305,7 @@ export class Renderer {
       // Additive blend so the flashlight glows through the night overlay.
       ctx.globalCompositeOperation = 'lighter';
       for (const citizen of world.citizens) {
+        if (!citizen.visible) continue;
         const pos = citizen.getPosition();
         const grad = ctx.createRadialGradient(
           pos.x,
@@ -321,6 +326,49 @@ export class Renderer {
 
     ctx.globalCompositeOperation = prevComposite;
     ctx.globalAlpha = prevAlpha;
+    ctx.fillStyle = prevFillStyle;
+  }
+
+  // ----------------------------------------------------------------
+  // Vehicles layer (spec §6.1).
+  // ----------------------------------------------------------------
+
+  /** Vehicle rectangle dimensions in world pixels (spec §6.1: 6x4 world units). */
+  static readonly VEHICLE_WIDTH = 6;
+  static readonly VEHICLE_HEIGHT = 4;
+
+  /**
+   * Draw all vehicles as small colored rectangles oriented by velocity
+   * direction (spec §6.1). Vehicles are drawn in TILE-space coordinates
+   * (matching citizens), scaled by TILE_SIZE to pixel space. Each rectangle is
+   * 6x4 world units, rotated to face its velocity vector, and filled with the
+   * vehicle's bright palette color. Handles an empty vehicles array gracefully.
+   */
+  drawVehicles(): void {
+    const { ctx, world } = this;
+    // Graceful no-op for an empty vehicles array.
+    if (world.vehicles.length === 0) return;
+
+    const prevFillStyle = ctx.fillStyle;
+
+    for (const vehicle of world.vehicles) {
+      const pos = vehicle.getPosition();
+      const px = pos.x * TILE_SIZE;
+      const py = pos.y * TILE_SIZE;
+      const w = Renderer.VEHICLE_WIDTH * TILE_SIZE;
+      const h = Renderer.VEHICLE_HEIGHT * TILE_SIZE;
+
+      // Orientation from velocity vector (default horizontal when zero).
+      const angle = Math.atan2(vehicle.velocity.y, vehicle.velocity.x);
+
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(angle);
+      ctx.fillStyle = vehicle.color;
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+      ctx.restore();
+    }
+
     ctx.fillStyle = prevFillStyle;
   }
 

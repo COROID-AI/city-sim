@@ -124,6 +124,15 @@ export interface ScheduleEntry {
  */
 export type CommuteMode = 'foot' | 'vehicle';
 
+/**
+ * Citizen-vehicle commute handoff state machine (spec §7.2).
+ *  - `none`:      not commuting by vehicle.
+ *  - `toRoad`:    walking towards the nearest road tile to board a vehicle.
+ *  - `inVehicle`: inside a spawned vehicle (citizen invisible).
+ *  - `arrived`:   vehicle reached destination; citizen reappears (transient).
+ */
+export type CommuteState = 'none' | 'toRoad' | 'inVehicle' | 'arrived';
+
 /** Movement / activity state of a vehicle. */
 export type VehicleState =
   | 'driving'

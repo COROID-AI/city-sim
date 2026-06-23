@@ -15,7 +15,7 @@
  * movement are handled by downstream systems (Pathfinder, movement) which read
  * `activity` and route accordingly.
  */
-import type { CitizenState, CommuteMode, ScheduleEntry, Vector2 } from '@/engine/types';
+import type { CitizenState, CommuteMode, CommuteState, ScheduleEntry, Vector2 } from '@/engine/types';
 import { Entity } from '@/entities/Entity';
 import { NameGenerator } from '@/generation/NameGenerator';
 import {
@@ -98,6 +98,28 @@ export class Citizen extends Entity {
    */
   commuteMode: CommuteMode;
 
+  /**
+   * Whether this citizen is currently visible on the map. Set to false while
+   * the citizen is inside a vehicle during a long-distance commute (spec
+   * §7.2). The Renderer skips invisible citizens.
+   */
+  visible: boolean;
+
+  /**
+   * Current commute handoff state machine value (spec §7.2).
+   *  - `none`:      not commuting by vehicle.
+   *  - `toRoad`:    walking towards the nearest road tile to board a vehicle.
+   *  - `inVehicle`: inside a spawned vehicle (invisible).
+   *  - `arrived`:   vehicle reached destination; citizen reappears (transient).
+   */
+  commuteState: CommuteState;
+
+  /**
+   * Id of the vehicle currently carrying this citizen, or null when not in
+   * vehicle mode. Set/cleared by CommuteSystem.
+   */
+  vehicleId: string | null;
+
   /** Owning NeedSystem instance used for decay/replenish. */
   private readonly needSystem: NeedSystem;
 
@@ -132,6 +154,14 @@ export class Citizen extends Entity {
       options.schedule ?? generateSchedule(this.employed, options.rng);
     this.targetPosition = null;
     this.commuteMode = 'foot';
+    this.visible = true;
+    this.commuteState = 'none';
+    this.vehicleId = null;
+  }
+
+  /** Set the visibility flag (used by CommuteSystem during vehicle handoff). */
+  setVisible(visible: boolean): void {
+    this.visible = visible;
   }
 
   /**
