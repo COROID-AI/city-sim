@@ -15,7 +15,11 @@ import { TimeSystem } from '@/systems/TimeSystem';
 import { BusinessHoursSystem } from '@/systems/BusinessHoursSystem';
 import TimeControls from '@/ui/TimeControls';
 import Tooltip, { type TooltipContent } from '@/ui/Tooltip';
+import Dashboard from '@/ui/Dashboard';
+import CityLog from '@/ui/CityLog';
+import MiniMap from '@/ui/MiniMap';
 import type { Building } from '@/engine/types';
+import type { World } from '@/engine/World';
 
 /**
  * Root page for the City Simulation.
@@ -48,6 +52,10 @@ export default function Home() {
   // EventBus ref exposed for downstream UI components (e.g. CityLog) to
   // subscribe via eventBusRef.current?.on('*', handler).
   const eventBusRef = useRef<EventBus | null>(null);
+  // World + Camera refs exposed for Dashboard (population/employment/budget)
+  // and MiniMap (viewport rectangle) to read engine state at 2 Hz.
+  const worldRef = useRef<World | null>(null);
+  const cameraRef = useRef<Camera | null>(null);
   const [engineReady, setEngineReady] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipContent | null>(null);
 
@@ -68,6 +76,7 @@ export default function Home() {
 
     // Generate the city and build the renderer + camera + loop.
     const world = generateCity(80, 80);
+    worldRef.current = world;
     const renderer = new Renderer(ctx, world);
 
     // EventBus — central pub/sub hub for all city events (spec §3.1).
@@ -93,6 +102,7 @@ export default function Home() {
       viewportHeight: canvas.clientHeight,
       initialZoom: 1,
     });
+    cameraRef.current = camera;
 
     resize();
     window.addEventListener('resize', resize);
@@ -331,10 +341,28 @@ export default function Home() {
         <h1 className="text-4xl font-bold text-white">City Simulation</h1>
       </div>
 
+      {/* Dashboard top bar (spec §6.4). Only rendered after the engine is
+          ready so Dashboard always receives non-null world/timeSystem. */}
+      {engineReady && worldRef.current && timeSystemRef.current ? (
+        <Dashboard world={worldRef.current} timeSystem={timeSystemRef.current} />
+      ) : null}
+
       {/* Time controls overlay (spec §6.4). Only rendered after the engine is
           ready so TimeControls always receives a non-null timeSystem. */}
       {engineReady && timeSystemRef.current ? (
         <TimeControls timeSystem={timeSystemRef.current} />
+      ) : null}
+
+      {/* City event log (spec §6.4). Bottom-right scrollable log of the last
+          20 city events with colored category dots. */}
+      {engineReady && eventBusRef.current ? (
+        <CityLog eventBus={eventBusRef.current} />
+      ) : null}
+
+      {/* Mini-map (spec §6.4). Bottom-left thumbnail with a white viewport
+          rectangle tracking the camera. Hidden below the md breakpoint. */}
+      {engineReady && cameraRef.current && worldRef.current ? (
+        <MiniMap camera={cameraRef.current} world={worldRef.current} />
       ) : null}
 
       {/* Hover tooltip (spec §6.4). Positioned near the cursor with a dark
