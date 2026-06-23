@@ -2,10 +2,11 @@
 
 import { useEffect, useRef } from 'react';
 import { Camera } from '@/engine/Camera';
-import { GameLoop } from '@/engine/GameLoop';
+import { GameLoop, SIMULATION_STEP } from '@/engine/GameLoop';
 import { Renderer } from '@/engine/Renderer';
 import { TILE_SIZE } from '@/engine/World';
 import { generateCity } from '@/generation/CityGenerator';
+import { TimeSystem } from '@/systems/TimeSystem';
 
 /**
  * Root page for the City Simulation.
@@ -49,6 +50,9 @@ export default function Home() {
     // Generate the city and build the renderer + camera + loop.
     const world = generateCity(80, 80);
     const renderer = new Renderer(ctx, world);
+    // TimeSystem drives the day/night cycle; start at 1x speed.
+    const timeSystem = new TimeSystem();
+    timeSystem.setSpeed(1);
     const worldPixelWidth = world.width * TILE_SIZE;
     const worldPixelHeight = world.height * TILE_SIZE;
     const camera = new Camera(worldPixelWidth, worldPixelHeight, {
@@ -172,12 +176,15 @@ export default function Home() {
 
     const loop = new GameLoop({
       update: () => {
-        // No simulation systems yet; the loop is render-only for now.
+        // Advance the simulation clock by one fixed step. TimeSystem applies
+        // its own speed multiplier, so GameLoop stays at speed 1.
+        timeSystem.update(SIMULATION_STEP);
       },
       render: (alpha) => {
-        // Push the latest camera state into the renderer BEFORE drawing so
-        // pan/zoom changes are reflected live every frame.
+        // Push the latest camera AND time state into the renderer BEFORE
+        // drawing so pan/zoom and day/night lighting update live each frame.
         renderer.setCamera(camera.getTransform());
+        renderer.setTime(timeSystem.getTime());
         renderer.render(alpha);
       },
     });

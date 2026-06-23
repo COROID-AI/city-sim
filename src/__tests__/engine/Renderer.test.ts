@@ -7,7 +7,7 @@
  */
 import { Renderer, ZONE_COLORS } from '@/engine/Renderer';
 import { TILE_SIZE, World } from '@/engine/World';
-import type { Building, BuildingDef, ZoneType } from '@/engine/types';
+import type { Building, BuildingDef, CityTime, ZoneType } from '@/engine/types';
 
 /** Minimal BuildingDef factory for tests. */
 function makeDef(id: string, color = '#000000'): BuildingDef {
@@ -50,8 +50,16 @@ function makeBuilding(
  * tests can assert the last-assigned color; fillRect is a jest.fn recording all
  * (x, y, w, h) calls AND the fillStyle active at each call (fillStyles[]).
  */
+/** A minimal gradient mock that records color stops. */
+function makeMockGradient() {
+  return {
+    addColorStop: jest.fn(),
+  };
+}
+
 function makeMockCtx() {
   let currentFillStyle = '';
+  let currentCompositeOperation = 'source-over';
   const fillStyles: string[] = [];
   const fillRect = jest.fn(() => {
     fillStyles.push(currentFillStyle);
@@ -60,6 +68,8 @@ function makeMockCtx() {
   const restore = jest.fn();
   const scale = jest.fn();
   const translate = jest.fn();
+  const createRadialGradient = jest.fn(() => makeMockGradient());
+  const createLinearGradient = jest.fn(() => makeMockGradient());
 
   const ctx = {
     get fillStyle() {
@@ -68,12 +78,20 @@ function makeMockCtx() {
     set fillStyle(value: string) {
       currentFillStyle = value;
     },
+    get globalCompositeOperation() {
+      return currentCompositeOperation;
+    },
+    set globalCompositeOperation(value: string) {
+      currentCompositeOperation = value;
+    },
     fillRect,
     fillStyles,
     save,
     restore,
     scale,
     translate,
+    createRadialGradient,
+    createLinearGradient,
   };
   return ctx as unknown as CanvasRenderingContext2D & {
     fillRect: jest.Mock;
@@ -81,6 +99,8 @@ function makeMockCtx() {
     restore: jest.Mock;
     scale: jest.Mock;
     translate: jest.Mock;
+    createRadialGradient: jest.Mock;
+    createLinearGradient: jest.Mock;
     fillStyles: string[];
   };
 }
@@ -245,6 +265,208 @@ describe('Renderer', () => {
       spy.mockRestore();
       groundSpy.mockRestore();
       roadsSpy.mockRestore();
+    });
+
+    it('calls all six layers in order: ground → roads → buildings → lightingOverlay → windowLights → streetLights', () => {
+      const ctx = makeMockCtx();
+      const world = new World(2, 2);
+      world.grid.setTileType(0, 0, 'road');
+      world.addBuilding(makeBuilding('b1', 'residential', 1, 1));
+
+      const renderer = new Renderer(ctx, world);
+      // Force night so the lighting layers actually draw.
+      renderer.setTime({ day: 0, hour: 0, minute: 0, totalMs: 0 });
+
+      const groundSpy = jest.spyOn(renderer, 'drawGround');
+      const roadsSpy = jest.spyOn(renderer, 'drawRoads');
+      const buildingsSpy = jest.spyOn(renderer, 'drawBuildings');
+      const overlaySpy = jest.spyOn(renderer, 'drawLightingOverlay');
+      const windowSpy = jest.spyOn(renderer, 'drawWindowLights');
+      const streetSpy = jest.spyOn(renderer, 'drawStreetLights');
+
+      renderer.render(0.5);
+
+      const order = [
+        groundSpy.mock.invocationCallOrder[0],
+        roadsSpy.mock.invocationCallOrder[0],
+        buildingsSpy.mock.invocationCallOrder[0],
+        overlaySpy.mock.invocationCallOrder[0],
+        windowSpy.mock.invocationCallOrder[0],
+        streetSpy.mock.invocationCallOrder[0],
+      ];
+      for (let i = 1; i < order.length; i++) {
+        expect(order[i]).toBeGreaterThan(order[i - 1]);
+      }
+
+      groundSpy.mockRestore();
+      roadsSpy.mockRestore();
+      buildingsSpy.mockRestore();
+      overlaySpy.mockRestore();
+      windowSpy.mockRestore();
+      streetSpy.mockRestore();
+    });
+  });
+
+  describe('setTime / getLightingState', () => {
+    it('updates the time used for lighting computation', () => {
+      const ctx = makeMockCtx();
+      const world = new World(2, 2);
+      const renderer = new Renderer(ctx, world);
+
+      // Default time is noon → day phase.
+      expect(renderer.getLightingState().phase).toBe('day');
+
+      const midnight: CityTime = { day: 0, hour: 0, minute: 0, totalMs: 0 };
+      renderer.setTime(midnight);
+      expect(renderer.getLightingState().phase).toBe('night');
+      expect(renderer.getLightingState().overlayAlpha).toBeGreaterThanOrEqual(0.5);
+    });
+  });
+
+  describe('drawLightingOverlay', () => {
+    it('does NOT fill at noon (alpha ~0)', () => {
+      const ctx = makeMockCtx();
+      const world = new World(2, 2);
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 12, minute: 0, totalMs: 12 * 3_600_000 });
+
+      const callsBefore = ctx.fillRect.mock.calls.length;
+      renderer.drawLightingOverlay();
+      expect(ctx.fillRect.mock.calls.length).toBe(callsBefore);
+    });
+
+    it('fills the overlay at midnight with rgba(10,15,40,...)', () => {
+      const ctx = makeMockCtx();
+      const world = new World(2, 2);
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 0, minute: 0, totalMs: 0 });
+
+      renderer.drawLightingOverlay();
+
+      // The base overlay fillStyle must start with rgba(10,15,40,.
+      const overlayFills = ctx.fillStyles.filter((s) =>
+        s.startsWith('rgba(10,15,40,'),
+      );
+      expect(overlayFills.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('drawWindowLights', () => {
+    it('does NOT draw window lights at noon', () => {
+      const ctx = makeMockCtx();
+      const world = new World(4, 4);
+      world.addBuilding(makeBuilding('b1', 'residential', 1, 1, 2, 2));
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 12, minute: 0, totalMs: 12 * 3_600_000 });
+
+      const callsBefore = ctx.fillRect.mock.calls.length;
+      renderer.drawWindowLights();
+      expect(ctx.fillRect.mock.calls.length).toBe(callsBefore);
+    });
+
+    it('draws #ffeb3b window lights at night', () => {
+      const ctx = makeMockCtx();
+      // Use a wide grid so buildings don't overlap. Add many buildings so the
+      // deterministic hash selects a healthy subset with lit windows.
+      const world = new World(40, 4);
+      for (let i = 0; i < 20; i++) {
+        world.addBuilding(makeBuilding(`b-${i}`, 'residential', i * 2, 0, 1, 2));
+      }
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 0, minute: 0, totalMs: 0 });
+
+      renderer.drawWindowLights();
+
+      expect(ctx.fillStyles).toContain('#ffeb3b');
+      expect(ctx.fillRect.mock.calls.length).toBeGreaterThan(0);
+    });
+
+    it('uses additive composite operation and resets it afterward', () => {
+      const ctx = makeMockCtx();
+      const world = new World(40, 4);
+      for (let i = 0; i < 20; i++) {
+        world.addBuilding(makeBuilding(`b-${i}`, 'residential', i * 2, 0, 1, 2));
+      }
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 0, minute: 0, totalMs: 0 });
+
+      expect(ctx.globalCompositeOperation).toBe('source-over');
+      renderer.drawWindowLights();
+      // After drawing, composite operation must be reset to source-over.
+      expect(ctx.globalCompositeOperation).toBe('source-over');
+    });
+  });
+
+  describe('drawStreetLights', () => {
+    it('does NOT draw street lights at noon', () => {
+      const ctx = makeMockCtx();
+      const world = new World(12, 12);
+      // Lay down a road grid.
+      for (let y = 0; y < 12; y++) {
+        for (let x = 0; x < 12; x++) {
+          world.grid.setTileType(x, y, 'road');
+        }
+      }
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 12, minute: 0, totalMs: 12 * 3_600_000 });
+
+      const radialsBefore = ctx.createRadialGradient.mock.calls.length;
+      renderer.drawStreetLights();
+      expect(ctx.createRadialGradient.mock.calls.length).toBe(radialsBefore);
+    });
+
+    it('creates radial gradients for street lights at night', () => {
+      const ctx = makeMockCtx();
+      const world = new World(12, 12);
+      for (let y = 0; y < 12; y++) {
+        for (let x = 0; x < 12; x++) {
+          world.grid.setTileType(x, y, 'road');
+        }
+      }
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 0, minute: 0, totalMs: 0 });
+
+      renderer.drawStreetLights();
+
+      // At least one radial gradient created for the street light glow.
+      expect(ctx.createRadialGradient.mock.calls.length).toBeGreaterThan(0);
+      // Each radial gradient call has 6 numeric args (cx, cy, r0, cx, cy, r1).
+      const firstCall = ctx.createRadialGradient.mock.calls[0];
+      expect(firstCall.length).toBe(6);
+    });
+
+    it('places street lights on a stride of ~6 tiles', () => {
+      const ctx = makeMockCtx();
+      const world = new World(12, 12);
+      for (let y = 0; y < 12; y++) {
+        for (let x = 0; x < 12; x++) {
+          world.grid.setTileType(x, y, 'road');
+        }
+      }
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 0, minute: 0, totalMs: 0 });
+
+      renderer.drawStreetLights();
+
+      // 144 road tiles, stride 6 → ~24 street lights.
+      const count = ctx.createRadialGradient.mock.calls.length;
+      expect(count).toBeGreaterThan(10);
+      expect(count).toBeLessThan(144);
+    });
+
+    it('resets composite operation after drawing', () => {
+      const ctx = makeMockCtx();
+      const world = new World(12, 12);
+      for (let y = 0; y < 12; y++) {
+        for (let x = 0; x < 12; x++) {
+          world.grid.setTileType(x, y, 'road');
+        }
+      }
+      const renderer = new Renderer(ctx, world);
+      renderer.setTime({ day: 0, hour: 0, minute: 0, totalMs: 0 });
+
+      renderer.drawStreetLights();
+      expect(ctx.globalCompositeOperation).toBe('source-over');
     });
   });
 });
