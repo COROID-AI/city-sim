@@ -7,6 +7,8 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './src/__tests__/e2e',
+  // Global per-test timeout >= 120s to accommodate the 60s stable-run wait.
+  timeout: 120 * 1000,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
