@@ -7,6 +7,7 @@
  */
 import {
   Camera,
+  LERP_FACTOR,
   MAX_ZOOM,
   MIN_ZOOM,
 } from '@/engine/Camera';
@@ -236,6 +237,103 @@ describe('Camera', () => {
       camera.setViewport(400, 300);
       const visibleW = 400 / camera.zoom;
       expect(camera.x + visibleW).toBeLessThanOrEqual(1280 + EPS);
+    });
+  });
+
+  // ----------------------------------------------------------------
+  // Smooth lerp (spec §6.3 Phase 7).
+  // ----------------------------------------------------------------
+  describe('smooth lerp (update / snapToTarget / target methods)', () => {
+    it('exposes LERP_FACTOR = 0.1', () => {
+      expect(LERP_FACTOR).toBe(0.1);
+    });
+
+    it('update() moves current 10% toward target per frame', () => {
+      const camera = makeCamera({ initialZoom: 1 });
+      // Set a target far from current (current x=0, target x=100).
+      camera.targetX = 100;
+      camera.targetY = 0;
+      camera.targetZoom = 1;
+      camera.update();
+      // After one update, x should be 0 + (100-0)*0.1 = 10.
+      expect(camera.x).toBeCloseTo(10, 6);
+    });
+
+    it('update() converges toward target after repeated calls', () => {
+      const camera = makeCamera({ initialZoom: 1 });
+      camera.targetX = 100;
+      camera.targetY = 0;
+      camera.targetZoom = 1;
+      // Call update many times; should converge very close to target.
+      for (let i = 0; i < 100; i++) camera.update();
+      expect(camera.x).toBeCloseTo(100, 1);
+    });
+
+    it('snapToTarget instantly sets current to target', () => {
+      const camera = makeCamera({ initialZoom: 1 });
+      camera.targetX = 200;
+      camera.targetY = 150;
+      camera.targetZoom = 2;
+      camera.snapToTarget();
+      expect(camera.x).toBe(200);
+      expect(camera.y).toBe(150);
+      expect(camera.zoom).toBe(2);
+    });
+
+    it('panTarget updates target without moving current instantly', () => {
+      // Use a large world so clamping does not interfere with the pan delta.
+      const camera = makeCamera({ initialZoom: 1, worldWidth: 10000, worldHeight: 10000 });
+      // Start the camera in the middle of the world so pan has room.
+      camera.x = 5000;
+      camera.y = 5000;
+      camera.targetX = 5000;
+      camera.targetY = 5000;
+      const startX = camera.x;
+      camera.panTarget(100, 0);
+      // Current x should NOT have moved yet (only target).
+      expect(camera.x).toBe(startX);
+      // Target should have moved by -100/zoom = -100.
+      expect(camera.targetX).toBeCloseTo(startX - 100, 6);
+    });
+
+    it('zoomTargetAt updates target zoom without changing current zoom', () => {
+      const camera = makeCamera({ initialZoom: 1 });
+      const startZoom = camera.zoom;
+      camera.zoomTargetAt(2, 0, 0);
+      expect(camera.zoom).toBe(startZoom);
+      expect(camera.targetZoom).toBeCloseTo(2, 6);
+    });
+
+    it('existing pan() still mutates x/y instantly (backward compat)', () => {
+      // Use a large world so clamping does not interfere with the pan delta.
+      const camera = makeCamera({ initialZoom: 1, worldWidth: 10000, worldHeight: 10000 });
+      // Start the camera in the middle of the world so pan has room.
+      camera.x = 5000;
+      camera.y = 5000;
+      camera.targetX = 5000;
+      camera.targetY = 5000;
+      camera.pan(100, 50);
+      // pan moves instantly: x decreases by dx/zoom.
+      expect(camera.x).toBeCloseTo(5000 - 100, 6);
+      expect(camera.y).toBeCloseTo(5000 - 50, 6);
+      // target should be synced.
+      expect(camera.targetX).toBeCloseTo(camera.x, 6);
+      expect(camera.targetY).toBeCloseTo(camera.y, 6);
+    });
+
+    it('existing zoomAt() still mutates zoom instantly (backward compat)', () => {
+      const camera = makeCamera({ initialZoom: 1 });
+      camera.zoomAt(2, 0, 0);
+      expect(camera.zoom).toBeCloseTo(2, 6);
+      expect(camera.targetZoom).toBeCloseTo(camera.zoom, 6);
+    });
+
+    it('update() snaps exactly when within threshold', () => {
+      const camera = makeCamera({ initialZoom: 1 });
+      // Set target very close to current (within 0.01 threshold).
+      camera.targetX = camera.x + 0.005;
+      camera.update();
+      expect(camera.x).toBe(camera.targetX);
     });
   });
 });

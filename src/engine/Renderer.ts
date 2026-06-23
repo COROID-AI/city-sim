@@ -118,6 +118,34 @@ export interface RendererStats {
   vehiclesCulled: number;
 }
 
+/**
+ * A single dust-trail particle (spec §8 Phase 7 visual polish).
+ * Simple semi-transparent circle that fades out over its lifetime.
+ */
+interface DustParticle {
+  /** World-pixel X position. */
+  x: number;
+  /** World-pixel Y position. */
+  y: number;
+  /** Remaining lifetime in ms (decreases each frame). */
+  life: number;
+  /** Initial lifetime (for alpha fade calculation). */
+  maxLife: number;
+  /** Radius in world pixels. */
+  radius: number;
+}
+
+/** Maximum number of dust particles in the pool (spec §8 perf budget). */
+const MAX_DUST_PARTICLES = 50;
+/** Dust particle lifetime in ms. */
+const DUST_LIFE_MS = 600;
+/** Dust particle base radius in world pixels. */
+const DUST_RADIUS = 2;
+/** Dust particle color (semi-transparent brown). */
+const DUST_COLOR = 'rgba(180,160,130,';
+/** Minimum vehicle speed (tiles/sec) to spawn dust trails. */
+const DUST_MIN_SPEED = 0.5;
+
 export class Renderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly world: World;
@@ -130,6 +158,12 @@ export class Renderer {
   /** Viewport dimensions for culling. 0 = culling disabled (draw all). */
   private viewportWidth = 0;
   private viewportHeight = 0;
+
+  /**
+   * Dust-trail particle pool (spec §8 Phase 7). Capped at MAX_DUST_PARTICLES
+   * to bound per-frame cost. Particles are recycled FIFO.
+   */
+  private dustParticles: DustParticle[] = [];
 
   /** Per-frame draw statistics (reset each render call). */
   private stats: RendererStats = {
@@ -260,8 +294,10 @@ export class Renderer {
     this.drawGround();
     this.drawRoads();
     this.drawBuildings();
+    this.drawDustTrails();
     this.drawVehicles();
     this.drawCitizens();
+    this.drawSleepIndicators();
     this.drawLightingOverlay();
     this.drawWindowLights();
     this.drawStreetLights();
@@ -489,6 +525,125 @@ export class Renderer {
     ctx.globalCompositeOperation = prevComposite;
     ctx.globalAlpha = prevAlpha;
     ctx.fillStyle = prevFillStyle;
+  }
+
+  // ----------------------------------------------------------------
+  // Dust-trail particles (spec §8 Phase 7 visual polish).
+  // ----------------------------------------------------------------
+
+  /**
+   * Spawn dust-trail particles behind moving vehicles and render the active
+   * particle pool. Particles are small semi-transparent brown circles that
+   * fade out over DUST_LIFE_MS. The pool is capped at MAX_DUST_PARTICLES to
+   * bound per-frame cost (spec §8 perf budget).
+   *
+   * Spawning: one particle per frame per vehicle whose speed exceeds
+   * DUST_MIN_SPEED, positioned at the vehicle's current location with a small
+   * random offset. Stopped/slow vehicles spawn nothing.
+   */
+  drawDustTrails(): void {
+    const { ctx, world } = this;
+
+    // Spawn new particles for moving vehicles.
+    for (const vehicle of world.vehicles) {
+      const speed = Math.hypot(vehicle.velocity.x, vehicle.velocity.y);
+      if (speed < DUST_MIN_SPEED) continue;
+      if (this.dustParticles.length >= MAX_DUST_PARTICLES) break;
+      const pos = vehicle.getPosition();
+      const px = pos.x * TILE_SIZE;
+      const py = pos.y * TILE_SIZE;
+      // Small random offset behind the vehicle.
+      const offsetX = (Math.random() - 0.5) * 4;
+      const offsetY = (Math.random() - 0.5) * 4;
+      this.dustParticles.push({
+        x: px + offsetX,
+        y: py + offsetY,
+        life: DUST_LIFE_MS,
+        maxLife: DUST_LIFE_MS,
+        radius: DUST_RADIUS + Math.random(),
+      });
+    }
+
+    if (this.dustParticles.length === 0) return;
+
+    const prevFillStyle = ctx.fillStyle;
+
+    // Update + render. Iterate backwards so we can splice dead particles.
+    for (let i = this.dustParticles.length - 1; i >= 0; i--) {
+      const p = this.dustParticles[i]!;
+      // Assume ~16ms per frame for lifetime decay.
+      p.life -= 16;
+      if (p.life <= 0) {
+        this.dustParticles.splice(i, 1);
+        continue;
+      }
+      // Cull particles outside the visible rect.
+      if (this.isPointCulled(p.x, p.y)) continue;
+      const alpha = (p.life / p.maxLife) * 0.5;
+      ctx.fillStyle = `${DUST_COLOR}${alpha.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = prevFillStyle;
+  }
+
+  /**
+   * Clear all dust particles (useful for tests / reset).
+   */
+  clearDustParticles(): void {
+    this.dustParticles.length = 0;
+  }
+
+  /** Current dust particle count (exposed for tests). */
+  getDustParticleCount(): number {
+    return this.dustParticles.length;
+  }
+
+  // ----------------------------------------------------------------
+  // Sleep indicators (zzZ above sleeping citizens, spec §8 Phase 7).
+  // ----------------------------------------------------------------
+
+  /** Font size for the zzZ sleep indicator in world pixels. */
+  static readonly SLEEP_Z_FONT_SIZE = 10;
+  /** Vertical offset above the citizen for the zzZ indicator. */
+  static readonly SLEEP_Z_OFFSET = 8;
+
+  /**
+   * Draw a small 'z' text indicator above citizens whose activity is
+   * 'sleeping' (spec §8 Phase 7). Stateless per-frame draw — no particle
+   * system needed. The indicator is a lowercase 'z' rendered in a light color
+   * above the citizen dot.
+   */
+  drawSleepIndicators(): void {
+    const { ctx, world } = this;
+    let drewAny = false;
+    const prevFillStyle = ctx.fillStyle;
+    const prevFont = ctx.font;
+    const prevTextAlign = ctx.textAlign;
+    const prevTextBaseline = ctx.textBaseline;
+
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.font = `${Renderer.SLEEP_Z_FONT_SIZE}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+
+    for (const citizen of world.citizens) {
+      if (!citizen.visible) continue;
+      if (citizen.activity !== 'sleeping') continue;
+      const pos = citizen.getPosition();
+      if (this.isPointCulled(pos.x, pos.y)) continue;
+      ctx.fillText('z', pos.x, pos.y - Renderer.SLEEP_Z_OFFSET);
+      drewAny = true;
+    }
+
+    ctx.fillStyle = prevFillStyle;
+    ctx.font = prevFont;
+    ctx.textAlign = prevTextAlign;
+    ctx.textBaseline = prevTextBaseline;
+    // Reference drewAny so linters don't complain; it's useful for tests.
+    void drewAny;
   }
 
   // ----------------------------------------------------------------

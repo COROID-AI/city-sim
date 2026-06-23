@@ -16,4 +16,48 @@ body {
     'Segoe UI',
     Roboto,
     sans-serif;
+  /* Prevent overscroll/bounce on touch devices so canvas pan feels native. */
+  overscroll-behavior: none;
+}
+
+/* ------------------------------------------------------------------
+ * Responsive UI scaling (spec §8 Phase 7).
+ * Below 768px (mobile), UI elements scale down via clamp() font sizes and
+ * reduced padding. The mini-map is hidden via Tailwind 'hidden md:block'
+ * in MiniMap.tsx — no CSS needed for that.
+ * ---------------------------------------------------------------- */
+
+/* Canvas: disable touch gestures so our custom pan/zoom handlers control
+ * the viewport (touch-action: none is the spec-recommended approach). */
+canvas {
+  touch-action: none;
+}
+
+/* Title: fluid font size scaling from mobile to desktop. */
+.city-title {
+  font-size: clamp(1.25rem, 5vw, 2.25rem);
+}
+
+/* Dashboard / controls: scale down on small viewports. */
+@media (max-width: 767px) {
+  .city-dashboard {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .city-controls {
+    font-size: 0.75rem;
+    gap: 0.25rem;
+  }
+
+  .city-controls button {
+    padding: 0.25rem 0.5rem;
+    min-width: 2rem;
+  }
+
+  .city-log {
+    max-width: 60vw;
+    max-height: 120px;
+    font-size: 0.7rem;
+  }
 }

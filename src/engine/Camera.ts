@@ -36,6 +36,11 @@ export const MIN_ZOOM = 0.25;
 /** Maximum zoom factor (zoomed in). */
 export const MAX_ZOOM = 3.0;
 
+/** Lerp factor per frame for smooth camera motion (spec §6.3, Phase 7). */
+export const LERP_FACTOR = 0.1;
+/** Snap-to-target threshold: when within this distance, snap exactly. */
+const LERP_SNAP_THRESHOLD = 0.01;
+
 export interface CameraOptions {
   /** Initial viewport width in CSS pixels (canvas.clientWidth). */
   viewportWidth?: number;
@@ -58,6 +63,13 @@ export class Camera {
   /** Current zoom factor. */
   zoom: number;
 
+  /** Target X for smooth lerp (spec §6.3 Phase 7). */
+  targetX: number;
+  /** Target Y for smooth lerp (spec §6.3 Phase 7). */
+  targetY: number;
+  /** Target zoom for smooth lerp (spec §6.3 Phase 7). */
+  targetZoom: number;
+
   private viewportWidth: number;
   private viewportHeight: number;
 
@@ -73,6 +85,9 @@ export class Camera {
     this.zoom = clampZoom(options.initialZoom ?? 1);
     this.x = 0;
     this.y = 0;
+    this.targetX = this.x;
+    this.targetY = this.y;
+    this.targetZoom = this.zoom;
     this.clamp();
   }
 
@@ -101,11 +116,26 @@ export class Camera {
   /**
    * Pan the camera by a screen-space delta (dx, dy) in CSS pixels.
    * Dragging right (dx>0) reveals content to the left, so camera.x decreases.
+   *
+   * BACKWARD COMPATIBLE: mutates x/y/zoom directly (instant). Tests rely on
+   * this instant behavior. The smooth (lerped) path uses panTarget().
    */
   pan(dx: number, dy: number): void {
     this.x -= dx / this.zoom;
     this.y -= dy / this.zoom;
+    this.targetX = this.x;
+    this.targetY = this.y;
     this.clamp();
+  }
+
+  /**
+   * Pan the camera TARGET by a screen-space delta (dx, dy) in CSS pixels.
+   * The actual x/y move toward targetX/targetY via update() lerp each frame.
+   */
+  panTarget(dx: number, dy: number): void {
+    this.targetX -= dx / this.targetZoom;
+    this.targetY -= dy / this.targetZoom;
+    this.clampTarget();
   }
 
   /**
@@ -123,7 +153,25 @@ export class Camera {
     // Reposition so the same world point stays under the cursor.
     this.x = worldBefore.x - cursorX / this.zoom;
     this.y = worldBefore.y - cursorY / this.zoom;
+    this.targetX = this.x;
+    this.targetY = this.y;
+    this.targetZoom = this.zoom;
     this.clamp();
+  }
+
+  /**
+   * Zoom the camera TARGET by a multiplicative factor, keeping the world point
+   * under the cursor stationary in target space. The actual zoom lerps via
+   * update() each frame.
+   */
+  zoomTargetAt(factor: number, cursorX: number, cursorY: number): void {
+    // World point under cursor computed from TARGET state (before zoom).
+    const worldBeforeX = cursorX / this.targetZoom + this.targetX;
+    const worldBeforeY = cursorY / this.targetZoom + this.targetY;
+    this.targetZoom = clampZoom(this.targetZoom * factor);
+    this.targetX = worldBeforeX - cursorX / this.targetZoom;
+    this.targetY = worldBeforeY - cursorY / this.targetZoom;
+    this.clampTarget();
   }
 
   /**
@@ -135,7 +183,23 @@ export class Camera {
     this.zoom = clampZoom(newZoom);
     this.x = worldBefore.x - cursorX / this.zoom;
     this.y = worldBefore.y - cursorY / this.zoom;
+    this.targetX = this.x;
+    this.targetY = this.y;
+    this.targetZoom = this.zoom;
     this.clamp();
+  }
+
+  /**
+   * Set the camera TARGET zoom directly (clamped), keeping the world point
+   * under the cursor stationary in target space. Lerps via update().
+   */
+  setZoomTarget(newZoom: number, cursorX: number, cursorY: number): void {
+    const worldBeforeX = cursorX / this.targetZoom + this.targetX;
+    const worldBeforeY = cursorY / this.targetZoom + this.targetY;
+    this.targetZoom = clampZoom(newZoom);
+    this.targetX = worldBeforeX - cursorX / this.targetZoom;
+    this.targetY = worldBeforeY - cursorY / this.targetZoom;
+    this.clampTarget();
   }
 
   /**
@@ -170,6 +234,64 @@ export class Camera {
     this.viewportWidth = width;
     this.viewportHeight = height;
     this.clamp();
+    this.clampTarget();
+  }
+
+  /**
+   * Per-frame smooth update: lerp x/y/zoom toward targetX/targetY/targetZoom
+   * at LERP_FACTOR (0.1) per frame (spec §6.3 Phase 7). Call once per render
+   * frame. When within LERP_SNAP_THRESHOLD, snaps exactly to the target to
+   * avoid infinite micro-creep.
+   */
+  update(): void {
+    const dx = this.targetX - this.x;
+    const dy = this.targetY - this.y;
+    const dz = this.targetZoom - this.zoom;
+
+    if (Math.abs(dx) < LERP_SNAP_THRESHOLD &&
+        Math.abs(dy) < LERP_SNAP_THRESHOLD &&
+        Math.abs(dz) < LERP_SNAP_THRESHOLD) {
+      this.x = this.targetX;
+      this.y = this.targetY;
+      this.zoom = this.targetZoom;
+      return;
+    }
+
+    this.x += dx * LERP_FACTOR;
+    this.y += dy * LERP_FACTOR;
+    this.zoom += dz * LERP_FACTOR;
+    this.clamp();
+  }
+
+  /** Snap x/y/zoom instantly to their targets (no lerp). */
+  snapToTarget(): void {
+    this.x = this.targetX;
+    this.y = this.targetY;
+    this.zoom = this.targetZoom;
+    this.clamp();
+  }
+
+  /**
+   * Clamp the TARGET position so the target visible viewport rectangle never
+   * extends beyond world bounds. Mirrors clamp() but for target fields.
+   */
+  clampTarget(): void {
+    const visibleW = this.viewportWidth / this.targetZoom;
+    const visibleH = this.viewportHeight / this.targetZoom;
+
+    if (visibleW >= this.worldWidth) {
+      this.targetX = (this.worldWidth - visibleW) / 2;
+    } else {
+      const maxX = this.worldWidth - visibleW;
+      this.targetX = Math.max(0, Math.min(this.targetX, maxX));
+    }
+
+    if (visibleH >= this.worldHeight) {
+      this.targetY = (this.worldHeight - visibleH) / 2;
+    } else {
+      const maxY = this.worldHeight - visibleH;
+      this.targetY = Math.max(0, Math.min(this.targetY, maxY));
+    }
   }
 
   /**
