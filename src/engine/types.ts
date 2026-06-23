@@ -203,6 +203,73 @@ export interface Building {
 }
 
 /**
+ * A node in the sparse road graph (spec §5.6).
+ *
+ * Nodes are placed ONLY at intersections and building-entrance tiles so the
+ * graph stays sparse (~200 nodes on an 80x80 grid) instead of one node per
+ * road tile (~6400). Mid-segment road tiles are traversed during edge
+ * construction but are not stored as nodes.
+ */
+export interface RoadNode {
+  /** Stable node id (e.g. "x,y"). */
+ id: string;
+  /** Grid column. */
+ x: number;
+  /** Grid row. */
+ y: number;
+  /** Why this node was created. */
+ kind: 'intersection' | 'entrance';
+}
+
+/**
+ * A weighted, undirected edge between two road nodes.
+ *
+ * The weight is the Manhattan distance between the two endpoints, which for
+ * axis-aligned road segments equals the number of tiles spanned.
+ */
+export interface RoadEdge {
+  /** Id of the source node. */
+ from: string;
+  /** Id of the destination node. */
+ to: string;
+  /** Edge weight (Manhattan distance between endpoints). */
+ weight: number;
+}
+
+/**
+ * Sparse road network graph extracted from the tile grid.
+ *
+ * Produced by {@link extractRoadGraph} (src/entities/Road.ts) and consumed by
+ * the A* {@link Pathfinder} (src/engine/Pathfinder.ts).
+ */
+export interface RoadGraph {
+  /** All graph nodes keyed by id. */
+ nodes: Map<string, RoadNode>;
+  /** Adjacency list: nodeId -> outbound edges. */
+ edges: Map<string, RoadEdge[]>;
+}
+
+/**
+ * Traffic light phase applied to a road node during pathfinding.
+ *  - `green`:  normal traversal cost.
+ *  - `yellow`: high traversal cost (YELLOW_LIGHT_COST_MULTIPLIER applied).
+ *  - `red`:    impassable — the node is skipped entirely.
+ */
+export type TrafficLightState = 'green' | 'yellow' | 'red';
+
+/**
+ * Injectable provider of traffic-light state for road nodes.
+ *
+ * The Pathfinder depends on this interface (not on a concrete TrafficSystem)
+ * so it works standalone now and integrates cleanly when TrafficSystem
+ * (Phase 5) is implemented. A node with no light should return `null`.
+ */
+export interface TrafficLightProvider {
+  /** Return the current light state at the given node, or null if none. */
+ getLight(nodeId: string): TrafficLightState | null;
+}
+
+/**
  * A discrete simulation event emitted by systems (e.g. building placed,
  * citizen spawned, economy threshold crossed).
  */
