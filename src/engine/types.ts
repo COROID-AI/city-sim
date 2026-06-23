@@ -79,13 +79,24 @@ export interface BuildingDef {
   color: string;
 }
 
-/** Movement / activity state of a citizen. */
+/**
+ * Movement / activity state of a citizen (spec §6.3).
+ *
+ * The six canonical activities that drive the need-based AI:
+ *  - `sleeping`:       at home restoring energy (night)
+ *  - `commuting`:      travelling between home and work
+ *  - `working`:        at the workplace earning income
+ *  - `eating`:         at a restaurant/home restoring hunger
+ *  - `entertaining`:   at a cinema/park restoring fun
+ *  - `wandering`:      idle leisure movement (no fixed destination)
+ */
 export type CitizenState =
-  | 'idle'
-  | 'traveling'
+  | 'sleeping'
+  | 'commuting'
   | 'working'
-  | 'resting'
-  | 'shopping';
+  | 'eating'
+  | 'entertaining'
+  | 'wandering';
 
 /** Movement / activity state of a vehicle. */
 export type VehicleState =
