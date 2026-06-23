@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Camera } from '@/engine/Camera';
 import { GameLoop, SIMULATION_STEP } from '@/engine/GameLoop';
 import { Renderer } from '@/engine/Renderer';
 import { TILE_SIZE } from '@/engine/World';
 import { generateCity } from '@/generation/CityGenerator';
 import { TimeSystem } from '@/systems/TimeSystem';
+import TimeControls from '@/ui/TimeControls';
 
 /**
  * Root page for the City Simulation.
@@ -31,6 +32,12 @@ import { TimeSystem } from '@/systems/TimeSystem';
  */
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // TimeSystem is lifted to a ref so the TimeControls overlay can dispatch
+  // against the same engine instance created inside the mount effect. A
+  // boolean state flag gates rendering until the engine exists (the ref is
+  // null on the very first render, before useEffect runs).
+  const timeSystemRef = useRef<TimeSystem | null>(null);
+  const [engineReady, setEngineReady] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -53,6 +60,8 @@ export default function Home() {
     // TimeSystem drives the day/night cycle; start at 1x speed.
     const timeSystem = new TimeSystem();
     timeSystem.setSpeed(1);
+    timeSystemRef.current = timeSystem;
+    setEngineReady(true);
     const worldPixelWidth = world.width * TILE_SIZE;
     const worldPixelHeight = world.height * TILE_SIZE;
     const camera = new Camera(worldPixelWidth, worldPixelHeight, {
@@ -222,6 +231,12 @@ export default function Home() {
       >
         <h1 className="text-4xl font-bold text-white">City Simulation</h1>
       </div>
+
+      {/* Time controls overlay (spec §6.4). Only rendered after the engine is
+          ready so TimeControls always receives a non-null timeSystem. */}
+      {engineReady && timeSystemRef.current ? (
+        <TimeControls timeSystem={timeSystemRef.current} />
+      ) : null}
     </main>
   );
 }
