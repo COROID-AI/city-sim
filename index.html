@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="An interactive guide to our Solar System — explore the Sun and the eight planets that orbit it." />
+  <title>Our Solar System — An Interactive Guide</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#planets-cards">Skip to planet facts</a>
+
+  <!-- ===================== HERO ===================== -->
+  <header class="hero" id="top">
+    <div class="hero-content">
+      <h1 class="hero-title">Our Solar System</h1>
+      <p class="hero-subtitle">
+        A neighborhood of one star and eight worlds. The Sun holds 99.8% of all
+        the mass in the system, and its gravity keeps the planets locked in
+        endless, elegant orbits. Explore the Sun at the center, then meet each
+        of the eight planets below.
+      </p>
+      <div class="hero-stats" aria-label="Solar system quick facts">
+        <div class="stat"><span class="stat-num">1</span><span class="stat-label">Star</span></div>
+        <div class="stat"><span class="stat-num">8</span><span class="stat-label">Planets</span></div>
+        <div class="stat"><span class="stat-num">4.6B</span><span class="stat-label">Years old</span></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================== SUN ===================== -->
+  <section class="sun-section" aria-labelledby="sun-heading">
+    <h2 id="sun-heading" class="section-title">The Sun</h2>
+    <div class="sun-card">
+      <div class="sun-visual" aria-hidden="true">
+        <div class="sun-core"></div>
+      </div>
+      <div class="sun-text">
+        <p>
+          The Sun is a <strong>G-type main-sequence star</strong> (a yellow
+          dwarf) at the heart of our Solar System. It is a near-perfect sphere
+          of hot <strong>plasma</strong>, generating light and heat through
+          nuclear fusion of hydrogen into helium in its core.
+        </p>
+        <ul class="fact-list">
+          <li><strong>Diameter:</strong> 1,391,000 km (about 109 Earths across)</li>
+          <li><strong>Surface temp:</strong> ~5,500 °C</li>
+          <li><strong>Core temp:</strong> ~15,000,000 °C</li>
+          <li><strong>Mass:</strong> 333,000 × Earth's mass</li>
+          <li><strong>Age:</strong> ~4.6 billion years</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== ORBITAL VIEW ===================== -->
+  <section class="orbit-section" aria-labelledby="orbit-heading">
+    <h2 id="orbit-heading" class="section-title">The Planets in Orbit</h2>
+    <p class="section-intro">
+      Click any planet to jump to its fact card. Orbit speeds are compressed
+      for visual interest and are <em>not</em> to scale.
+    </p>
+
+    <div class="solar-system" id="solarSystem" role="group" aria-label="Interactive solar system diagram">
+      <!-- Sun marker at center -->
+      <div class="ss-sun" aria-hidden="true"></div>
+      <!-- Orbit rings + planets are injected by script.js -->
+    </div>
+
+    <p class="reduced-motion-note" id="reducedMotionNote" hidden>
+      Motion is paused to respect your reduced-motion preference. Planet
+      positions are shown statically.
+    </p>
+  </section>
+
+  <!-- ===================== PLANET FACT CARDS ===================== -->
+  <section class="planets-cards" id="planets-cards" aria-labelledby="cards-heading">
+    <h2 id="cards-heading" class="section-title">Planet Fact Cards</h2>
+    <div class="cards-grid" id="cardsGrid">
+      <!-- Cards injected by script.js -->
+    </div>
+  </section>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer class="footer">
+    <p>
+      Planet data sourced from
+      <a href="https://nssdc.gsfc.nasa.gov/planetary/planetfact.html" rel="noopener noreferrer" target="_blank">NASA Planetary Fact Sheets</a>.
+    </p>
+    <p>Built with vanilla HTML, CSS &amp; JavaScript — no frameworks, no build step.</p>
+    <a class="back-top" href="#top">Back to top ↑</a>
+  </footer>
+
+  <script src="script.js" defer></script>
+</body>
+</html>

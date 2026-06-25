@@ -1,0 +1,326 @@
+/* ============================================================
+   Our Solar System — styles.css
+   Vanilla CSS, mobile-first, no external requests.
+   ============================================================ */
+
+/* ---------- Design tokens ---------- */
+:root {
+  --bg: #05060f;
+  --bg-soft: #0b0e22;
+  --panel: #121634;
+  --panel-2: #1a1f47;
+  --text: #e8ecff;
+  --muted: #9aa3d2;
+  --accent: #6ea8ff;
+  --accent-2: #b388ff;
+  --sun: #ffcf5c;
+  --sun-glow: #ff9d2f;
+  --ring: rgba(120, 140, 220, 0.18);
+  --radius: 14px;
+  --maxw: 1100px;
+}
+
+/* ---------- Reset ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(1200px 600px at 50% -10%, #1a1f4a 0%, transparent 60%),
+    radial-gradient(900px 500px at 90% 10%, #2a1f4a 0%, transparent 55%),
+    var(--bg);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+a { color: var(--accent); }
+
+.skip-link {
+  position: absolute;
+  left: -999px;
+  top: 0;
+  background: var(--accent);
+  color: #04102a;
+  padding: 8px 14px;
+  z-index: 100;
+  border-radius: 0 0 8px 0;
+}
+.skip-link:focus { left: 0; }
+
+/* ---------- Layout helpers ---------- */
+.section-title {
+  font-size: clamp(1.5rem, 4vw, 2.25rem);
+  text-align: center;
+  margin: 0 0 0.5rem;
+  letter-spacing: 0.5px;
+}
+.section-intro {
+  text-align: center;
+  color: var(--muted);
+  max-width: 640px;
+  margin: 0 auto 1.5rem;
+  padding: 0 1rem;
+}
+
+/* ---------- Hero ---------- */
+.hero {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: clamp(2.5rem, 8vw, 5rem) 1.25rem 1rem;
+  text-align: center;
+}
+.hero-title {
+  font-size: clamp(2.2rem, 7vw, 4rem);
+  margin: 0 0 0.75rem;
+  background: linear-gradient(90deg, var(--sun), var(--accent-2), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero-subtitle {
+  max-width: 720px;
+  margin: 0 auto;
+  color: var(--muted);
+  font-size: clamp(1rem, 2.4vw, 1.15rem);
+}
+.hero-stats {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 1.75rem;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--ring);
+  border-radius: var(--radius);
+  padding: 0.75rem 1.25rem;
+  min-width: 96px;
+}
+.stat-num { font-size: 1.6rem; font-weight: 800; color: var(--accent); }
+.stat-label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+
+/* ---------- Sun section ---------- */
+.sun-section { max-width: var(--maxw); margin: 2rem auto; padding: 0 1.25rem; }
+.sun-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--ring);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+}
+@media (min-width: 720px) {
+  .sun-card { grid-template-columns: 200px 1fr; }
+}
+.sun-visual {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+}
+.sun-core {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff6cf, var(--sun) 45%, var(--sun-glow) 100%);
+  box-shadow:
+    0 0 40px 10px rgba(255, 180, 60, 0.55),
+    0 0 90px 30px rgba(255, 140, 40, 0.35);
+  animation: sunPulse 4s ease-in-out infinite;
+}
+@keyframes sunPulse {
+  0%, 100% { box-shadow: 0 0 40px 10px rgba(255,180,60,0.55), 0 0 90px 30px rgba(255,140,40,0.35); }
+  50%      { box-shadow: 0 0 55px 16px rgba(255,200,80,0.7), 0 0 120px 40px rgba(255,150,50,0.45); }
+}
+.sun-text p { margin-top: 0; }
+.fact-list { list-style: none; padding: 0; margin: 1rem 0 0; display: grid; gap: 0.4rem; }
+.fact-list li {
+  background: var(--panel-2);
+  border: 1px solid var(--ring);
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.95rem;
+}
+
+/* ---------- Solar system orbital view ---------- */
+.orbit-section { max-width: var(--maxw); margin: 2.5rem auto; padding: 0 1.25rem; }
+.solar-system {
+  position: relative;
+  width: min(640px, 92vw);
+  aspect-ratio: 1 / 1;
+  margin: 0 auto;
+  overflow: visible;
+}
+.ss-sun {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 46px; height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fff6cf, var(--sun) 45%, var(--sun-glow) 100%);
+  box-shadow: 0 0 24px 6px rgba(255, 180, 60, 0.6), 0 0 60px 18px rgba(255, 140, 40, 0.35);
+  z-index: 5;
+}
+
+/* Orbit ring (visual guide) */
+.orbit-ring {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px dashed var(--ring);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Rotating arm: a full-size box that spins; planet sits on its edge */
+.orbit-arm {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  animation-name: spin;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* The planet button, placed at the top-center of its arm */
+.planet-btn {
+  position: absolute;
+  top: 0; left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  /* counter-rotate so labels stay upright */
+  animation-name: counter-spin;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  transition: filter 0.2s ease, outline-offset 0.2s ease;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+@keyframes counter-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(-360deg); }
+}
+.planet-btn:hover { filter: brightness(1.25); }
+.planet-btn:focus-visible { outline-color: var(--accent); }
+.planet-dot {
+  display: block;
+  border-radius: 50%;
+  box-shadow: inset -3px -3px 6px rgba(0,0,0,0.45);
+}
+
+/* Saturn ring drawn with a pseudo element on the dot */
+.planet-dot.has-ring::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 180%; height: 40%;
+  transform: translate(-50%, -50%) rotate(-18deg);
+  border: 2px solid rgba(230, 210, 160, 0.8);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.reduced-motion-note {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 1rem;
+}
+
+/* ---------- Planet fact cards ---------- */
+.planets-cards { max-width: var(--maxw); margin: 2.5rem auto 3rem; padding: 0 1.25rem; }
+.cards-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+@media (min-width: 640px) { .cards-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1000px) { .cards-grid { grid-template-columns: repeat(3, 1fr); } }
+
+.planet-card {
+  background: var(--panel);
+  border: 1px solid var(--ring);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  scroll-margin-top: 1rem;
+  transition: box-shadow 0.3s ease, transform 0.3s ease, border-color 0.3s ease;
+}
+.planet-card.highlight {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(110, 168, 255, 0.35), 0 8px 30px rgba(110, 168, 255, 0.25);
+  transform: translateY(-3px);
+}
+.card-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.6rem; }
+.card-swatch {
+  width: 28px; height: 28px; border-radius: 50%;
+  box-shadow: inset -3px -3px 6px rgba(0,0,0,0.45);
+  flex: none;
+}
+.card-name { font-size: 1.2rem; font-weight: 700; margin: 0; }
+.card-type {
+  display: inline-block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #04102a;
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 2px 10px;
+  margin-left: auto;
+}
+.card-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0.75rem;
+}
+.card-stat {
+  background: var(--panel-2);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.82rem;
+}
+.card-stat b { display: block; color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; }
+.card-facts { margin: 0; padding-left: 1.1rem; }
+.card-facts li { margin-bottom: 0.3rem; font-size: 0.9rem; }
+
+/* ---------- Footer ---------- */
+.footer {
+  text-align: center;
+  color: var(--muted);
+  padding: 2rem 1.25rem;
+  border-top: 1px solid var(--ring);
+  max-width: var(--maxw);
+  margin: 0 auto;
+  font-size: 0.9rem;
+}
+.back-top { display: inline-block; margin-top: 0.75rem; }
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .orbit-arm,
+  .planet-btn,
+  .sun-core { animation: none !important; }
+  /* Spread planets around statically so they don't overlap */
+  .orbit-arm[data-static-angle] {
+    transform: translate(-50%, -50%) rotate(var(--static-angle, 0deg));
+  }
+  .planet-btn { transform: translate(-50%, -50%); }
+}
