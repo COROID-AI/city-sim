@@ -1,0 +1,18 @@
+{
+  "workspaceId": "27718393-c68d-4c51-bc10-548f6abaad5f",
+  "projectId": "6196d6ed-546b-4afd-9f74-3493bdc67b65",
+  "taskId": "a0f659b0-c8e4-4f55-a109-4cbbac4f502b",
+  "runnerEndpoint": "http://PatriksMBP.local:3027",
+  "workspacePath": "/Users/hogberg/.coroid/runtime/workspaces/27718393-c68d-4c51-bc10-548f6abaad5f",
+  "sourceRevision": "992d487c84adc44b5d46e47a47f982efd4f9f458",
+  "archiveChecksum": "1e8d4135cbbb65dd6f8800a33d2f6c7cc6da3852cd5aa58169b712cf15afdd4d",
+  "canonicalRevision": 0,
+  "flushSequence": 0,
+  "dependencyCacheKey": "71d3bffc6fd237af6cb348eb4ae9da64ec866c050b6151222c647435a0a6b23d",
+  "dependencyCacheArtifactBuild": false,
+  "dependencyCacheArtifactPublished": true,
+  "staleLeases": [
+    "4efd8c4e-6e68-436e-b8dc-bf6097227406"
+  ],
+  "leaseReleaseRequested": true
+}
