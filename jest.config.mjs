@@ -33,7 +33,9 @@ export default {
   },
   testMatch: ['**/*.test.ts', '**/*.test.tsx'],
   collectCoverageFrom: [
+    'src/config/years.ts',
     'src/store/**/*.ts',
+    'src/utils/**/*.ts',
     'src/engine/**/*.ts',
     'src/systems/**/*.ts',
     '!**/*.test.ts',

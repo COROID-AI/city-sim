@@ -11,6 +11,51 @@
 import '@testing-library/jest-dom';
 
 /**
+ * Minimal WebGL / Canvas mock.
+ *
+ * jsdom has no WebGL implementation. React Three Fiber's <Canvas> probes for
+ * a WebGL context at import time, which would throw under test. We stub the
+ * canvas getContext method so any code path that touches a canvas returns a
+ * no-op GL context instead of crashing.
+ */
+if (typeof HTMLCanvasElement !== 'undefined') {
+  // The real getContext has complex overloads; we cast to `any` to install a
+  // single catch-all mock that returns a no-op GL-like context.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (HTMLCanvasElement.prototype as any).getContext = function (
+    this: HTMLCanvasElement,
+    _contextId: string,
+  ) {
+    return {
+      canvas: this,
+      getParameter: () => '',
+      getExtension: () => null,
+      createShader: () => ({}),
+      shaderSource: () => {},
+      compileShader: () => {},
+      createProgram: () => ({}),
+      attachShader: () => {},
+      linkProgram: () => {},
+      useProgram: () => {},
+      createBuffer: () => ({}),
+      bindBuffer: () => {},
+      bufferData: () => {},
+      enableVertexAttribArray: () => {},
+      vertexAttribPointer: () => {},
+      drawArrays: () => {},
+      drawElements: () => {},
+      viewport: () => {},
+      clear: () => {},
+      clearColor: () => {},
+      enable: () => {},
+      disable: () => {},
+      depthFunc: () => {},
+      blendFunc: () => {},
+    };
+  };
+}
+
+/**
  * Minimal AudioContext mock. Implements just enough of the surface area used
  * by the AudioEngine (createGain/createOscillator/createBufferSource/
  * createBiquadFilter, param ramps, start/stop, resume/close) for unit tests.
