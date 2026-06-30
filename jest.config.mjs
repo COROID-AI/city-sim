@@ -9,8 +9,27 @@
 export default {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+  },
+  transform: {
+    '^.+\\.(ts|tsx)$': [
+      'ts-jest',
+      {
+        tsconfig: {
+          jsx: 'react-jsx',
+          esModuleInterop: true,
+          module: 'commonjs',
+          target: 'ES2020',
+          moduleResolution: 'node',
+          skipLibCheck: true,
+          strict: true,
+          paths: { '@/*': ['./src/*'] },
+        },
+        diagnostics: false,
+      },
+    ],
   },
   testMatch: ['**/*.test.ts', '**/*.test.tsx'],
   collectCoverageFrom: [

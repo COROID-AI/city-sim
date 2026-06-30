@@ -7,10 +7,11 @@
  */
 
 export type EraId =
-  | 'medieval'
-  | 'industrial'
-  | 'modern'
-  | 'future';
+  | 'postwar'
+  | 'sixties'
+  | 'eighties'
+  | 'twothousands'
+  | 'present';
 
 /**
  * Configuration for a single time period.
@@ -18,7 +19,7 @@ export type EraId =
 export interface YearConfig {
   /** Canonical era identifier. */
   readonly id: EraId;
-  /** Human-readable label, e.g. "1900". */
+  /** Human-readable label, e.g. "1945". */
   readonly label: string;
   /** Numeric year used for ordering and comparisons. */
   readonly year: number;
@@ -32,36 +33,47 @@ export interface YearConfig {
 
 /**
  * Ordered list of available eras, oldest first.
+ *
+ * The five discrete stops exposed by the timeline slider: 1945, 1965, 1985,
+ * 2005, 2025.
  */
 export const YEAR_CONFIGS: readonly YearConfig[] = [
   {
-    id: 'medieval',
-    label: '1500',
-    year: 1500,
+    id: 'postwar',
+    label: '1945',
+    year: 1945,
     palette: '#6b5b4a',
     density: 0.4,
-    maxHeight: 8,
+    maxHeight: 12,
   },
   {
-    id: 'industrial',
-    label: '1900',
-    year: 1900,
+    id: 'sixties',
+    label: '1965',
+    year: 1965,
     palette: '#7a6f5d',
-    density: 0.6,
-    maxHeight: 16,
+    density: 0.55,
+    maxHeight: 20,
   },
   {
-    id: 'modern',
-    label: '2000',
-    year: 2000,
+    id: 'eighties',
+    label: '1985',
+    year: 1985,
     palette: '#4a5a6b',
-    density: 0.8,
+    density: 0.7,
     maxHeight: 32,
   },
   {
-    id: 'future',
-    label: '2100',
-    year: 2100,
+    id: 'twothousands',
+    label: '2005',
+    year: 2005,
+    palette: '#3a5a7b',
+    density: 0.85,
+    maxHeight: 48,
+  },
+  {
+    id: 'present',
+    label: '2025',
+    year: 2025,
     palette: '#2a4a6b',
     density: 1.0,
     maxHeight: 64,
@@ -69,7 +81,7 @@ export const YEAR_CONFIGS: readonly YearConfig[] = [
 ] as const;
 
 /** Default era used when the store initialises. */
-export const DEFAULT_ERA: EraId = 'modern';
+export const DEFAULT_ERA: EraId = 'present';
 
 /**
  * Look up a `YearConfig` by its era id. Returns `undefined` when the id is

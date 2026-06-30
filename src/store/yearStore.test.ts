@@ -31,10 +31,10 @@ describe('yearStore', () => {
   describe('setYear', () => {
     it('updates targetYear and resets transitionProgress to 0', () => {
       const store = createYearStore();
-      store.getState().setYear('future');
+      store.getState().setYear('postwar');
 
       const state = store.getState();
-      expect(state.targetYear).toBe('future');
+      expect(state.targetYear).toBe('postwar');
       expect(state.transitionProgress).toBe(0);
       // selectedYear must NOT change until the transition completes.
       expect(state.selectedYear).toBe(DEFAULT_ERA);
@@ -54,14 +54,14 @@ describe('yearStore', () => {
 
     it('retargets when a transition is already in flight', () => {
       const store = createYearStore();
-      store.getState().setYear('future');
+      store.getState().setYear('postwar');
       store.getState().tickTransition(0.4);
 
       // Retarget to a different era mid-transition.
-      store.getState().setYear('medieval');
+      store.getState().setYear('eighties');
 
       const state = store.getState();
-      expect(state.targetYear).toBe('medieval');
+      expect(state.targetYear).toBe('eighties');
       expect(state.transitionProgress).toBe(0);
       expect(state.selectedYear).toBe(DEFAULT_ERA);
     });
@@ -70,7 +70,7 @@ describe('yearStore', () => {
   describe('tickTransition', () => {
     it('advances progress by the given delta', () => {
       const store = createYearStore();
-      store.getState().setYear('industrial');
+      store.getState().setYear('sixties');
 
       store.getState().tickTransition(0.25);
       expect(store.getState().transitionProgress).toBeCloseTo(0.25);
@@ -81,7 +81,7 @@ describe('yearStore', () => {
 
     it('clamps progress to 1', () => {
       const store = createYearStore();
-      store.getState().setYear('industrial');
+      store.getState().setYear('sixties');
 
       store.getState().tickTransition(2);
       expect(store.getState().transitionProgress).toBe(1);
@@ -89,7 +89,7 @@ describe('yearStore', () => {
 
     it('clamps progress to 0 for negative deltas', () => {
       const store = createYearStore();
-      store.getState().setYear('industrial');
+      store.getState().setYear('sixties');
 
       store.getState().tickTransition(-0.5);
       expect(store.getState().transitionProgress).toBe(0);
@@ -97,7 +97,7 @@ describe('yearStore', () => {
 
     it('progress updates from 0 to 1 during a full transition', () => {
       const store = createYearStore();
-      store.getState().setYear('future');
+      store.getState().setYear('postwar');
       expect(store.getState().transitionProgress).toBe(0);
 
       store.getState().tickTransition(1);
@@ -108,14 +108,14 @@ describe('yearStore', () => {
   describe('completeTransition', () => {
     it('copies targetYear into selectedYear and snaps progress to 1', () => {
       const store = createYearStore();
-      store.getState().setYear('future');
+      store.getState().setYear('postwar');
       store.getState().tickTransition(0.6);
 
       store.getState().completeTransition();
 
       const state = store.getState();
-      expect(state.selectedYear).toBe('future');
-      expect(state.targetYear).toBe('future');
+      expect(state.selectedYear).toBe('postwar');
+      expect(state.targetYear).toBe('postwar');
       expect(state.transitionProgress).toBe(1);
     });
   });
@@ -132,13 +132,13 @@ describe('yearStore', () => {
     });
 
     it('selectCurrentYearConfig returns the config for selectedYear', () => {
-      const state = baseState({ selectedYear: 'medieval' });
-      expect(selectCurrentYearConfig(state)).toEqual(getYearConfig('medieval'));
+      const state = baseState({ selectedYear: 'postwar' });
+      expect(selectCurrentYearConfig(state)).toEqual(getYearConfig('postwar'));
     });
 
     it('selectNextYearConfig returns the config for targetYear', () => {
-      const state = baseState({ targetYear: 'future' });
-      expect(selectNextYearConfig(state)).toEqual(getYearConfig('future'));
+      const state = baseState({ targetYear: 'postwar' });
+      expect(selectNextYearConfig(state)).toEqual(getYearConfig('postwar'));
     });
 
     it('selectNextYearConfig equals current config while at rest', () => {
@@ -149,15 +149,15 @@ describe('yearStore', () => {
     });
 
     it('selectUpcomingYearConfig returns the chronologically-next era', () => {
-      const state = baseState({ targetYear: 'medieval' });
-      // medieval (1500) -> industrial (1900)
+      const state = baseState({ targetYear: 'postwar' });
+      // postwar (1945) -> sixties (1965)
       expect(selectUpcomingYearConfig(state)).toEqual(
-        getYearConfig('industrial'),
+        getYearConfig('sixties'),
       );
     });
 
     it('selectUpcomingYearConfig is undefined for the latest era', () => {
-      const state = baseState({ targetYear: 'future' });
+      const state = baseState({ targetYear: 'present' });
       expect(selectUpcomingYearConfig(state)).toBeUndefined();
     });
 
@@ -185,7 +185,13 @@ describe('yearStore', () => {
     });
 
     it('every era id resolves to a config', () => {
-      const ids = ['medieval', 'industrial', 'modern', 'future'] as const;
+      const ids = [
+        'postwar',
+        'sixties',
+        'eighties',
+        'twothousands',
+        'present',
+      ] as const;
       for (const id of ids) {
         expect(getYearConfig(id)).toBeDefined();
       }
