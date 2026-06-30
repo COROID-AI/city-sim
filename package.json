@@ -17,15 +17,15 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.0.2",
-    "@react-three/postprocessing": "^3.0.4",
+    "@react-three/drei": "10.7.7",
+    "@react-three/fiber": "9.0.2",
+    "@react-three/postprocessing": "3.0.4",
     "next": "15.5.19",
-    "postprocessing": "^6.36.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "three": "^0.169.0",
-    "zustand": "^4.5.5"
+    "postprocessing": "6.36.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "three": "0.169.0",
+    "zustand": "4.5.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.11.0",
@@ -35,8 +35,8 @@
     "@testing-library/user-event": "^14.5.2",
     "@types/jest": "^29.5.13",
     "@types/node": "^20.16.5",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "19.0.0",
+    "@types/react-dom": "19.0.0",
     "@types/three": "^0.169.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.11.0",
