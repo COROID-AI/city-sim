@@ -12,6 +12,7 @@ import Props from './Props';
 import Pedestrians from './Pedestrians';
 import Vehicles from './Vehicles';
 import Sky from './Sky';
+import Particles from './Particles';
 
 /**
  * CityBlock
@@ -61,6 +62,7 @@ const CityBlock: FC = () => {
       <Props era={selectedYear} />
       <Pedestrians era={selectedYear} />
       <Vehicles era={selectedYear} />
+      <Particles era={selectedYear} />
     </group>
   );
 };

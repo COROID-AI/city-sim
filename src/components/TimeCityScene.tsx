@@ -4,6 +4,7 @@ import type { FC } from 'react';
 import Ground from './Ground';
 import Lighting from './Lighting';
 import CityBlock from './city/CityBlock';
+import BloomEffect from './Bloom';
 
 /**
  * Full-screen 3D city stage.
@@ -28,6 +29,9 @@ const TimeCityScene: FC = () => {
 
       {/* The assembled city block — roads, sidewalks, buildings, props, peds, vehicles */}
       <CityBlock />
+
+      {/* Bloom post-processing — era-adaptive glow on emissive surfaces */}
+      <BloomEffect />
 
       {/*
         OrbitControls give users full 3D navigation:
