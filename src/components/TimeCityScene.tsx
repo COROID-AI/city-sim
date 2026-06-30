@@ -3,6 +3,60 @@ import { OrbitControls } from '@react-three/drei';
 import type { FC } from 'react';
 import Ground from './Ground';
 import Lighting from './Lighting';
+import Storefront from './Storefront';
+import Billboard from './Billboard';
+import StreetProps from './StreetProps';
+import { useYearStore } from '@/store/yearStore';
+import { getEraStreetConfig } from '@/config/storefronts';
+
+/**
+ * Street-level content that swaps per era: storefronts, billboards, and props.
+ *
+ * Reads the active era from the year store and renders the matching
+ * configuration. Kept as a child of the R3F Canvas so it lives inside the
+ * WebGL context.
+ */
+const StreetContent: FC = () => {
+  const selectedYear = useYearStore((state) => state.selectedYear);
+  const streetConfig = getEraStreetConfig(selectedYear);
+
+  return (
+    <>
+      {/* Storefronts along the north edge of the block */}
+      {streetConfig.storefronts.map((sf, i) => (
+        <Storefront
+          key={`sf-${i}`}
+          position={[-12 + i * 8, 0, -14]}
+          config={sf}
+          rotationY={0}
+        />
+      ))}
+
+      {/* Storefronts along the south edge of the block (rotated to face in) */}
+      {streetConfig.storefronts.map((sf, i) => (
+        <Storefront
+          key={`sf-s-${i}`}
+          position={[-12 + i * 8, 0, 14]}
+          config={sf}
+          rotationY={Math.PI}
+        />
+      ))}
+
+      {/* Billboards flanking the block */}
+      {streetConfig.billboards.map((bb, i) => (
+        <Billboard
+          key={`bb-${i}`}
+          position={[-18 + i * 36, 0, 0]}
+          config={bb}
+          rotationY={i === 0 ? Math.PI / 2 : -Math.PI / 2}
+        />
+      ))}
+
+      {/* Era-dependent street props */}
+      <StreetProps config={streetConfig.props} />
+    </>
+  );
+};
 
 /**
  * Full-screen 3D city stage.
@@ -24,6 +78,9 @@ const TimeCityScene: FC = () => {
 
       {/* Ground plane at y=0 */}
       <Ground />
+
+      {/* Era-dependent storefronts, billboards, and street props */}
+      <StreetContent />
 
       {/*
         OrbitControls give users full 3D navigation:
