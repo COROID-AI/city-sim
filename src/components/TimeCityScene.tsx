@@ -3,6 +3,7 @@ import { OrbitControls } from '@react-three/drei';
 import type { FC } from 'react';
 import Ground from './Ground';
 import Lighting from './Lighting';
+import CityBlock from './city/CityBlock';
 
 /**
  * Full-screen 3D city stage.
@@ -24,6 +25,9 @@ const TimeCityScene: FC = () => {
 
       {/* Ground plane at y=0 */}
       <Ground />
+
+      {/* The assembled city block — roads, sidewalks, buildings, props, peds, vehicles */}
+      <CityBlock />
 
       {/*
         OrbitControls give users full 3D navigation:
