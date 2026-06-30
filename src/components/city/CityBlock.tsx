@@ -2,7 +2,6 @@
 
 import { useMemo, type FC } from 'react';
 import { useYearStore } from '@/store/yearStore';
-import { getYearConfig } from '@/config/years';
 import { getEraTheme } from '@/config/eraTheme';
 import Roads from './Roads';
 import Sidewalks from './Sidewalks';
@@ -33,12 +32,8 @@ const CityBlock: FC = () => {
   const targetYear = useYearStore((s) => s.targetYear);
   const transitionProgress = useYearStore((s) => s.transitionProgress);
 
-  // Resolve the active year config (density + maxHeight drive the buildings).
-  const config = useMemo(() => getYearConfig(selectedYear), [selectedYear]);
+  // Resolve the active year theme (ground tint).
   const theme = useMemo(() => getEraTheme(selectedYear), [selectedYear]);
-
-  const maxHeight = config?.maxHeight ?? 32;
-  const density = config?.density ?? 1;
 
   return (
     <group data-testid="city-block">
@@ -57,7 +52,7 @@ const CityBlock: FC = () => {
       <Sidewalks />
 
       {/* Era-reactive assets */}
-      <Buildings era={selectedYear} maxHeight={maxHeight} density={density} />
+      <Buildings era={selectedYear} />
       <Storefronts era={selectedYear} />
       <Props era={selectedYear} />
       <Pedestrians era={selectedYear} />

@@ -1,14 +1,21 @@
-import { useMemo, type FC } from 'react';
-import { BLOCK_LAYOUT } from '@/config/blockLayout';
-import { getEraTheme, type PropKind } from '@/config/eraTheme';
-import type { EraId } from '@/config/years';
+'use client';
 
 /**
  * Sidewalk props: lamps, benches, trees, hydrants, signs, holograms.
  *
  * The prop *kinds* change with the era (e.g. holograms only appear in the
- * present), giving each period distinct street furniture.
+ * present), giving each period distinct street furniture. During a year
+ * transition the outgoing era's props fade out while the incoming era's props
+ * fade in — implemented imperatively via `useFrame` so the animation loop
+ * never triggers React re-renders.
  */
+import { useMemo, useRef, type FC } from 'react';
+import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
+import { BLOCK_LAYOUT } from '@/config/blockLayout';
+import { getEraTheme, type PropKind } from '@/config/eraTheme';
+import type { EraId } from '@/config/years';
+import { useYearStore } from '@/store/yearStore';
 
 /** A single procedural prop instance. */
 const Prop: FC<{ kind: PropKind; x: number; z: number }> = ({ kind, x, z }) => {
@@ -111,18 +118,17 @@ const Prop: FC<{ kind: PropKind; x: number; z: number }> = ({ kind, x, z }) => {
   }
 };
 
-interface PropsProps {
-  era: EraId;
-}
-
 /**
- * Scatters era-appropriate props along the sidewalks.
+ * A layer of props for a single era whose visibility cross-fades during a
+ * transition. The group's scale is lerped from 0→1 (incoming) or 1→0
+ * (outgoing) each frame via `useFrame`.
  */
-const Props: FC<PropsProps> = ({ era }) => {
+const PropLayer: FC<{ era: EraId; incoming: boolean }> = ({ era, incoming }) => {
+  const groupRef = useRef<THREE.Group>(null);
+
   const placements = useMemo(() => {
     const theme = getEraTheme(era);
     const kinds = theme.props;
-    // Walk the sidewalk segments and place a prop every few units.
     const items: Array<{ id: string; kind: PropKind; x: number; z: number }> = [];
     let counter = 0;
     for (const sw of BLOCK_LAYOUT.sidewalks) {
@@ -146,11 +152,43 @@ const Props: FC<PropsProps> = ({ era }) => {
     return items;
   }, [era]);
 
+  useFrame(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    const { transitionProgress } = useYearStore.getState();
+    // Incoming layer: 0 → 1 as progress goes 0 → 1.
+    // Outgoing layer: 1 → 0 as progress goes 0 → 1.
+    const visibility = incoming ? transitionProgress : 1 - transitionProgress;
+    // Use a small floor so props never fully vanish mid-transition (avoids
+    // z-fighting pops); clamp to 0 at the very end for outgoing.
+    const scale = visibility <= 0.001 ? 0.0001 : Math.max(0.05, visibility);
+    group.scale.setScalar(scale);
+  });
+
   return (
-    <group>
+    <group ref={groupRef} scale={incoming ? 0.0001 : 1}>
       {placements.map((p) => (
         <Prop key={p.id} kind={p.kind} x={p.x} z={p.z} />
       ))}
+    </group>
+  );
+};
+
+interface PropsProps {
+  era: EraId;
+}
+
+/**
+ * Scatters era-appropriate props along the sidewalks. Renders both the settled
+ * era (outgoing) and the target era (incoming) layers so they can cross-fade.
+ */
+const Props: FC<PropsProps> = ({ era }) => {
+  const targetYear = useYearStore((s) => s.targetYear);
+
+  return (
+    <group>
+      <PropLayer era={era} incoming={false} />
+      <PropLayer era={targetYear} incoming />
     </group>
   );
 };
