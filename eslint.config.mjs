@@ -12,6 +12,7 @@ export default tseslint.config(
       'dist/**',
       '.next/**',
       'node_modules/**',
+      '.coroid-runtime/**',
       'next-env.d.ts',
     ],
   },
@@ -56,6 +57,21 @@ export default tseslint.config(
         'warn',
         { argsIgnorePattern: '^_' },
       ],
+    },
+  },
+  // Node.js scripts in e2e/ (static server) need Node globals
+  {
+    files: ['e2e/**/*.mjs', 'e2e/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2020,
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        URL: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+      },
     },
   },
   prettierConfig,
