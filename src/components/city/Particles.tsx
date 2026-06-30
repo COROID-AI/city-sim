@@ -125,9 +125,7 @@ const ParticleCloud: FC<{ layer: ParticleLayer; era: EraId }> = ({
       <bufferGeometry>
         <bufferAttribute
           attach="attributes-position"
-          count={layer.count}
-          array={positions}
-          itemSize={3}
+          args={[positions, 3]}
         />
       </bufferGeometry>
       <pointsMaterial
