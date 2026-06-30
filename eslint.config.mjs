@@ -40,7 +40,9 @@ export default tseslint.config(
     },
     rules: {
       ...reactPlugin.configs.recommended.rules,
-      ...reactHooksPlugin.configs.recommended.rules,
+      // eslint-plugin-react-hooks v5 exports rules directly on the plugin object.
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
       // react-three-fiber uses three.js intrinsic elements (mesh, ambientLight, etc.)

@@ -14,6 +14,18 @@ export type EraId =
   | 'present';
 
 /**
+ * Visual architectural style key consumed by the procedural building system.
+ * Each era maps to one of these styles to drive facade, window, and roof
+ * generation.
+ */
+export type BuildingStyle =
+  | 'artDeco'
+  | 'brutalist'
+  | 'glassTower'
+  | 'midcentury'
+  | 'modern';
+
+/**
  * Configuration for a single time period.
  */
 export interface YearConfig {
@@ -29,6 +41,8 @@ export interface YearConfig {
   readonly density: number;
   /** Maximum building height in world units. */
   readonly maxHeight: number;
+  /** Architectural style key for procedural building generation. */
+  readonly buildingStyle: BuildingStyle;
 }
 
 /**
@@ -45,6 +59,7 @@ export const YEAR_CONFIGS: readonly YearConfig[] = [
     palette: '#6b5b4a',
     density: 0.4,
     maxHeight: 12,
+    buildingStyle: 'artDeco',
   },
   {
     id: 'sixties',
@@ -53,6 +68,7 @@ export const YEAR_CONFIGS: readonly YearConfig[] = [
     palette: '#7a6f5d',
     density: 0.55,
     maxHeight: 20,
+    buildingStyle: 'midcentury',
   },
   {
     id: 'eighties',
@@ -61,6 +77,7 @@ export const YEAR_CONFIGS: readonly YearConfig[] = [
     palette: '#4a5a6b',
     density: 0.7,
     maxHeight: 32,
+    buildingStyle: 'brutalist',
   },
   {
     id: 'twothousands',
@@ -69,6 +86,7 @@ export const YEAR_CONFIGS: readonly YearConfig[] = [
     palette: '#3a5a7b',
     density: 0.85,
     maxHeight: 48,
+    buildingStyle: 'glassTower',
   },
   {
     id: 'present',
@@ -77,6 +95,7 @@ export const YEAR_CONFIGS: readonly YearConfig[] = [
     palette: '#2a4a6b',
     density: 1.0,
     maxHeight: 64,
+    buildingStyle: 'modern',
   },
 ] as const;
 
