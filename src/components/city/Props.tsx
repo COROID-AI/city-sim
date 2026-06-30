@@ -1,7 +1,12 @@
-import { useMemo, type FC } from 'react';
+import { useCallback, useMemo, type FC } from 'react';
 import { BLOCK_LAYOUT } from '@/config/blockLayout';
 import { getEraTheme, type PropKind } from '@/config/eraTheme';
 import type { EraId } from '@/config/years';
+import {
+  useHoverHandlers,
+  propHoverInfo,
+} from '@/utils/hoverHandlers';
+import { useYearStore } from '@/store/yearStore';
 
 /**
  * Sidewalk props: lamps, benches, trees, hydrants, signs, holograms.
@@ -11,13 +16,34 @@ import type { EraId } from '@/config/years';
  */
 
 /** A single procedural prop instance. */
-const Prop: FC<{ kind: PropKind; x: number; z: number }> = ({ kind, x, z }) => {
+const Prop: FC<{ kind: PropKind; x: number; z: number; id: string }> = ({
+  kind,
+  x,
+  z,
+  id,
+}) => {
+  // Hover handlers — resolve era lazily for year-specific tooltip text.
+  const infoFactory = useCallback(
+    () =>
+      propHoverInfo(
+        id,
+        useYearStore.getState().targetYear,
+        kind.charAt(0).toUpperCase() + kind.slice(1),
+      ),
+    [id, kind],
+  );
+  const { onPointerOver, onPointerOut, onPointerMove } =
+    useHoverHandlers(infoFactory);
+
+  // Shared hover props spread onto the primary mesh of each prop variant.
+  const hoverProps = { onPointerOver, onPointerOut, onPointerMove };
+
   switch (kind) {
     case 'lamp':
       return (
         <group position={[x, 0, z]}>
           {/* Pole */}
-          <mesh position={[0, 2, 0]} castShadow>
+          <mesh position={[0, 2, 0]} castShadow {...hoverProps}>
             <cylinderGeometry args={[0.08, 0.1, 4, 8]} />
             <meshStandardMaterial color="#3a3a3a" metalness={0.6} roughness={0.4} />
           </mesh>
@@ -36,7 +62,7 @@ const Prop: FC<{ kind: PropKind; x: number; z: number }> = ({ kind, x, z }) => {
     case 'bench':
       return (
         <group position={[x, 0, z]}>
-          <mesh position={[0, 0.5, 0]} castShadow>
+          <mesh position={[0, 0.5, 0]} castShadow {...hoverProps}>
             <boxGeometry args={[1.6, 0.1, 0.5]} />
             <meshStandardMaterial color="#6a4a2a" roughness={0.8} />
           </mesh>
@@ -49,7 +75,7 @@ const Prop: FC<{ kind: PropKind; x: number; z: number }> = ({ kind, x, z }) => {
     case 'tree':
       return (
         <group position={[x, 0, z]}>
-          <mesh position={[0, 1, 0]} castShadow>
+          <mesh position={[0, 1, 0]} castShadow {...hoverProps}>
             <cylinderGeometry args={[0.15, 0.2, 2, 8]} />
             <meshStandardMaterial color="#5a3a2a" roughness={0.9} />
           </mesh>
@@ -62,7 +88,7 @@ const Prop: FC<{ kind: PropKind; x: number; z: number }> = ({ kind, x, z }) => {
     case 'hydrant':
       return (
         <group position={[x, 0, z]}>
-          <mesh position={[0, 0.5, 0]} castShadow>
+          <mesh position={[0, 0.5, 0]} castShadow {...hoverProps}>
             <cylinderGeometry args={[0.18, 0.22, 1, 8]} />
             <meshStandardMaterial color="#c0392b" roughness={0.6} />
           </mesh>
@@ -75,7 +101,7 @@ const Prop: FC<{ kind: PropKind; x: number; z: number }> = ({ kind, x, z }) => {
     case 'sign':
       return (
         <group position={[x, 0, z]}>
-          <mesh position={[0, 1.5, 0]} castShadow>
+          <mesh position={[0, 1.5, 0]} castShadow {...hoverProps}>
             <cylinderGeometry args={[0.05, 0.05, 3, 6]} />
             <meshStandardMaterial color="#555" />
           </mesh>
@@ -89,7 +115,7 @@ const Prop: FC<{ kind: PropKind; x: number; z: number }> = ({ kind, x, z }) => {
       return (
         <group position={[x, 0, z]}>
           {/* Base ring */}
-          <mesh position={[0, 0.1, 0]}>
+          <mesh position={[0, 0.1, 0]} {...hoverProps}>
             <torusGeometry args={[0.4, 0.05, 8, 16]} />
             <meshStandardMaterial color="#1a3a4a" metalness={0.8} roughness={0.3} />
           </mesh>
@@ -149,7 +175,7 @@ const Props: FC<PropsProps> = ({ era }) => {
   return (
     <group>
       {placements.map((p) => (
-        <Prop key={p.id} kind={p.kind} x={p.x} z={p.z} />
+        <Prop key={p.id} id={p.id} kind={p.kind} x={p.x} z={p.z} />
       ))}
     </group>
   );

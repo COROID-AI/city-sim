@@ -6,6 +6,11 @@ import Lighting from './Lighting';
 import CityBlock from './city/CityBlock';
 import BloomEffect from './Bloom';
 
+interface TimeCitySceneProps {
+  /** Called once the R3F Canvas has initialised (first frame created). */
+  readonly onReady?: () => void;
+}
+
 /**
  * Full-screen 3D city stage.
  *
@@ -13,13 +18,14 @@ import BloomEffect from './Bloom';
  * rotate/pan/zoom navigation, a lit ground plane at y=0, and shadow-casting
  * directional + ambient lighting.
  */
-const TimeCityScene: FC = () => {
+const TimeCityScene: FC<TimeCitySceneProps> = ({ onReady }) => {
   return (
     <Canvas
       shadows
       camera={{ position: [40, 35, 40], fov: 45, near: 0.1, far: 1000 }}
       gl={{ antialias: true }}
       style={{ width: '100vw', height: '100vh', background: '#1a1a2e' }}
+      onCreated={() => onReady?.()}
     >
       {/* Lighting rig: directional (shadow caster) + ambient fill */}
       <Lighting />

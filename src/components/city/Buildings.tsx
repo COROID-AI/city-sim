@@ -1,7 +1,12 @@
-import { useMemo, type FC } from 'react';
+import { useCallback, useMemo, type FC } from 'react';
 import { BLOCK_LAYOUT, type Plot } from '@/config/blockLayout';
 import { getEraTheme } from '@/config/eraTheme';
 import type { EraId } from '@/config/years';
+import {
+  useHoverHandlers,
+  buildingHoverInfo,
+} from '@/utils/hoverHandlers';
+import { useYearStore } from '@/store/yearStore';
 
 /**
  * Procedural buildings.
@@ -38,6 +43,15 @@ interface BuildingProps {
 const Building: FC<BuildingProps> = ({ plot, era, maxHeight, density }) => {
   const theme = getEraTheme(era);
 
+  // Hover handlers — resolve era lazily so the tooltip matches the live
+  // selection even mid-transition.
+  const infoFactory = useCallback(
+    () => buildingHoverInfo(plot.id, useYearStore.getState().targetYear, plot.id),
+    [plot.id],
+  );
+  const { onPointerOver, onPointerOut, onPointerMove } =
+    useHoverHandlers(infoFactory);
+
   const { height, color, windowColor, floors } = useMemo(() => {
     const seed = hashSeed(`${plot.id}-${era}`);
     const seed2 = hashSeed(`${plot.id}-${era}-b`);
@@ -57,8 +71,15 @@ const Building: FC<BuildingProps> = ({ plot, era, maxHeight, density }) => {
 
   return (
     <group position={[plot.x, 0, plot.z]}>
-      {/* Main mass */}
-      <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
+      {/* Main mass — hoverable for tooltip */}
+      <mesh
+        position={[0, height / 2, 0]}
+        castShadow
+        receiveShadow
+        onPointerOver={onPointerOver}
+        onPointerOut={onPointerOut}
+        onPointerMove={onPointerMove}
+      >
         <boxGeometry args={[w, height, d]} />
         <meshStandardMaterial color={color} roughness={0.8} metalness={0.05} />
       </mesh>
