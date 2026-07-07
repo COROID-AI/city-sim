@@ -31,9 +31,12 @@ function addCitizens(world: World, n: number): Citizen[] {
       id: `c${i}`,
       home: home.id,
       work: homes[(i + 1) % homes.length]!.id,
+      entertainment: null,
       state: { kind: 'HOME', buildingId: home.id },
       position: { x: home.position.x, y: home.position.y },
       money: 100,
+      path: [],
+      pathIndex: 0,
     };
     world.citizens.set(citizen.id, citizen);
     citizens.push(citizen);
