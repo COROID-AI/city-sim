@@ -83,3 +83,32 @@ export const CITIZEN_SPEED = 12;
 
 /** Average vehicle travel speed in grid-cells per sim-hour. */
 export const VEHICLE_SPEED = 30;
+
+// ─── Vehicle Behaviour ───────────────────────────────────────────────────────
+
+/**
+ * Radius (in tiles) within which a vehicle can detect and pick up a
+ * nearby commuting citizen as a passenger.
+ */
+export const VEHICLE_PICKUP_RADIUS = 3;
+
+/**
+ * Probability per tick that an eligible vehicle (with free capacity and
+ * a nearby commuter) attempts to pick up that citizen.
+ */
+export const VEHICLE_PICKUP_CHANCE = 0.08;
+
+/**
+ * Radius (in tiles) within which a vehicle is considered to have
+ * arrived at a passenger's destination and will drop them off.
+ */
+export const VEHICLE_DROPOFF_RADIUS = 3;
+
+/** Fuel level of a fully refuelled vehicle, as a percentage `[0, 100]`. */
+export const VEHICLE_FUEL_FULL = 100;
+
+/** Fuel consumed per road tile travelled. */
+export const VEHICLE_FUEL_PER_TILE = 0.4;
+
+/** Fuel restored per tick while a vehicle is stationary (refuelling). */
+export const VEHICLE_FUEL_REFUEL_RATE = 6;
