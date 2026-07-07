@@ -144,7 +144,7 @@ export interface Citizen {
   pathIndex: number;
 }
 
-/** A vehicle travelling on the grid. */
+/** A vehicle travelling on the road network. */
 export interface Vehicle {
   /** Unique identifier (e.g. `"v0"`, `"v1"`). */
   readonly id: string;
@@ -152,12 +152,24 @@ export interface Vehicle {
   readonly kind: VehicleKind;
   /** Current grid position (mutated during movement). */
   position: Vec2;
-  /** Current velocity in grid-cells per sim-hour. */
+  /** Current velocity vector (direction × speed, grid-cells per sim-hour). */
   velocity: Vec2;
   /** Driving citizen ID, or `null` for autonomous / transit vehicles. */
   driver: string | null;
   /** Destination building ID, or `null` when idle. */
   target: string | null;
+  /** Road path currently being followed, as a list of grid coordinates. */
+  currentRoadPath: Vec2[];
+  /** Index into {@link currentRoadPath} of the tile most recently reached. */
+  pathIndex: number;
+  /** Fractional progress `[0, 1)` toward the next tile in the path. */
+  pathProgress: number;
+  /** Citizen IDs currently riding as passengers. */
+  passengers: string[];
+  /** Current travel speed in grid-cells per sim-hour. */
+  speed: number;
+  /** Fuel level in `[0, 100]` (percentage of full tank). */
+  fuel: number;
 }
 
 // ─── Product Kind ────────────────────────────────────────────────────────────
