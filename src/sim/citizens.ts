@@ -24,6 +24,7 @@ import {
 import { createRng, type Rng } from './rng';
 import { findRoadPath } from './pathfinding';
 import { nearestRoadTile } from './queries';
+import { citizenName } from './companies';
 import type { Building, Citizen, CitizenState, SimTime, Vec2, World } from './types';
 
 // ─── Schedule State ──────────────────────────────────────────────────────────
