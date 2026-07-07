@@ -92,7 +92,7 @@ function classifyProduct(name: string): ProductKind {
  * Uses a deterministic palette so the same citizen always gets the same
  * name.  Used for the employee detail list inside a company.
  */
-function citizenName(citizenId: string): string {
+export function citizenName(citizenId: string): string {
   const firstNames = [
     'Alex', 'Sam', 'Jordan', 'Taylor', 'Morgan', 'Casey', 'Riley', 'Jamie',
     'Avery', 'Quinn', 'Drew', 'Reese', 'Charlie', 'Skyler', 'Parker', 'Rowan',
