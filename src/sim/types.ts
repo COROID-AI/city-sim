@@ -42,7 +42,7 @@ export type VehicleKind = 'CAR' | 'TRUCK' | 'BUS' | 'MOTORCYCLE';
 // ─── Building ────────────────────────────────────────────────────────────────
 
 /** The functional purpose of a building. */
-export type BuildingKind = 'HOME' | 'WORK' | 'ENTERTAINMENT';
+export type BuildingKind = 'HOME' | 'WORK' | 'ENTERTAINMENT' | 'CIVIC';
 
 // ─── Zone ────────────────────────────────────────────────────────────────────
 
@@ -79,6 +79,15 @@ export interface SimTime {
 
 // ─── Grid ────────────────────────────────────────────────────────────────────
 
+/**
+ * Physical ground cover / surface type of a tile.
+ *
+ *  - `GRASS`    — open ground; buildings may be placed here.
+ *  - `ROAD`     — traversable road surface for vehicles & pedestrians.
+ *  - `BUILDING` — covered by a building footprint.
+ */
+export type Terrain = 'GRASS' | 'ROAD' | 'BUILDING';
+
 /** A single cell on the city grid. */
 export interface Tile {
   /** Column index (0-based, left-to-right). */
@@ -87,6 +96,8 @@ export interface Tile {
   readonly y: number;
   /** Zoning designation for this cell. */
   zone: Zone;
+  /** Physical surface type (grass, road, or building). */
+  terrain: Terrain;
   /** ID of the building occupying this tile, or `null` if empty. */
   buildingId: string | null;
 }
@@ -105,6 +116,8 @@ export interface Building {
   readonly size: Size;
   /** Maximum number of occupants (citizens or employees). */
   readonly capacity: number;
+  /** Human-readable name (e.g. `"Oak Apartments"`, `"City Hall"`). */
+  readonly name: string;
   /** Owning company ID (`null` for residential / civic buildings). */
   owner: string | null;
 }
