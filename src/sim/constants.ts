@@ -65,6 +65,9 @@ export const REVENUE_PER_EMPLOYEE = 25;
 /** Hourly maintenance cost per building (deducted from budget). */
 export const BUILDING_MAINTENANCE = 5;
 
+/** Hourly welfare payment per unemployed citizen (city expense). */
+export const WELFARE_PER_CITIZEN = 5;
+
 // ─── Citizen Schedule ────────────────────────────────────────────────────────
 
 /** Sim-hour when citizens leave home for work. */

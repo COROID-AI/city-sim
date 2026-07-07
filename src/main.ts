@@ -12,11 +12,21 @@
  */
 
 import { createWorld, getDaylightFactor } from './sim/world';
+import { generateCity, DEFAULT_CITY_SEED } from './sim/worldGen';
+import { spawnCitizens } from './sim/citizens';
+import { createCompanies, assignEmployees, tickCompanies } from './sim/companies';
+import { tickEconomy, aggregateStats } from './sim/economy';
 import { startLoop } from './render/loop';
 import { Camera } from './render/camera';
 import type { CameraInput } from './render/camera';
 import { applyLighting, drawSun } from './render/lighting';
-import { SIM_HOUR_MS, HOURS_PER_DAY, GRID_WIDTH, GRID_HEIGHT } from './sim/constants';
+import {
+  SIM_HOUR_MS,
+  HOURS_PER_DAY,
+  GRID_WIDTH,
+  GRID_HEIGHT,
+  MIN_CITIZENS,
+} from './sim/constants';
 import type { World } from './sim/types';
 
 // ─── Canvas setup ────────────────────────────────────────────────────────────
@@ -50,6 +60,12 @@ function resizeCanvas(): void {
 // ─── World ───────────────────────────────────────────────────────────────────
 
 const world: World = createWorld(GRID_WIDTH, GRID_HEIGHT);
+
+// Bootstrap the city: procedural generation → citizens → companies → employees.
+generateCity(world, DEFAULT_CITY_SEED);
+spawnCitizens(world, MIN_CITIZENS);
+createCompanies(world);
+assignEmployees(world);
 
 // ─── Camera ──────────────────────────────────────────────────────────────────
 
@@ -166,9 +182,12 @@ function render(): void {
   ctx.fillStyle = factor < 0.4 ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.6)';
   const hh = Math.floor(hourOfDay).toString().padStart(2, '0');
   const mm = Math.floor((hourOfDay % 1) * 60).toString().padStart(2, '0');
+  const stats = aggregateStats(world);
   const budget = world.budget.toLocaleString('en-US');
+  const pop = stats.population.toLocaleString('en-US');
+  const emp = (stats.employmentRate * 100).toFixed(0);
   ctx.fillText(
-    `Time ${hh}:${mm}  |  Daylight ${(factor * 100).toFixed(0)}%  |  Budget $${budget}`,
+    `Pop ${pop}  |  Employ ${emp}%  |  Time ${hh}:${mm}  |  Budget $${budget}`,
     12,
     24,
   );

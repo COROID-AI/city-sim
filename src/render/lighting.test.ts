@@ -17,6 +17,14 @@ function makeWorld(elapsedHours: number): World {
     companies: new Map(),
     simTime: { elapsedHours },
     budget: 0,
+    derivedStats: {
+      population: 0,
+      employmentRate: 0,
+      lastHourTaxIncome: 0,
+      lastHourExpenses: 0,
+    },
+    lastEconomyHour: -1,
+    lastRevenueBaseline: 0,
   };
 }
 

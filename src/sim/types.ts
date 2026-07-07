@@ -225,6 +225,23 @@ export interface Company {
   lastResetDay: number;
 }
 
+// ─── Derived Statistics ──────────────────────────────────────────────────────
+
+/**
+ * Aggregated statistics for the HUD overlay, recomputed each sim-hour by
+ * the economy tick.
+ */
+export interface DerivedStats {
+  /** Total number of citizens currently living in the city. */
+  population: number;
+  /** Fraction of citizens who are employed (0–1). */
+  employmentRate: number;
+  /** Tax income collected during the most recent sim-hour. */
+  lastHourTaxIncome: number;
+  /** City expenses incurred during the most recent sim-hour. */
+  lastHourExpenses: number;
+}
+
 // ─── World ───────────────────────────────────────────────────────────────────
 
 /** Root simulation state containing all entities and global data. */
@@ -247,4 +264,16 @@ export interface World {
   simTime: SimTime;
   /** City treasury in sim currency. */
   budget: number;
+  /** Derived HUD statistics (updated once per sim-hour). */
+  derivedStats: DerivedStats;
+  /**
+   * Last integer sim-hour the economy tick processed (`-1` = never).
+   * Used to ensure the economy runs exactly once per new sim-hour.
+   */
+  lastEconomyHour: number;
+  /**
+   * Total company revenue at the time of the last economy tick.
+   * Used to compute the per-hour revenue delta for tax purposes.
+   */
+  lastRevenueBaseline: number;
 }

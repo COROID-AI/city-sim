@@ -64,6 +64,14 @@ export function createWorld(
     companies: new Map(),
     simTime: { elapsedHours: 0 },
     budget: STARTING_BUDGET,
+    derivedStats: {
+      population: 0,
+      employmentRate: 0,
+      lastHourTaxIncome: 0,
+      lastHourExpenses: 0,
+    },
+    lastEconomyHour: -1,
+    lastRevenueBaseline: 0,
   };
 }
 
