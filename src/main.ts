@@ -20,6 +20,7 @@ import { startLoop } from './render/loop';
 import { Camera } from './render/camera';
 import type { CameraInput } from './render/camera';
 import { applyLighting, drawSun } from './render/lighting';
+import { drawMinimap } from './render/minimap';
 import {
   SIM_HOUR_MS,
   HOURS_PER_DAY,
@@ -191,6 +192,9 @@ function render(): void {
     12,
     24,
   );
+
+  // ── Minimap overlay (bottom-right, always on top) ─────────────────────────
+  drawMinimap(ctx, world, camera, canvas.width, canvas.height);
 }
 
 /**
