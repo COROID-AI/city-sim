@@ -13,7 +13,7 @@ import {
   STARTING_BUDGET,
   HOURS_PER_DAY,
 } from './constants';
-import type { Tile, World, Zone } from './types';
+import type { Terrain, Tile, Vec2, World, Zone } from './types';
 
 // ─── Grid creation ───────────────────────────────────────────────────────────
 
@@ -31,6 +31,7 @@ export function createTiles(width: number, height: number): Tile[] {
         x,
         y,
         zone: 'MIXED' as Zone,
+        terrain: 'GRASS',
         buildingId: null,
       });
     }
@@ -64,6 +65,68 @@ export function createWorld(
     simTime: { elapsedHours: 0 },
     budget: STARTING_BUDGET,
   };
+}
+
+// ─── Grid accessors ──────────────────────────────────────────────────────────
+
+/**
+ * Return the tile at grid coordinates `(x, y)`, or `undefined` if the
+ * coordinates are outside the world bounds.
+ *
+ * Tiles are stored row-major as `tiles[y * width + x]`.
+ *
+ * @param world  The world whose grid to query.
+ * @param x      Column index (0-based).
+ * @param y      Row index (0-based).
+ */
+export function tileAt(world: World, x: number, y: number): Tile | undefined {
+  if (x < 0 || y < 0 || x >= world.width || y >= world.height) {
+    return undefined;
+  }
+  return world.tiles[y * world.width + x];
+}
+
+/**
+ * Return the tile at the grid position described by a {@link Vec2}.
+ *
+ * @param world    The world whose grid to query.
+ * @param position The grid coordinates to look up.
+ */
+export function tileAtPos(world: World, position: Vec2): Tile | undefined {
+  return tileAt(world, position.x, position.y);
+}
+
+/**
+ * Check whether `(x, y)` is a valid, in-bounds grid cell.
+ *
+ * @param world The world whose grid to query.
+ * @param x     Column index (0-based).
+ * @param y     Row index (0-based).
+ */
+export function inBounds(world: World, x: number, y: number): boolean {
+  return x >= 0 && y >= 0 && x < world.width && y < world.height;
+}
+
+/**
+ * Set the terrain type of an in-bounds tile.
+ *
+ * Out-of-bounds coordinates are silently ignored.
+ *
+ * @param world   The world whose grid to mutate.
+ * @param x       Column index (0-based).
+ * @param y       Row index (0-based).
+ * @param terrain The new surface type.
+ */
+export function setTerrain(
+  world: World,
+  x: number,
+  y: number,
+  terrain: Terrain,
+): void {
+  const tile = tileAt(world, x, y);
+  if (tile) {
+    tile.terrain = terrain;
+  }
 }
 
 // ─── Daylight ────────────────────────────────────────────────────────────────
