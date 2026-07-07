@@ -130,12 +130,18 @@ export interface Citizen {
   readonly home: string | null;
   /** Workplace building ID (`null` if unemployed). */
   readonly work: string | null;
+  /** Preferred entertainment building ID (`null` if none assigned). */
+  readonly entertainment: string | null;
   /** Current schedule state (finite-state machine). */
   state: CitizenState;
   /** Current grid position (mutated during movement). */
   position: Vec2;
   /** Personal funds in city currency. */
   money: number;
+  /** Current road path being walked (empty when at rest). */
+  path: Vec2[];
+  /** Index of the next waypoint in `path` (0 when not travelling). */
+  pathIndex: number;
 }
 
 /** A vehicle travelling on the grid. */
