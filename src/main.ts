@@ -15,6 +15,7 @@ import { createWorld, getDaylightFactor } from './sim/world';
 import { startLoop } from './render/loop';
 import { Camera } from './render/camera';
 import type { CameraInput } from './render/camera';
+import { applyLighting, drawSun } from './render/lighting';
 import { SIM_HOUR_MS, HOURS_PER_DAY, GRID_WIDTH, GRID_HEIGHT } from './sim/constants';
 import type { World } from './sim/types';
 
@@ -149,6 +150,15 @@ function render(): void {
   drawWorldGrid(factor);
 
   ctx.restore();
+
+  // ── Lighting & celestial body overlays (screen space) ───────────────────
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  // Day/night lighting overlay — tints the scene for the current time.
+  applyLighting(ctx, world, canvas.width, canvas.height);
+
+  // Sun / moon disk tracing the day/night arc.
+  drawSun(ctx, world, canvas.width, canvas.height);
 
   // ── HUD overlay (screen space, always on top) ────────────────────────────
   ctx.setTransform(1, 0, 0, 1, 0, 0);
