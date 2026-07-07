@@ -15,15 +15,15 @@ import { createWorld, getDaylightFactor } from './sim/world';
 import { generateCity, DEFAULT_CITY_SEED } from './sim/worldGen';
 import { spawnCitizens } from './sim/citizens';
 import { createCompanies, assignEmployees, tickCompanies } from './sim/companies';
-import { tickEconomy, aggregateStats } from './sim/economy';
+import { tickEconomy } from './sim/economy';
 import { startLoop } from './render/loop';
 import { Camera } from './render/camera';
 import type { CameraInput } from './render/camera';
 import { applyLighting, drawSun } from './render/lighting';
 import { drawMinimap } from './render/minimap';
+import { drawHud } from './render/hud';
 import {
   SIM_HOUR_MS,
-  HOURS_PER_DAY,
   GRID_WIDTH,
   GRID_HEIGHT,
   MIN_CITIZENS,
@@ -146,7 +146,6 @@ function update(dtMs: number): void {
 /** Paint a full-viewport day/night gradient reflecting the current sim time. */
 function render(): void {
   const factor = getDaylightFactor(world.simTime.elapsedHours);
-  const hourOfDay = ((world.simTime.elapsedHours % HOURS_PER_DAY) + HOURS_PER_DAY) % HOURS_PER_DAY;
 
   // Interpolate between a dark night sky and a bright day sky.
   // Night:   rgb(10, 12, 30)
@@ -177,24 +176,13 @@ function render(): void {
   // Sun / moon disk tracing the day/night arc.
   drawSun(ctx, world, canvas.width, canvas.height);
 
-  // ── HUD overlay (screen space, always on top) ────────────────────────────
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.font = '16px monospace';
-  ctx.fillStyle = factor < 0.4 ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.6)';
-  const hh = Math.floor(hourOfDay).toString().padStart(2, '0');
-  const mm = Math.floor((hourOfDay % 1) * 60).toString().padStart(2, '0');
-  const stats = aggregateStats(world);
-  const budget = world.budget.toLocaleString('en-US');
-  const pop = stats.population.toLocaleString('en-US');
-  const emp = (stats.employmentRate * 100).toFixed(0);
-  ctx.fillText(
-    `Pop ${pop}  |  Employ ${emp}%  |  Time ${hh}:${mm}  |  Budget $${budget}`,
-    12,
-    24,
-  );
-
-  // ── Minimap overlay (bottom-right, always on top) ─────────────────────────
+  // ── Minimap overlay (bottom-right, screen space) ─────────────────────────
   drawMinimap(ctx, world, camera, canvas.width, canvas.height);
+
+  // ── HUD overlay (screen space, always on top) ────────────────────────────
+  // Called LAST so it sits above lighting, minimap, and all other layers.
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  drawHud(ctx, world);
 }
 
 /**
