@@ -11,6 +11,7 @@
 
 import { createWorld, getDaylightFactor } from './sim/world';
 import { startLoop } from './render/loop';
+import { applyLighting, drawSun } from './render/lighting';
 import { SIM_HOUR_MS, HOURS_PER_DAY, GRID_WIDTH, GRID_HEIGHT } from './sim/constants';
 import type { World } from './sim/types';
 
@@ -74,6 +75,12 @@ function render(): void {
 
   ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Day/night lighting overlay — tints the scene for the current time.
+  applyLighting(ctx, world, canvas.width, canvas.height);
+
+  // Sun / moon disk tracing the day/night arc.
+  drawSun(ctx, world, canvas.width, canvas.height);
 
   // HUD: clock + daylight readout (temporary scaffold HUD).
   ctx.font = '16px monospace';
