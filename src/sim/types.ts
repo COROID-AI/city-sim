@@ -160,18 +160,69 @@ export interface Vehicle {
   target: string | null;
 }
 
+// ─── Product Kind ────────────────────────────────────────────────────────────
+
+/**
+ * The type of goods or services a company produces.
+ *
+ * Derived from the workplace building's name at creation time, used for
+ * classification and detail display.
+ */
+export type ProductKind =
+  | 'TECHNOLOGY'
+  | 'COMMERCE'
+  | 'INDUSTRY'
+  | 'SERVICES'
+  | 'FINANCE'
+  | 'TRADE';
+
+// ─── Company Employee ────────────────────────────────────────────────────────
+
+/**
+ * A detailed employee record within a company.
+ *
+ * Stores both the citizen reference and human-readable display
+ * information for the detail-panel UI.
+ */
+export interface CompanyEmployee {
+  /** Citizen ID of this employee. */
+  readonly citizenId: string;
+  /** Display name generated deterministically from the citizen ID. */
+  readonly name: string;
+  /** Individual productivity multiplier (0.8–1.2). */
+  readonly productivity: number;
+}
+
+// ─── Company ─────────────────────────────────────────────────────────────────
+
 /** A company that employs citizens and tracks finances. */
 export interface Company {
   /** Unique identifier (e.g. `"co0"`, `"co1"`). */
   readonly id: string;
+  /** Human-readable company name (mirrors the workplace building name). */
+  readonly name: string;
   /** Headquarter / workplace building ID. */
   readonly buildingId: string;
-  /** Employee citizen IDs. */
+  /** Type of goods or services this company produces. */
+  readonly productKind: ProductKind;
+  /** Per-company productivity factor (0.70–1.30) affecting revenue output. */
+  readonly productivity: number;
+  /** Employee citizen IDs (mirrors `employees[].citizenId`). */
   employeeIds: string[];
+  /** Detailed employee records with display names. */
+  employees: CompanyEmployee[];
   /** Cumulative revenue (sim currency). */
   revenue: number;
   /** Cumulative expenses (wages, maintenance). */
   expenses: number;
+  /** Revenue earned during the most recent sim-day. */
+  dailyRevenue: number;
+  /** Expenses incurred during the most recent sim-day. */
+  dailyExpenses: number;
+  /** Net profit = cumulative `revenue − expenses`. */
+  profit: number;
+  /** Day number when `dailyRevenue` / `dailyExpenses` were last reset. */
+  lastResetDay: number;
 }
 
 // ─── World ───────────────────────────────────────────────────────────────────
