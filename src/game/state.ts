@@ -12,7 +12,7 @@ import {
   cloneBoard,
   createBoard,
   type Board,
-} from "./board";
+} from "./board.js";
 import {
   isGameOver,
   lockAndAdvance,
@@ -20,8 +20,8 @@ import {
   tryMove,
   tryRotate,
   type ActivePiece,
-} from "./rules";
-import { ALL_TETROMINO_TYPES, type TetrominoType } from "./tetrominoes";
+} from "./rules.js";
+import { ALL_TETROMINO_TYPES, type TetrominoType } from "./tetrominoes.js";
 
 /** Player actions that drive the game. */
 export type Action =
@@ -29,7 +29,8 @@ export type Action =
   | { readonly type: "MoveRight" }
   | { readonly type: "Rotate" }
   | { readonly type: "SoftDrop" }
-  | { readonly type: "HardDrop" };
+  | { readonly type: "HardDrop" }
+  | { readonly type: "Tick" };
 
 /** A complete, immutable snapshot of the game. */
 export interface GameState {
@@ -128,6 +129,52 @@ function clonePiece(piece: ActivePiece): ActivePiece {
   };
 }
 
+/** Shared outcome of locking a piece into the board and spawning the next. */
+interface LockOutcome {
+  readonly queue: TetrominoType[];
+  readonly bag: TetrominoType[];
+  readonly current: ActivePiece;
+  readonly lines: number;
+  readonly level: number;
+  readonly score: number;
+  readonly gameOver: boolean;
+}
+
+/**
+ * Locks `piece` into the board, clears full lines, spawns the next piece from
+ * the 7-bag, and recomputes score/level. Shared by both `HardDrop` and the
+ * gravity `Tick` so the lock-and-spawn behaviour stays identical and in one
+ * place.
+ */
+function lockCurrentPiece(
+  board: Board,
+  piece: ActivePiece,
+  queue: TetrominoType[],
+  bag: TetrominoType[],
+  random: () => number,
+  lines: number,
+  level: number,
+  score: number
+): LockOutcome {
+  const nextType = queue.shift() as TetrominoType;
+  const ensured = ensureQueue(queue, bag, random, LOOKAHEAD);
+
+  const result = lockAndAdvance(board, piece, nextType);
+  const newLines = lines + result.cleared;
+  const newScore = score + LINE_SCORES[result.cleared] * level;
+  const newLevel = Math.floor(newLines / 10) + 1;
+
+  return {
+    queue: ensured.queue,
+    bag: ensured.bag,
+    current: result.current,
+    lines: newLines,
+    level: newLevel,
+    score: newScore,
+    gameOver: result.gameOver,
+  };
+}
+
 /**
  * Applies a single action, returning a brand-new state.
  *
@@ -172,15 +219,47 @@ export function applyAction(state: GameState, action: Action): GameState {
       }
       score += dropped * 2;
 
-      const nextType = queue.shift() as TetrominoType;
-      ({ queue, bag } = ensureQueue(queue, bag, random, LOOKAHEAD));
-
-      const result = lockAndAdvance(board, piece, nextType);
-      current = result.current;
-      lines += result.cleared;
-      score += LINE_SCORES[result.cleared] * level;
-      level = Math.floor(lines / 10) + 1;
-      gameOver = result.gameOver;
+      const hardDropOutcome = lockCurrentPiece(
+        board,
+        piece,
+        queue,
+        bag,
+        random,
+        lines,
+        level,
+        score
+      );
+      queue = hardDropOutcome.queue;
+      bag = hardDropOutcome.bag;
+      current = hardDropOutcome.current;
+      lines = hardDropOutcome.lines;
+      level = hardDropOutcome.level;
+      score = hardDropOutcome.score;
+      gameOver = hardDropOutcome.gameOver;
+      break;
+    }
+    case "Tick": {
+      // Gravity: drop one row when possible; otherwise lock the piece.
+      if (tryMove(board, piece, 1, 0)) {
+        break;
+      }
+      const tickOutcome = lockCurrentPiece(
+        board,
+        piece,
+        queue,
+        bag,
+        random,
+        lines,
+        level,
+        score
+      );
+      queue = tickOutcome.queue;
+      bag = tickOutcome.bag;
+      current = tickOutcome.current;
+      lines = tickOutcome.lines;
+      level = tickOutcome.level;
+      score = tickOutcome.score;
+      gameOver = tickOutcome.gameOver;
       break;
     }
     default:

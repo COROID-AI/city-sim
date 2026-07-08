@@ -11,8 +11,8 @@ import {
   collides,
   mergePiece,
   type Board,
-} from "./board";
-import { TETROMINOES, type TetrominoType } from "./tetrominoes";
+} from "./board.js";
+import { TETROMINOES, type TetrominoType } from "./tetrominoes.js";
 
 /** The currently controlled tetromino. Mutated in place by the rule helpers. */
 export interface ActivePiece {

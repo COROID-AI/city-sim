@@ -6,7 +6,7 @@
  * given. No browser APIs are used.
  */
 
-import { TETROMINOES, type TetrominoType } from "./tetrominoes";
+import { TETROMINOES, type TetrominoType } from "./tetrominoes.js";
 
 /** Standard Tetris board dimensions. */
 export const BOARD_WIDTH = 10;
