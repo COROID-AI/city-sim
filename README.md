@@ -1,11 +1,45 @@
-Build a standalone, browser-based 2D city simulation. The city runs in real time with citizens, vehicles, companies, and a live economy — viewable in any browser. The details of all entities should be in great detail.
+# Tetris
 
-Visuals day/night cycle visible; ≥20 buildings, ≥50 citizens, ≥10 vehicles active simultaneously.
+A browser-based Tetris game controlled entirely with the arrow keys.
 
-Citizens follow daily schedules (home → work → entertainment → home); companies track revenue/employees; economy updates every sim-hour.
+## Controls
 
-Top-overlay shows population, employment rate, city time, city budget.
+| Key | Action |
+| --- | ------ |
+| &larr; / &rarr; | Move the block left / right |
+| &uarr; | Turn (rotate) the block |
+| &darr; | Soft drop |
 
-Since the city is large and the window will only show a piece of the city, therefor a Minimap is needed to display what the browser window is looking at in the city.
+## Getting Started
 
-Use any stack you prefer, but it must load directly and start the simulation upon loaded in a browser.
+Install dependencies:
+
+```bash
+npm install
+```
+
+Build the TypeScript source:
+
+```bash
+npm run build
+```
+
+Run the tests:
+
+```bash
+npm test
+```
+
+Play the game: open `index.html` in your browser (after building).
+
+## Project Structure
+
+```
+.
+├── index.html        # Game page: canvas#board + arrow-key instructions
+├── src/
+│   └── main.ts       # Entrypoint: loads the game module and starts the loop
+├── tsconfig.json     # TypeScript config (strict, ES2020, DOM)
+├── jest.config.mjs   # ts-jest preset, jsdom environment
+└── package.json
+```

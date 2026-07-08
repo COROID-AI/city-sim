@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tetris</title>
+    <style>
+      body {
+        margin: 0;
+        background: #1a1a2e;
+        color: #e0e0e0;
+        font-family: monospace;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+      }
+      canvas {
+        background: #0f0f1e;
+        border: 2px solid #4a4a6e;
+      }
+      .hint {
+        margin-top: 16px;
+        font-size: 14px;
+        text-align: center;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="board" width="300" height="600"></canvas>
+    <p class="hint">
+      Use the <strong>arrow keys</strong> to play.<br />
+      &larr; &rarr; to move, &uarr; to turn the blocks, &darr; to drop.
+    </p>
+    <script type="module" src="/dist/main.js"></script>
+  </body>
+</html>
