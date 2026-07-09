@@ -85,7 +85,7 @@ describe('draw — locked board', () => {
     const ctx = createMockContext();
     draw(ctx, state);
 
-    // Background (1) + 10 board cells = at least 11 fillRect calls.
+    // Background (1) + grid lines + 10 board cells = well over 11 fillRect calls.
     expect(ctx.fillRect.mock.calls.length).toBeGreaterThanOrEqual(11);
   });
 
@@ -112,9 +112,9 @@ describe('draw — locked board', () => {
     const ctx = createMockContext();
     draw(ctx, state);
 
-    // Background (1) + next-piece preview cells (4 for the T-piece) = 5.
-    // No board cells and no current piece should be drawn.
-    expect(ctx.fillRect.mock.calls.length).toBe(5);
+    // Background (1) + grid lines (33) + next-piece preview cells (4 for the
+    // T-piece) = 38. No board cells and no current piece should be drawn.
+    expect(ctx.fillRect.mock.calls.length).toBe(38);
   });
 });
 
@@ -124,8 +124,8 @@ describe('draw — current piece', () => {
     const state = createInitialState(rngAlwaysFirst);
     draw(ctx, state);
 
-    // Background (1) + I-piece cells (4) + preview cells (4) = 9.
-    expect(ctx.fillRect.mock.calls.length).toBe(9);
+    // Background (1) + grid lines (33) + I-piece cells (4) + preview cells (4) = 42.
+    expect(ctx.fillRect.mock.calls.length).toBe(42);
   });
 });
 

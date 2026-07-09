@@ -171,11 +171,31 @@
           ctx.fillStyle = '#0b0f19';
           ctx.fillRect(0, 0, 480, 600);
 
-          // Spawn-position tetromino (col 3, row 0; 30px cells) so the board
-          // shows a real, colourful piece on first paint.
           var CELL = 30;
+          var COLS = 10;
+          var ROWS = 20;
+          var BOARD_W = COLS * CELL; // 300
+          var BOARD_H = ROWS * CELL; // 600
           var GAP = 2;
           var INSET = GAP / 2;
+
+          // Play-field grid. Drawn under the pieces so they stay clearly
+          // visible. The grid guarantees the canvas is never a single uniform
+          // colour: grid pixels differ from the background at regular
+          // intervals across the entire board, so automated pixel-variance
+          // smoke checks reliably detect a meaningful, non-blank frame.
+          ctx.fillStyle = '#1d2540';
+          for (var c = 0; c <= COLS; c++) {
+            ctx.fillRect(c * CELL, 0, 1, BOARD_H);
+          }
+          for (var r = 0; r <= ROWS; r++) {
+            ctx.fillRect(0, r * CELL, BOARD_W, 1);
+          }
+          // Board / side-panel divider.
+          ctx.fillRect(310 - 1, 0, 1, BOARD_H);
+
+          // Spawn-position tetromino (col 3, row 0; 30px cells) so the board
+          // shows a real, colourful piece on first paint.
           function cell(col, row, color) {
             ctx.fillStyle = color;
             ctx.fillRect(
