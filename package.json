@@ -1,0 +1,20 @@
+{
+  "name": "tetris",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A browser-based Tetris game built with Vite, TypeScript, and Jest.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test": "jest",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11"
+  }
+}

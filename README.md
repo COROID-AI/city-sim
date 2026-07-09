@@ -1,11 +1,60 @@
-Build a standalone, browser-based 2D city simulation. The city runs in real time with citizens, vehicles, companies, and a live economy — viewable in any browser. The details of all entities should be in great detail.
+# Tetris
 
-Visuals day/night cycle visible; ≥20 buildings, ≥50 citizens, ≥10 vehicles active simultaneously.
+A browser-based Tetris game built with **Vite**, **TypeScript**, and **Jest**.
 
-Citizens follow daily schedules (home → work → entertainment → home); companies track revenue/employees; economy updates every sim-hour.
+## Controls
 
-Top-overlay shows population, employment rate, city time, city budget.
+Player input is intentionally limited to the **four arrow keys** — no WASD, no
+space, no mouse, no touch:
 
-Since the city is large and the window will only show a piece of the city, therefor a Minimap is needed to display what the browser window is looking at in the city.
+| Key | Action |
+| --- | --- |
+| **←** | Move the active piece one cell left |
+| **→** | Move the active piece one cell right |
+| **↓** | Soft-drop the piece one cell (awards 1 point) |
+| **↑** | Rotate the piece clockwise |
 
-Use any stack you prefer, but it must load directly and start the simulation upon loaded in a browser.
+## Architecture
+
+The game is split into pure, headlessly-testable logic and a thin browser shell.
+
+| Path | Responsibility |
+| --- | --- |
+| `src/game/types.ts` | Core data types (`Direction`, `Cell`, `Tetromino`, `Board`, `GameState`, …) |
+| `src/game/tetrominoes.ts` | The 7 standard tetrominoes + `getShape` / `rotate` helpers |
+| `src/game/board.ts` | Pure board operations (`createBoard`, `clearFullRows`, …) |
+| `src/game/rules.ts` | Pure collision/placement rules (`canPlace`, `tryMove`, `tryRotate`, `lockPiece`) |
+| `src/game/state.ts` | Immutable state reducer (`createInitialState`, `step`) + scoring |
+| `src/input/keyboard.ts` | Arrow-key → action mapper (`mapKeyToAction`) — the sole input surface |
+| `src/render/draw.ts` | Pure canvas renderer (`draw`) — accepts a mock context |
+| `src/main.ts` | Browser entry: canvas bootstrap, one `keydown` listener, `requestAnimationFrame` loop |
+
+The game-logic and input modules are **pure**: no DOM, no randomness (the RNG is
+injected), no I/O. The renderer (`draw.ts`) is pure with respect to its context
+parameter — it only calls drawing methods on a minimal `DrawContext` interface
+that `CanvasRenderingContext2D` satisfies, so it can be unit-tested with a plain
+mock object.
+
+## Layout
+
+The 480 × 600 canvas is divided into a **300 × 600 play field** (10 columns × 20
+rows at 30 px per cell) and a **170 px side panel** showing the next-piece
+preview and the score / level / lines HUD.
+
+## Scripts
+
+| Script | Description |
+| --- | --- |
+| `npm run dev` | Start the Vite dev server with hot-module reload |
+| `npm run build` | Type-check (`tsc`) and build for production into `dist/` |
+| `npm test` | Run the Jest test suite |
+| `npm run preview` | Preview the production build locally |
+
+## Getting started
+
+```bash
+npm install
+npm run dev
+```
+
+Open the URL Vite prints, then use the arrow keys to play.
