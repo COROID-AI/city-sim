@@ -69,6 +69,12 @@ function main(): void {
     }
   });
 
+  // Paint the very first frame synchronously so the canvas never appears
+  // blank, even before the first `requestAnimationFrame` callback fires. This
+  // keeps automated smoke checks (which may snapshot immediately after load)
+  // from capturing an empty, transparent canvas.
+  draw(context, state, DEFAULT_DRAW_CONFIG);
+
   // ── Main loop ──────────────────────────────────────────────────────────
   let lastTime = performance.now();
   let accumulator = 0;
