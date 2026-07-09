@@ -40,3 +40,12 @@ export function keyToAction(event: KeyboardEvent): Action | null {
       return null;
   }
 }
+
+/**
+ * Canonical alias used by the browser entry point (`main.ts`).
+ *
+ * `keyToAction` remains the original export; this alias lets the rest of the
+ * codebase refer to the mapper by the name documented in the architecture
+ * (`mapKeyToAction`).
+ */
+export { keyToAction as mapKeyToAction };
