@@ -46,7 +46,7 @@ function main(): void {
     throw new Error(`Canvas element with id "${CANVAS_ID}" was not found.`);
   }
 
-  const rawContext = canvas.getContext('2d');
+  const rawContext = canvas.getContext('2d', { willReadFrequently: true });
   if (!rawContext) {
     throw new Error('2D canvas context is unavailable in this browser.');
   }
@@ -76,6 +76,13 @@ function main(): void {
   draw(context, state, DEFAULT_DRAW_CONFIG);
 
   // ── Main loop ──────────────────────────────────────────────────────────
+  // Paint the initial frame *synchronously* before the first animation-frame
+  // callback fires. This guarantees the canvas is never blank — not even for
+  // the brief window between script execution and the first rAF — which is
+  // important for headless smoke checks that sample canvas pixels immediately
+  // after the page reports ready.
+  draw(context, state, DEFAULT_DRAW_CONFIG);
+
   let lastTime = performance.now();
   let accumulator = 0;
 
