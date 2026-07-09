@@ -27,8 +27,9 @@ import { createPiece, createBag } from './tetrominoes.js';
  * @param {object} [opts]
  * @param {() => number} [opts.rand] - Optional RNG for deterministic testing.
  */
-export function createGame(opts = {}) {
-  const rand = opts.rand || Math.random;
+export function createGame(opts) {
+  const options = opts || {};
+  const rand = options.rand || Math.random;
   const bag = createBag(rand);
 
   const state = {

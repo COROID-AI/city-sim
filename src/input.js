@@ -30,8 +30,9 @@ export function isGameKey(key) {
  * @param {object} [opts]
  * @param {() => boolean} [opts.isInputGuarded] - Returns true if a text field has focus (skip)
  */
-export function createInput(game, opts = {}) {
-  const isInputGuarded = opts.isInputGuarded || (() => false);
+export function createInput(game, opts) {
+  const options = opts || {};
+  const isInputGuarded = options.isInputGuarded || (() => false);
 
   // DAS state for horizontal movement
   let heldDir = 0; // -1 left, +1 right, 0 none
