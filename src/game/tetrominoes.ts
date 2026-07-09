@@ -90,7 +90,8 @@ function buildRotations(base: Shape): readonly Shape[] {
  * @param index   Current rotation index (0–3).
  * @returns       The next rotation index, wrapping at 3 back to 0.
  */
-export function rotate(piece: Tetromino, index: number): number {
+export function rotate(_piece: Tetromino, index: number): number {
+  void _piece; // The piece argument is part of the API contract but rotation is index-based.
   const normalized = ((index % 4) + 4) % 4;
   return (normalized + 1) % 4;
 }
