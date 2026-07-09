@@ -1,0 +1,25 @@
+{
+  "name": "tetris",
+  "version": "1.0.0",
+  "description": "A browser-based Tetris game controlled entirely with arrow keys. Vanilla HTML5 + CSS + ES modules — no framework, no bundler, no runtime dependencies.",
+  "type": "module",
+  "scripts": {
+    "start": "npx --yes http-server . -p ${PORT:-8080} -c-1",
+    "test": "node --test tests/",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "tetris",
+    "game",
+    "canvas",
+    "vanilla-js",
+    "es-modules"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

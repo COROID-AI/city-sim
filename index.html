@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="A browser-based Tetris game controlled entirely with arrow keys." />
+  <title>Tetris</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%230b1120'/%3E%3Crect x='20' y='10' width='25' height='25' fill='%23a855f7'/%3E%3Crect x='45' y='10' width='25' height='25' fill='%23a855f7'/%3E%3Crect x='20' y='35' width='25' height='25' fill='%23a855f7'/%3E%3Crect x='45' y='60' width='25' height='25' fill='%23a855f7'/%3E%3Crect x='45' y='35' width='25' height='25' fill='%23a855f7'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <div id="app" class="app" tabindex="0">
+    <header class="header">
+      <h1 class="title">TETRIS</h1>
+    </header>
+
+    <main class="game-area">
+      <!-- Side panel: stats + next-piece preview -->
+      <aside class="side-panel left-panel">
+        <section class="stats">
+          <div class="stat">
+            <span class="stat-label">SCORE</span>
+            <span id="score" class="stat-value">000000</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">LEVEL</span>
+            <span id="level" class="stat-value">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">LINES</span>
+            <span id="lines" class="stat-value">0</span>
+          </div>
+        </section>
+
+        <section class="next-section">
+          <span class="stat-label">NEXT</span>
+          <canvas id="next" class="next-canvas"></canvas>
+        </section>
+
+        <section class="controls-help">
+          <h2 class="controls-title">CONTROLS</h2>
+          <ul class="controls-list">
+            <li><kbd>&#8593;</kbd> Rotate</li>
+            <li><kbd>&#8592;</kbd> Move Left</li>
+            <li><kbd>&#8594;</kbd> Move Right</li>
+            <li><kbd>&#8595;</kbd> Soft Drop</li>
+          </ul>
+          <p class="controls-note">Gameplay: arrow keys only.<br />Enter: pause / restart</p>
+        </section>
+      </aside>
+
+      <!-- Main board canvas with overlay -->
+      <section class="board-wrapper">
+        <canvas id="board" class="board" aria-label="Tetris game board"></canvas>
+        <div id="overlay" class="overlay hidden">
+          <div class="overlay-content">
+            <h2 id="overlay-title" class="overlay-title"></h2>
+            <p id="overlay-text" class="overlay-text"></p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p class="legend">
+        <span><kbd>&#8593;</kbd> Rotate</span>
+        <span><kbd>&#8592;</kbd> Left</span>
+        <span><kbd>&#8594;</kbd> Right</span>
+        <span><kbd>&#8595;</kbd> Soft Drop</span>
+        <span class="legend-meta">Enter &mdash; Pause / Restart</span>
+      </p>
+    </footer>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

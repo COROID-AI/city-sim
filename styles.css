@@ -1,0 +1,334 @@
+/**
+ * Responsive dark-theme styling for the Tetris board, side panels, next-piece
+ * preview, and overlay (start/pause/game-over).
+ *
+ * Uses CSS custom properties for theme colors plus 7 tetromino colors.
+ * Grid layout for board + side info; monospace font for stats.
+ */
+
+:root {
+  /* Theme colors */
+  --bg: #0b1120;
+  --panel: #111827;
+  --panel-border: #1e293b;
+  --grid: rgba(148, 163, 184, 0.12);
+  --text: #e2e8f0;
+  --text-dim: #94a3b8;
+  --accent: #38bdf8;
+  --accent-glow: rgba(56, 189, 248, 0.4);
+
+  /* Tetromino colors */
+  --tet-i: #22d3ee;
+  --tet-o: #fbbf24;
+  --tet-t: #a855f7;
+  --tet-s: #22c55e;
+  --tet-z: #ef4444;
+  --tet-j: #3b82f6;
+  --tet-l: #f97316;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: radial-gradient(ellipse at top, #131c31 0%, var(--bg) 70%);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Focus-visible outline for accessibility */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* App container */
+.app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  outline: none; /* the app captures keys at the window level */
+}
+
+/* Header */
+.header {
+  text-align: center;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.4em;
+  color: var(--accent);
+  text-shadow: 0 0 24px var(--accent-glow);
+}
+
+/* Game area: side panel + board */
+.game-area {
+  display: grid;
+  grid-template-columns: 180px auto;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+/* Side panel */
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.stats,
+.next-section,
+.controls-help {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.stat-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--text-dim);
+}
+
+.stat-value {
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Next-piece preview */
+.next-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.next-canvas {
+  width: 130px;
+  height: 110px;
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 8px;
+}
+
+/* Controls help */
+.controls-help {
+  text-align: left;
+}
+
+.controls-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--text-dim);
+  margin-bottom: 0.5rem;
+}
+
+.controls-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.controls-list kbd {
+  display: inline-block;
+  width: 1.8em;
+  text-align: center;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 0.8rem;
+  font-family: monospace;
+  margin-right: 0.5rem;
+}
+
+.controls-note {
+  margin-top: 0.6rem;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+/* Board */
+.board-wrapper {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+}
+
+.board {
+  display: block;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+/* Overlay */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 17, 32, 0.85);
+  backdrop-filter: blur(4px);
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+  z-index: 10;
+}
+
+.overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.overlay.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.overlay-content {
+  text-align: center;
+  padding: 2rem;
+}
+
+.overlay-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  text-shadow: 0 0 20px var(--accent-glow);
+  margin-bottom: 0.75rem;
+}
+
+.overlay-text {
+  font-size: 0.9rem;
+  color: var(--text);
+  white-space: pre-line;
+  line-height: 1.5;
+}
+
+/* Footer legend */
+.footer {
+  text-align: center;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.legend kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  text-align: center;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.75rem;
+  font-family: monospace;
+  margin-right: 0.25rem;
+}
+
+.legend-meta {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* --- Responsive scaling for small screens --- */
+@media (max-width: 560px) {
+  :root {
+    /* The board is 10 cols * 30px = 300px; scale everything down on phones.
+       This is driven by the canvas CSS width which the renderer respects. */
+  }
+
+  .app {
+    padding: 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .title {
+    font-size: 1.4rem;
+    letter-spacing: 0.3em;
+  }
+
+  .game-area {
+    grid-template-columns: 110px auto;
+    gap: 0.6rem;
+  }
+
+  .stats,
+  .next-section,
+  .controls-help {
+    padding: 0.6rem;
+    border-radius: 8px;
+  }
+
+  .stat-value {
+    font-size: 1rem;
+  }
+
+  .next-canvas {
+    width: 90px;
+    height: 80px;
+  }
+
+  .controls-list {
+    font-size: 0.72rem;
+  }
+
+  .legend {
+    gap: 0.5rem;
+    font-size: 0.65rem;
+  }
+}
+
+/* Hide controls-help on very narrow screens to keep board visible */
+@media (max-width: 400px) {
+  .controls-help {
+    display: none;
+  }
+}
