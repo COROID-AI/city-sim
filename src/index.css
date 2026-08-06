@@ -1,0 +1,117 @@
+:root {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+  color: #e8e8ec;
+  background-color: #101218;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  background: #171a22;
+  border-bottom: 1px solid #2a2f3a;
+  z-index: 10;
+}
+
+.app-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.app-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* Timeline slider */
+.timeline {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px;
+  background: #1e222c;
+  border: 1px solid #2f3542;
+  border-radius: 12px;
+}
+
+.timeline-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 84px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #9aa3b2;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.timeline-option:hover {
+  background: #262b37;
+  color: #e8e8ec;
+}
+
+.timeline-option:focus-visible {
+  outline: 2px solid #4d9fff;
+  outline-offset: 2px;
+}
+
+.timeline-option.is-active {
+  background: #2f6f8f;
+  border-color: #4d9fff;
+  color: #ffffff;
+}
+
+.timeline-year {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.timeline-label {
+  font-size: 11px;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+@media (max-width: 720px) {
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .timeline {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .timeline-option {
+    min-width: 0;
+    flex: 1;
+  }
+}
