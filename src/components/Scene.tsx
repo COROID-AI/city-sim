@@ -1,7 +1,5 @@
-import { useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { useCityStore } from '../store/useCityStore';
 
 /** The empty lit block footprint the city will be built on. */
 function BlockFootprint() {
@@ -20,28 +18,7 @@ function BlockFootprint() {
   );
 }
 
-/**
- * Placeholder that consumes transition requests and logs the from->to change.
- * Later content/system tasks replace this with real morphing logic.
- */
-function EraSwitchStub() {
-  const transitionRequest = useCityStore((s) => s.transitionRequest);
-  const clearTransition = useCityStore((s) => s.clearTransition);
-
-  useEffect(() => {
-    if (transitionRequest) {
-      // eslint-disable-next-line no-console
-      console.log(
-        `[transition] ${transitionRequest.fromEra} -> ${transitionRequest.toEra}`,
-      );
-      clearTransition();
-    }
-  }, [transitionRequest, clearTransition]);
-
-  return null;
-}
-
-/** Base 3D scene: lit block footprint, camera, orbit controls, era-switch stub. */
+/** Base 3D scene: lit block footprint, camera, orbit controls. */
 export function Scene() {
   return (
     <Canvas
@@ -58,7 +35,6 @@ export function Scene() {
         shadow-mapSize-height={1024}
       />
       <BlockFootprint />
-      <EraSwitchStub />
       <OrbitControls enableDamping />
     </Canvas>
   );

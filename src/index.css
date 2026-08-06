@@ -101,6 +101,52 @@ body,
   margin-top: 2px;
 }
 
+/* Audio controls */
+.audio-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: #1e222c;
+  border: 1px solid #2f3542;
+  border-radius: 12px;
+}
+
+.audio-mute {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #e8e8ec;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.audio-mute:hover {
+  background: #262b37;
+}
+
+.audio-mute:focus-visible {
+  outline: 2px solid #4d9fff;
+  outline-offset: 2px;
+}
+
+.audio-mute[aria-pressed='true'] {
+  background: #2f6f8f;
+  border-color: #4d9fff;
+}
+
+.audio-volume {
+  width: 120px;
+  accent-color: #4d9fff;
+  cursor: pointer;
+}
+
 @media (max-width: 720px) {
   .app-header {
     flex-direction: column;
@@ -113,5 +159,8 @@ body,
   .timeline-option {
     min-width: 0;
     flex: 1;
+  }
+  .audio-volume {
+    width: 96px;
   }
 }
