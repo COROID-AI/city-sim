@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { ERA_REGISTRY } from '../contracts';
 import { useEraStore } from '../store/useEraStore';
+import { EffectsPipeline } from '../effects/EffectsPipeline';
 
 /** The base city block footprint: a flat, lit slab the city grows on. */
 function BlockFootprint() {
@@ -52,7 +53,8 @@ function EraTransitionStub() {
 }
 
 /**
- * Base R3F canvas: lighting, the block footprint, a camera, and orbit controls.
+ * Base R3F canvas: lighting, the block footprint, a camera, orbit controls,
+ * and the per-era post-processing pipeline.
  * Runs standalone so the app is usable before later modules land.
  */
 export function CityCanvas() {
@@ -65,6 +67,7 @@ export function CityCanvas() {
       <fog attach="fog" args={[descriptor.lightingHints.fogColor, 24, 70]} />
       <EraLighting />
       <BlockFootprint />
+      <EffectsPipeline />
       <EraTransitionStub />
       <OrbitControls makeDefault enableDamping />
     </Canvas>
