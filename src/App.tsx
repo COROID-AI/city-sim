@@ -1,5 +1,7 @@
 import { TimelineSlider } from './components/TimelineSlider';
 import { CityCanvas } from './components/CityCanvas';
+import { AudioControls } from './components/AudioControls';
+import { AudioManagerBridge } from './components/AudioManagerBridge';
 import { ERA_REGISTRY } from './contracts';
 import { useEraStore } from './store/useEraStore';
 import { useQualityStore } from './store/useQualityStore';
@@ -12,10 +14,12 @@ export default function App() {
 
   return (
     <div className="app">
+      <AudioManagerBridge />
       <header className="app-header">
         <h1 className="app-title">City Time Period Timelapse</h1>
         <div className="app-header-controls">
           <TimelineSlider />
+          <AudioControls />
           <button
             type="button"
             className="quality-toggle"

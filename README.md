@@ -45,6 +45,21 @@ Downstream modules import from `src/contracts` (barrel: `src/contracts/index.ts`
 
 `src/store/useEraStore.ts` holds `currentEra` and a pending `transition` request.
 The timeline slider writes selections to this store; the scene reads from it.
+`src/store/useAudioStore.ts` holds the UI-facing volume + mute state.
+
+## Audio
+
+`src/audio/WebAudioManager.ts` implements the `AudioManager` contract with the
+Web Audio API. It procedurally synthesizes per-era ambient beds (oscillators +
+noise buffers — no external audio files), crossfades between beds on era
+change, plays a synthesized time-shift transition SFX, and exposes volume +
+mute. The context is created lazily on the first user gesture to respect
+browser autoplay policies.
+
+- `src/audio/synthesis.ts` — procedural per-era bed builders.
+- `src/components/AudioManagerBridge.tsx` — wires era transitions to the
+  manager and unlocks audio on the first gesture.
+- `src/components/AudioControls.tsx` — volume slider + mute toggle in the header.
 
 ## Scene
 
