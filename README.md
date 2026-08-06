@@ -1,11 +1,53 @@
-Build a standalone, browser-based 2D city simulation. The city runs in real time with citizens, vehicles, companies, and a live economy — viewable in any browser. The details of all entities should be in great detail.
+# City Time Period Timelapse
 
-Visuals day/night cycle visible; ≥20 buildings, ≥50 citizens, ≥10 vehicles active simultaneously.
+A greenfield, browser-based city simulation that timelapses through five eras:
+**1945 → 1965 → 1985 → 2005 → 2025**.
 
-Citizens follow daily schedules (home → work → entertainment → home); companies track revenue/employees; economy updates every sim-hour.
+This repository currently contains the **project foundation**: the Vite + React 18 +
+TypeScript scaffold, the shared era/transition/audio/effects contracts that all
+downstream modules plug into, a keyboard-accessible timeline slider, and a base
+three.js (react-three-fiber) canvas with a lit block footprint.
 
-Top-overlay shows population, employment rate, city time, city budget.
+## Stack
 
-Since the city is large and the window will only show a piece of the city, therefor a Minimap is needed to display what the browser window is looking at in the city.
+- [Vite](https://vite.dev) + React 18 + TypeScript
+- [three](https://threejs.org) via [@react-three/fiber](https://docs.pmnd.rs/react-three-fiber)
+- [@react-three/drei](https://github.com/pmndrs/drei) (helpers, orbit controls)
+- [@react-three/postprocessing](https://github.com/pmndrs/react-postprocessing) (planned effects)
+- [zustand](https://github.com/pmndrs/zustand) (era state)
+- ESLint + Prettier (dev tooling)
 
-Use any stack you prefer, but it must load directly and start the simulation upon loaded in a browser.
+## Scripts
+
+| Command                | Description                     |
+| ---------------------- | ------------------------------- |
+| `npm run dev`          | Start the Vite dev server       |
+| `npm run build`        | Type-check and production build |
+| `npm run preview`      | Preview the production build    |
+| `npm run lint`         | Run ESLint                      |
+| `npm run format`       | Format all files with Prettier  |
+| `npm run format:check` | Check formatting with Prettier  |
+
+## Shared contracts
+
+Downstream modules import from `src/contracts` (barrel: `src/contracts/index.ts`).
+
+- **`EraId`** — union type `'1945' | '1965' | '1985' | '2005' | '2025'` (`src/contracts/era.ts`)
+- **Era registry** — `ERA_REGISTRY` maps every `EraId` to an `EraDescriptor`
+  (label, year, mood, lighting hints).
+- **`TransitionContext`** — `{ fromEra, toEra, progress (0..1), durationMs }` for
+  cross-era morphs (`src/contracts/transition.ts`).
+- **`AudioManager`** — interface for era ambience, transition SFX, volume, and
+  mute (`src/contracts/audio.ts`).
+- **`EffectsConfig`** — per-era post-processing settings (`src/contracts/effects.ts`).
+
+## State
+
+`src/store/useEraStore.ts` holds `currentEra` and a pending `transition` request.
+The timeline slider writes selections to this store; the scene reads from it.
+
+## Scene
+
+`src/components/CityCanvas.tsx` renders the base R3F canvas with per-era lighting,
+a block footprint, a camera, orbit controls, and a placeholder that stubs era
+switching (logs pending transitions).

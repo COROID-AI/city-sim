@@ -1,0 +1,122 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #0e1116;
+  color: #e6e9ee;
+}
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+  background: #161b22;
+  border-bottom: 1px solid #2a3140;
+}
+
+.app-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.app-stage {
+  position: relative;
+  min-height: 0;
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  background: #161b22;
+  border-top: 1px solid #2a3140;
+  font-size: 13px;
+  color: #aab2c0;
+}
+
+.era-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #2f6feb;
+  color: #fff;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* Timeline slider: WAI-ARIA radiogroup of era options */
+.timeline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #0e1116;
+  border: 1px solid #2a3140;
+}
+
+.timeline-option {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #aab2c0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.timeline-option:hover {
+  background: #1f2630;
+  color: #e6e9ee;
+}
+
+.timeline-option:focus-visible {
+  outline: 2px solid #2f6feb;
+  outline-offset: 1px;
+}
+
+.timeline-option.is-selected {
+  background: #2f6feb;
+  color: #fff;
+}
