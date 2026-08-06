@@ -7,6 +7,7 @@ import { StorefrontsAds } from '../modules/storefrontsAds';
 import { Pedestrians } from '../pedestrians';
 import { StreetEnvironment } from '../modules/streetEnvironment';
 import { Effects } from '../effects';
+import type { EffectsQuality } from '../effects';
 import { TransitionManager } from './TransitionManager';
 
 /** Ground plane that catches shadows outside the road and sidewalks. */
@@ -45,7 +46,13 @@ function CityLayer({ era }: { era: EraId }) {
  * crossfades both eras while a morph is in flight so the whole city
  * transforms smoothly instead of popping.
  */
-export function Scene({ onReady }: { onReady?: () => void }) {
+export function Scene({
+  onReady,
+  quality = 'high',
+}: {
+  onReady?: () => void;
+  quality?: EffectsQuality;
+}) {
   return (
     <Canvas
       shadows
@@ -55,7 +62,7 @@ export function Scene({ onReady }: { onReady?: () => void }) {
     >
       <Ground />
       <TransitionManager>{(era) => <CityLayer era={era} />}</TransitionManager>
-      <Effects />
+      <Effects quality={quality} />
       <OrbitControls enableDamping />
     </Canvas>
   );

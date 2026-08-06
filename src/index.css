@@ -147,6 +147,54 @@ body,
   cursor: pointer;
 }
 
+/* Effects quality toggle */
+.quality-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: #1e222c;
+  border: 1px solid #2f3542;
+  border-radius: 12px;
+}
+
+.quality-label {
+  font-size: 12px;
+  color: #9aa3b2;
+  white-space: nowrap;
+}
+
+.quality-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 5px 10px;
+  border: 1px solid #2f3542;
+  border-radius: 8px;
+  background: #262b37;
+  color: #e8e8ec;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.quality-toggle:hover {
+  background: #2f3542;
+}
+
+.quality-toggle:focus-visible {
+  outline: 2px solid #4d9fff;
+  outline-offset: 2px;
+}
+
+.quality-toggle.is-low {
+  background: #2f6f8f;
+  border-color: #4d9fff;
+  color: #ffffff;
+}
+
 @media (max-width: 720px) {
   .app-header {
     flex-direction: column;
