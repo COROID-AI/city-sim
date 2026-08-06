@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { TimelineSlider } from './components/TimelineSlider';
 import { CityCanvas } from './components/CityCanvas';
 import { AudioControls } from './components/AudioControls';
@@ -11,6 +12,7 @@ export default function App() {
   const descriptor = ERA_REGISTRY[currentEra];
   const quality = useQualityStore((s) => s.quality);
   const toggleQuality = useQualityStore((s) => s.toggleQuality);
+  const [sceneReady, setSceneReady] = useState(false);
 
   return (
     <div className="app">
@@ -31,7 +33,13 @@ export default function App() {
         </div>
       </header>
       <main className="app-stage">
-        <CityCanvas />
+        {!sceneReady && (
+          <div className="scene-loader" role="status" aria-label="Loading city scene">
+            <span className="scene-loader-spinner" aria-hidden="true" />
+            <span>Composing the city&hellip;</span>
+          </div>
+        )}
+        <CityCanvas onReady={() => setSceneReady(true)} />
       </main>
       <footer className="app-footer">
         <span className="era-pill">{descriptor.label}</span>

@@ -1,9 +1,16 @@
-import { useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { ERA_REGISTRY } from '../contracts';
-import { useEraStore } from '../store/useEraStore';
+import { Buildings } from '../buildings';
+import { Vehicles } from '../vehicles';
+import { StorefrontsAds } from '../storefronts';
+import { Pedestrians } from '../pedestrians';
 import { EffectsPipeline } from '../effects/EffectsPipeline';
+import { TransitionManager } from '../transitions/TransitionManager';
+import { useSceneTransition } from '../transitions/SceneTransitionContext';
+import { EraCrossfade } from '../transitions/EraCrossfade';
+import { BlendedStreetEnvironment } from '../transitions/BlendedStreetEnvironment';
+import { lerpColor } from '../transitions/blend';
 
 /** The base city block footprint: a flat, lit slab the city grows on. */
 function BlockFootprint() {
@@ -15,61 +22,94 @@ function BlockFootprint() {
   );
 }
 
-/** Per-era ambient + directional lighting driven by the era registry hints. */
-function EraLighting() {
-  const currentEra = useEraStore((s) => s.currentEra);
-  const descriptor = ERA_REGISTRY[currentEra];
+/**
+ * Canvas-level background + fog colors blended between the source and target
+ * era so the whole frame transforms during a morph.
+ */
+function SceneAtmosphere() {
+  const { fromEra, toEra, progress } = useSceneTransition();
+  const fromHints = ERA_REGISTRY[fromEra].lightingHints;
+  const toHints = ERA_REGISTRY[toEra].lightingHints;
 
   return (
     <>
-      <ambientLight intensity={descriptor.lightingHints.ambientIntensity} />
-      <directionalLight
-        position={[10, 18, 8]}
-        intensity={descriptor.lightingHints.sunIntensity}
-        castShadow
+      <color
+        attach="background"
+        args={[lerpColor(fromHints.backgroundColor, toHints.backgroundColor, progress)]}
+      />
+      <fog
+        attach="fog"
+        args={[lerpColor(fromHints.fogColor, toHints.fogColor, progress), 24, 70]}
       />
     </>
   );
 }
 
 /**
- * Placeholder that stubs era switching.
- * For the scaffold this logs the pending transition; the real transition
- * system (authored by a later task) plugs in here.
+ * All content modules composed around the block footprint. Each era-variant
+ * layer is crossfaded between the outgoing and incoming eras, so selecting a
+ * new era morphs buildings, vehicles, storefronts/ads and the crowd in front
+ * of your eyes while the street/environment blends continuously.
  */
-function EraTransitionStub() {
-  const transition = useEraStore((s) => s.transition);
+function SceneComposition() {
+  const { transition, progress, fromEra, toEra } = useSceneTransition();
 
-  useEffect(() => {
-    if (transition) {
-      console.log(
-        `[transition] ${transition.fromEra} -> ${transition.toEra} ` +
-          `(${transition.durationMs}ms)`,
-      );
-    }
-  }, [transition]);
+  return (
+    <>
+      <BlockFootprint />
+      <BlendedStreetEnvironment />
+      <EraCrossfade
+        progress={progress}
+        from={transition ? <Buildings era={fromEra} /> : null}
+        to={<Buildings era={toEra} />}
+      />
+      <EraCrossfade
+        progress={progress}
+        from={transition ? <Vehicles era={fromEra} /> : null}
+        to={<Vehicles era={toEra} />}
+      />
+      <EraCrossfade
+        progress={progress}
+        from={transition ? <StorefrontsAds era={fromEra} /> : null}
+        to={<StorefrontsAds era={toEra} />}
+      />
+      <EraCrossfade
+        progress={progress}
+        from={transition ? <Pedestrians era={fromEra} /> : null}
+        to={<Pedestrians era={toEra} />}
+      />
+    </>
+  );
+}
 
-  return null;
+export interface CityCanvasProps {
+  /**
+   * Fired once the canvas has initialized and painted its first frame, used
+   * by the app to dismiss the loading state.
+   */
+  onReady?: () => void;
 }
 
 /**
- * Base R3F canvas: lighting, the block footprint, a camera, orbit controls,
- * and the per-era post-processing pipeline.
- * Runs standalone so the app is usable before later modules land.
+ * The main R3F scene: all content and system modules composed around the
+ * block footprint, orchestrated by the transition manager so every era change
+ * morphs the whole city in front of your eyes.
  */
-export function CityCanvas() {
-  const currentEra = useEraStore((s) => s.currentEra);
-  const descriptor = ERA_REGISTRY[currentEra];
-
+export function CityCanvas({ onReady }: CityCanvasProps) {
   return (
-    <Canvas shadows camera={{ position: [14, 12, 14], fov: 50, near: 0.1, far: 200 }}>
-      <color attach="background" args={[descriptor.lightingHints.backgroundColor]} />
-      <fog attach="fog" args={[descriptor.lightingHints.fogColor, 24, 70]} />
-      <EraLighting />
-      <BlockFootprint />
-      <EffectsPipeline />
-      <EraTransitionStub />
-      <OrbitControls makeDefault enableDamping />
+    <Canvas
+      shadows
+      camera={{ position: [14, 12, 14], fov: 50, near: 0.1, far: 200 }}
+      onCreated={() => {
+        requestAnimationFrame(() => onReady?.());
+      }}
+    >
+      <TransitionManager>
+        <SceneAtmosphere />
+        <SceneComposition />
+        <EffectsPipeline />
+        <OrbitControls makeDefault enableDamping />
+      </TransitionManager>
     </Canvas>
   );
 }

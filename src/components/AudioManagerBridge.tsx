@@ -7,13 +7,14 @@ import { audioManager } from '../audio/WebAudioManager';
  *
  * - Unlocks the audio context on the first user gesture (pointer/keydown) to
  *   satisfy browser autoplay policies, then fades in the current era's bed.
- * - On every era transition it plays the synthesized time-shift SFX and
- *   crossfades the ambience beds over the transition duration.
+ *
+ * Transition audio (the time-shift SFX + ambience crossfade) is triggered by
+ * the scene-side transition manager so a single orchestrator drives every
+ * morph.
  *
  * Renders nothing; mount it once at the app root.
  */
 export function AudioManagerBridge() {
-  const transition = useEraStore((s) => s.transition);
   const currentEra = useEraStore((s) => s.currentEra);
   const currentEraRef = useRef(currentEra);
   currentEraRef.current = currentEra;
@@ -38,15 +39,6 @@ export function AudioManagerBridge() {
       window.removeEventListener('keydown', unlock);
     };
   }, []);
-
-  // Drive ambience crossfade + transition SFX on era change.
-  useEffect(() => {
-    if (!transition) return;
-    // Ensure the context is unlocked even if the gesture listener was missed.
-    void audioManager.unlock();
-    audioManager.playTransitionSfx(transition.fromEra, transition.toEra);
-    audioManager.crossfadeTo(transition.toEra, transition.durationMs);
-  }, [transition]);
 
   return null;
 }

@@ -207,3 +207,33 @@ body {
   background: #2f6feb;
   color: #fff;
 }
+
+/* Scene loading state */
+.scene-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #0e1116;
+  color: #aab2c0;
+  font-size: 14px;
+  letter-spacing: 0.4px;
+}
+
+.scene-loader-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #2a3140;
+  border-top-color: #2f6feb;
+  animation: scene-loader-spin 800ms linear infinite;
+}
+
+@keyframes scene-loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
