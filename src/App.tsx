@@ -4,22 +4,27 @@ import { Scene } from './components/Scene';
 import { AudioControls } from './components/AudioControls';
 import { AudioBridge } from './components/AudioBridge';
 import type { EffectsQuality } from './effects';
+import { NavigationControls } from './components/NavigationControls';
+import { OnboardingHint } from './components/OnboardingHint';
 
 /**
  * Top-level app.
  *
  * Composes the timeline, audio controls, the composed 3D scene (which owns
- * era-transition orchestration) and the audio bridge. A brief loading overlay
- * covers the first paint while the procedural scene mounts, then fades away.
+ * era-transition orchestration), the on-canvas navigation controls and the
+ * audio bridge. A brief loading overlay covers the first paint while the
+ * procedural scene mounts, then fades away.
  *
  * A quality toggle (High / Low) lets users trade the heavy screen-space
  * ambient-occlusion pass for a lighter render on weaker devices, so the scene
- * degrades gracefully instead of dropping frames.
+ * degrades gracefully instead of dropping frames. Once the overlay fades, a
+ * dismissible onboarding hint explains the camera navigation.
  */
 export default function App() {
   const [ready, setReady] = useState(false);
   const [gone, setGone] = useState(false);
   const [quality, setQuality] = useState<EffectsQuality>('high');
+  const [hintDismissed, setHintDismissed] = useState(false);
 
   // Called once the canvas has been created — the procedural city is authored
   // synchronously, so this is the "assets ready" signal for the loading state.
@@ -53,6 +58,10 @@ export default function App() {
       </header>
       <main className="app-stage">
         <Scene onReady={handleReady} quality={quality} />
+        <NavigationControls />
+        {gone && !hintDismissed && (
+          <OnboardingHint onDismiss={() => setHintDismissed(true)} />
+        )}
       </main>
       <AudioBridge />
       {!gone && (
