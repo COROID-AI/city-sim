@@ -3,17 +3,21 @@ import { TimelineSlider } from './components/TimelineSlider';
 import { Scene } from './components/Scene';
 import { AudioControls } from './components/AudioControls';
 import { AudioBridge } from './components/AudioBridge';
+import { NavigationControls } from './components/NavigationControls';
+import { OnboardingHint } from './components/OnboardingHint';
 
 /**
  * Top-level app.
  *
  * Composes the timeline, audio controls, the composed 3D scene (which owns
- * era-transition orchestration) and the audio bridge. A brief loading overlay
- * covers the first paint while the procedural scene mounts, then fades away.
+ * era-transition orchestration), the on-canvas navigation controls and the
+ * audio bridge. A loading overlay covers the first paint while the procedural
+ * scene mounts, then fades away and reveals a dismissible onboarding hint.
  */
 export default function App() {
   const [ready, setReady] = useState(false);
   const [gone, setGone] = useState(false);
+  const [hintDismissed, setHintDismissed] = useState(false);
 
   // Called once the canvas has been created — the procedural city is authored
   // synchronously, so this is the "assets ready" signal for the loading state.
@@ -31,6 +35,10 @@ export default function App() {
       </header>
       <main className="app-stage">
         <Scene onReady={handleReady} />
+        <NavigationControls />
+        {gone && !hintDismissed && (
+          <OnboardingHint onDismiss={() => setHintDismissed(true)} />
+        )}
       </main>
       <AudioBridge />
       {!gone && (
