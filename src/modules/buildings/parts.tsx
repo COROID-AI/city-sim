@@ -163,20 +163,21 @@ export function FireEscape({ width, height, floors, x, z }: FireEscapeProps) {
   const landings = Array.from({ length: floors }, (_, f) => (f + 1) * floorH - 0.35);
   return (
     <group position={[x, 0, z]}>
-      <mesh position={[railX - 0.06, height / 2, 0]}>
+      {/* ladder rails (shared geometry) */}
+      <Instances limit={2} range={2} castShadow>
         <boxGeometry args={[0.06, height, 0.06]} />
         <meshStandardMaterial color="#2a2d31" metalness={0.7} roughness={0.5} />
-      </mesh>
-      <mesh position={[railX + 0.06, height / 2, 0]}>
-        <boxGeometry args={[0.06, height, 0.06]} />
-        <meshStandardMaterial color="#2a2d31" metalness={0.7} roughness={0.5} />
-      </mesh>
-      {landings.map((y, i) => (
-        <mesh key={i} position={[railX, y, 0]}>
-          <boxGeometry args={[0.34, 0.08, 0.62]} />
-          <meshStandardMaterial color="#33363b" metalness={0.7} roughness={0.5} />
-        </mesh>
-      ))}
+        <Instance position={[railX - 0.06, height / 2, 0]} />
+        <Instance position={[railX + 0.06, height / 2, 0]} />
+      </Instances>
+      {/* per-floor landings (shared geometry) */}
+      <Instances limit={landings.length} range={landings.length} castShadow>
+        <boxGeometry args={[0.34, 0.08, 0.62]} />
+        <meshStandardMaterial color="#33363b" metalness={0.7} roughness={0.5} />
+        {landings.map((y, i) => (
+          <Instance key={i} position={[railX, y, 0]} />
+        ))}
+      </Instances>
     </group>
   );
 }
@@ -203,18 +204,22 @@ export function Mullions({ width, height, x, z, spacingX, spacingY }: MullionsPr
   const ys = Array.from({ length: countY }, (_, i) => ((i + 0.5) * height) / countY);
   return (
     <group position={[x, 0, z]}>
-      {xs.map((mx, i) => (
-        <mesh key={`v${i}`} position={[mx, height / 2, 0]}>
-          <boxGeometry args={[0.06, height, 0.06]} />
-          <meshStandardMaterial color="#b8c4ce" metalness={0.9} roughness={0.3} />
-        </mesh>
-      ))}
-      {ys.map((my, i) => (
-        <mesh key={`h${i}`} position={[0, my, 0]}>
-          <boxGeometry args={[width, 0.05, 0.06]} />
-          <meshStandardMaterial color="#b8c4ce" metalness={0.9} roughness={0.3} />
-        </mesh>
-      ))}
+      {/* vertical mullions */}
+      <Instances limit={countX} range={countX} castShadow>
+        <boxGeometry args={[0.06, height, 0.06]} />
+        <meshStandardMaterial color="#b8c4ce" metalness={0.9} roughness={0.3} />
+        {xs.map((mx, i) => (
+          <Instance key={`v${i}`} position={[mx, height / 2, 0]} />
+        ))}
+      </Instances>
+      {/* horizontal mullions */}
+      <Instances limit={countY} range={countY} castShadow>
+        <boxGeometry args={[width, 0.05, 0.06]} />
+        <meshStandardMaterial color="#b8c4ce" metalness={0.9} roughness={0.3} />
+        {ys.map((my, i) => (
+          <Instance key={`h${i}`} position={[0, my, 0]} />
+        ))}
+      </Instances>
     </group>
   );
 }
@@ -238,12 +243,13 @@ export function CladdingPanels({ width, height, floors, x, z, color }: CladdingP
   const bands = Array.from({ length: floors }, (_, f) => (f + 0.5) * floorH);
   return (
     <group position={[x, 0, z]}>
-      {bands.map((y, i) => (
-        <mesh key={i} position={[0, y, 0]}>
-          <boxGeometry args={[width + 0.08, 0.18, 0.12]} />
-          <meshStandardMaterial color={color} roughness={0.55} metalness={0.25} />
-        </mesh>
-      ))}
+      <Instances limit={bands.length} range={bands.length} castShadow>
+        <boxGeometry args={[width + 0.08, 0.18, 0.12]} />
+        <meshStandardMaterial color={color} roughness={0.55} metalness={0.25} />
+        {bands.map((y, i) => (
+          <Instance key={i} position={[0, y, 0]} />
+        ))}
+      </Instances>
     </group>
   );
 }
@@ -262,18 +268,19 @@ export function StorefrontGlazing({ width, x, z }: StorefrontGlazingProps) {
   const xs = Array.from({ length: count }, (_, i) => -width / 2 + (i + 0.5) * paneW);
   return (
     <group position={[x, 0, z]}>
-      {xs.map((px, i) => (
-        <mesh key={i} position={[px, 1.0, 0]}>
-          <boxGeometry args={[paneW - 0.08, 2.0, 0.08]} />
-          <meshStandardMaterial
-            color="#a8c8dc"
-            roughness={0.15}
-            metalness={0.4}
-            transparent
-            opacity={0.85}
-          />
-        </mesh>
-      ))}
+      <Instances limit={count} range={count}>
+        <boxGeometry args={[paneW - 0.08, 2.0, 0.08]} />
+        <meshStandardMaterial
+          color="#a8c8dc"
+          roughness={0.15}
+          metalness={0.4}
+          transparent
+          opacity={0.85}
+        />
+        {xs.map((px, i) => (
+          <Instance key={i} position={[px, 1.0, 0]} />
+        ))}
+      </Instances>
     </group>
   );
 }
@@ -297,16 +304,18 @@ export function Greenery({ width, height, floors, x, z, color }: GreeneryProps) 
   const rows = Array.from({ length: floors }, (_, f) => (f + 0.7) * floorH);
   const count = Math.max(1, Math.floor(width / 1.4));
   const xs = Array.from({ length: count }, (_, i) => -width / 2 + ((i + 0.5) * width) / count);
+  const total = rows.length * xs.length;
+  const positions: Array<[number, number, number]> = [];
+  rows.forEach((y) => xs.forEach((px) => positions.push([px, y, 0])));
   return (
     <group position={[x, 0, z]}>
-      {rows.map((y, ri) =>
-        xs.map((px, ci) => (
-          <mesh key={`${ri}-${ci}`} position={[px, y, 0]}>
-            <boxGeometry args={[0.85, 0.3, 0.5]} />
-            <meshStandardMaterial color={color} roughness={0.9} metalness={0.05} />
-          </mesh>
-        )),
-      )}
+      <Instances limit={total} range={total} castShadow>
+        <boxGeometry args={[0.85, 0.3, 0.5]} />
+        <meshStandardMaterial color={color} roughness={0.9} metalness={0.05} />
+        {positions.map((p, i) => (
+          <Instance key={i} position={p} />
+        ))}
+      </Instances>
     </group>
   );
 }

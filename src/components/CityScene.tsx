@@ -1,8 +1,8 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useEraStore } from '../store/useEraStore';
+import { useQualityStore } from '../store/useQualityStore';
 import { getEraDescriptor, type EraId } from '../contracts';
 import { Buildings } from '../modules/buildings';
 import { StorefrontsAds } from '../modules/storefronts';
@@ -12,6 +12,7 @@ import { EffectsModule } from '../modules/effects';
 import { Vehicles } from './vehicles';
 import { Pedestrians } from './pedestrians';
 import { TransitionManager, useTransition } from './TransitionManager';
+import { CameraControls } from './CameraControls';
 
 /** Props for the composed main scene. */
 export interface CitySceneProps {
@@ -89,6 +90,8 @@ function CrossfadeLayer({ opacity, children }: { opacity: number; children: Reac
 function EraLighting({ fromEra, toEra, progress }: { fromEra: EraId; toEra: EraId; progress: number }) {
   const a = getEraDescriptor(fromEra).lighting;
   const b = getEraDescriptor(toEra).lighting;
+  const quality = useQualityStore((s) => s.quality);
+  const shadowMapSize = quality === 'high' ? 2048 : 1024;
   return (
     <>
       <ambientLight intensity={a.ambientIntensity + (b.ambientIntensity - a.ambientIntensity) * progress} />
@@ -97,6 +100,8 @@ function EraLighting({ fromEra, toEra, progress }: { fromEra: EraId; toEra: EraI
         intensity={a.sunIntensity + (b.sunIntensity - a.sunIntensity) * progress}
         color={lerpColor(a.sunColor, b.sunColor, progress)}
         castShadow
+        shadow-mapSize-width={shadowMapSize}
+        shadow-mapSize-height={shadowMapSize}
       />
     </>
   );
@@ -178,12 +183,14 @@ function ReadySignal({ onReady }: { onReady?: () => void }) {
 }
 
 export function CityScene({ onReady }: CitySceneProps) {
+  const quality = useQualityStore((s) => s.quality);
   return (
     <Canvas
       shadows
       camera={{ position: [14, 14, 14], fov: 50 }}
       className="city-canvas"
-      gl={{ antialias: true, powerPreference: 'high-performance' }}
+      dpr={quality === 'high' ? [1, 2] : [1, 1.5]}
+      gl={{ antialias: quality === 'high', powerPreference: 'high-performance' }}
       onCreated={() => onReady?.()}
     >
       <color attach="background" args={['#0b0e14']} />
@@ -192,7 +199,7 @@ export function CityScene({ onReady }: CitySceneProps) {
       </TransitionManager>
       <EffectsModule />
       <ReadySignal onReady={onReady} />
-      <OrbitControls enableDamping makeDefault />
+      <CameraControls />
     </Canvas>
   );
 }
