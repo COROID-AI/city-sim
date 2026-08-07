@@ -1,89 +1,105 @@
 import { useEffect } from 'react';
 
 interface HelpOverlayProps {
+  open: boolean;
   onClose: () => void;
 }
 
 /**
- * Modal controls/help overlay. Lists mouse, touch, and keyboard bindings for
- * orbit and fly modes plus the timeline. Closes on Escape, the close button,
- * or clicking the backdrop.
+ * Controls help panel listing all navigation and interaction shortcuts.
+ * Accessible via the "?" button and dismissible via close, backdrop, or
+ * Escape.
  */
-export function HelpOverlay({ onClose }: HelpOverlayProps) {
+export function HelpOverlay({ open, onClose }: HelpOverlayProps) {
   useEffect(() => {
+    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [open, onClose]);
+
+  if (!open) return null;
 
   return (
     <div
-      className="help-overlay"
+      className="overlay help"
       role="dialog"
       aria-modal="true"
-      aria-label="Controls help"
-      onMouseDown={(e) => {
+      aria-labelledby="help-title"
+      onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="help-panel">
-        <div className="help-header">
-          <h2 className="help-title">Controls</h2>
-          <button
-            type="button"
-            className="help-close"
-            onClick={onClose}
-            aria-label="Close help"
-          >
-            ×
-          </button>
-        </div>
-        <div className="help-body">
-          <section className="help-section">
-            <h3>Orbit mode</h3>
-            <ul>
-              <li>
-                <kbd>Drag</kbd> — orbit / look around
-              </li>
-              <li>
-                <kbd>Right-click drag</kbd> — pan
-              </li>
-              <li>
-                <kbd>Scroll / pinch</kbd> — zoom
-              </li>
-            </ul>
-          </section>
-          <section className="help-section">
-            <h3>Fly mode</h3>
-            <ul>
-              <li>
-                <kbd>W A S D</kbd> / <kbd>↑ ← ↓ →</kbd> — move
-              </li>
-              <li>
-                <kbd>Drag</kbd> — look around
-              </li>
-              <li>
-                <kbd>Space</kbd> — ascend
-              </li>
-              <li>
-                <kbd>Shift</kbd> — descend
-              </li>
-            </ul>
-          </section>
-          <section className="help-section">
-            <h3>Timeline</h3>
-            <ul>
-              <li>
-                <kbd>← →</kbd> arrow keys — step between years
-              </li>
-            </ul>
-          </section>
-        </div>
-        <button type="button" className="onboarding-btn primary help-done" onClick={onClose}>
-          Close
+      <div className="overlay-card">
+        <button
+          type="button"
+          className="overlay-close"
+          onClick={onClose}
+          aria-label="Close controls help"
+        >
+          ×
         </button>
+        <h2 id="help-title">Controls</h2>
+
+        <h3>Camera</h3>
+        <table className="help-table">
+          <tbody>
+            <tr>
+              <td>Orbit / look</td>
+              <td>Drag (mouse or touch)</td>
+            </tr>
+            <tr>
+              <td>Zoom</td>
+              <td>Scroll wheel / pinch</td>
+            </tr>
+            <tr>
+              <td>Fly mode</td>
+              <td>Toggle button in header</td>
+            </tr>
+            <tr>
+              <td>Fly — move</td>
+              <td>W A S D (or arrow keys)</td>
+            </tr>
+            <tr>
+              <td>Fly — ascend / descend</td>
+              <td>E / Space · Q / Ctrl</td>
+            </tr>
+            <tr>
+              <td>Fly — boost</td>
+              <td>Hold Shift</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Timeline</h3>
+        <table className="help-table">
+          <tbody>
+            <tr>
+              <td>Change era</td>
+              <td>Click a year</td>
+            </tr>
+            <tr>
+              <td>Keyboard</td>
+              <td>← → ↑ ↓ · Home · End</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Quality &amp; audio</h3>
+        <table className="help-table">
+          <tbody>
+            <tr>
+              <td>Effects quality</td>
+              <td>Quality toggle (High / Low)</td>
+            </tr>
+            <tr>
+              <td>Ambience</td>
+              <td>Speaker mute / volume</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   );
