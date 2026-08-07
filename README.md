@@ -53,3 +53,27 @@ clear a consumed transition.
 - **CityScene** — base R3F canvas with an empty lit block footprint, camera,
   orbit controls, and a transition stub that logs era switches so the app runs
   standalone.
+
+## Storefronts & advertisements module
+
+The self-contained module in [`src/modules/storefronts`](src/modules/storefronts)
+renders era-correct storefronts and advertisements keyed off the foundation
+`EraId` registry. It is intentionally _not_ wired into `CityScene` yet —
+integration happens in a later phase.
+
+- `StorefrontsAds` — the exported component. Accepts `era`, `isNight`,
+  `includeLighting`, and `position`. Signage is authored via procedural
+  geometry + canvas-generated textures (typography + logos) applied as `map`
+  and `emissiveMap`; emissive intensity scales with day/night so the night
+  glow reads clearly.
+- Per-era content lives in `eraConfig.ts`: 1945 hand-painted signage, awnings,
+  emerging neon, sepia posters; 1965 mid-century signage, glossy enamel,
+  Pop-art posters; 1985 backlit plastic signs, fluorescent storefronts,
+  neon/light-box ads; 2005 digital-print light boxes, vinyl banners, corporate
+  signage; 2025 dynamic LED/digital signage, animated media facades, minimal
+  signage, and digital ad loops.
+
+### Standalone preview
+
+Open `storefronts-preview.html` (dev server) to flip through all five eras and
+toggle day/night in a dedicated canvas. This is a verification harness only.

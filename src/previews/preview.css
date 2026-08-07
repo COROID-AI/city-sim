@@ -1,0 +1,45 @@
+.preview {
+  position: fixed;
+  inset: 0;
+}
+
+.preview-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.preview-ui {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  z-index: 10;
+  background: rgba(10, 14, 20, 0.85);
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.preview-ui button {
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #dfe6f0;
+  font: inherit;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.preview-ui button:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.preview-ui button.active {
+  background: linear-gradient(135deg, #3f6f9a, #7fd1ff);
+  color: #081018;
+}
