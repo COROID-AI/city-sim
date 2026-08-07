@@ -25,6 +25,49 @@
   white-space: nowrap;
 }
 
+.app-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Audio controls */
+.audio-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.audio-mute {
+  border: none;
+  background: transparent;
+  color: #dfe5ee;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.audio-mute:hover {
+  color: #ffffff;
+}
+
+.audio-mute:focus-visible {
+  outline: 2px solid #7fd1ff;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.audio-volume {
+  width: 90px;
+  accent-color: #7fd1ff;
+  cursor: pointer;
+}
+
 .app-main {
   flex: 1;
   position: relative;
