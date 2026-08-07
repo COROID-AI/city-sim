@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
 import type { EraId } from '../../contracts';
-import { getEraDescriptor } from '../../contracts';
 import { STREET_BY_ERA } from './eraConfig';
 import type { EraSkyConfig } from './eraConfig';
 import { SkyDome } from './sky';
@@ -84,7 +83,6 @@ export function StreetEnvironment({
   includeLighting = true,
   position = [0, 0, 0],
 }: StreetEnvironmentProps) {
-  const desc = getEraDescriptor(era);
   const config = STREET_BY_ERA[era];
   const sky = useMemo(
     () => (isNight ? nightSky(config.sky) : config.sky),

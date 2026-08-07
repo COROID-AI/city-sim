@@ -203,10 +203,7 @@ export function LampPost({
       </mesh>
       {/* pole */}
       <mesh position={[0, poleTop / 2 + 0.09, 0]}>
-        <cylinderGeometry
-          args={[0.05, 0.11, poleTop, 8]}
-          openEnded
-        />
+        <cylinderGeometry args={[0.05, 0.11, poleTop, 8]} />
         <meshStandardMaterial color={color} roughness={0.7} metalness={0.4} />
       </mesh>
       {headFor(style, color, emissive, emissiveIntensity)}
