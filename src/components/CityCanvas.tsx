@@ -1,6 +1,6 @@
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
 import { ERA_REGISTRY } from '../contracts';
+import { CameraRig } from './CameraRig';
 import { Buildings } from '../buildings';
 import { Vehicles } from '../vehicles';
 import { StorefrontsAds } from '../storefronts';
@@ -108,7 +108,7 @@ export function CityCanvas({ onReady }: CityCanvasProps) {
         <SceneAtmosphere />
         <SceneComposition />
         <EffectsPipeline />
-        <OrbitControls makeDefault enableDamping />
+        <CameraRig />
       </TransitionManager>
     </Canvas>
   );
