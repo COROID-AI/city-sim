@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Instances, Instance } from '@react-three/drei';
 import type { RoadConfig } from './streetConfig';
 
 /** Road geometry (world units). The road runs along Z, centered on the origin. */
@@ -20,12 +21,13 @@ function CenterLine() {
 
   return (
     <group position={[0, ROAD_TOP + 0.01, 0]}>
-      {dashes.map((d, i) => (
-        <mesh key={i} position={[0, 0, d.z]}>
-          <boxGeometry args={[0.16, 0.02, 1.6]} />
-          <meshStandardMaterial color="#d8b94a" roughness={0.6} />
-        </mesh>
-      ))}
+      <Instances limit={dashes.length} range={dashes.length}>
+        <boxGeometry args={[0.16, 0.02, 1.6]} />
+        <meshStandardMaterial color="#d8b94a" roughness={0.6} />
+        {dashes.map((d, i) => (
+          <Instance key={i} position={[0, 0, d.z]} />
+        ))}
+      </Instances>
     </group>
   );
 }
@@ -91,23 +93,31 @@ function SmartRoad() {
 /** 1945 worn cobblestone setts laid across the asphalt. */
 function Cobblestones() {
   const stones = useMemo(() => {
-    const out: { x: number; z: number; r: number }[] = [];
+    const out: { x: number; z: number; r: number; rot: number }[] = [];
     for (let z = -ROAD_LENGTH / 2 + 0.8; z < ROAD_LENGTH / 2 - 0.8; z += 0.85) {
       for (let x = -ROAD_WIDTH / 2 + 0.4; x < ROAD_WIDTH / 2 - 0.4; x += 0.85) {
-        out.push({ x, z, r: 0.18 + Math.random() * 0.1 });
+        out.push({ x, z, r: 0.18 + Math.random() * 0.1, rot: Math.random() * Math.PI });
       }
     }
     return out;
   }, []);
 
+  // A single instanced mesh replaces the ~400 individual sett meshes that
+  // previously each carried their own geometry + material (one draw call each).
   return (
     <group position={[0, ROAD_TOP + 0.01, 0]}>
-      {stones.map((s, i) => (
-        <mesh key={i} position={[s.x, 0, s.z]} rotation={[0, Math.random() * Math.PI, 0]}>
-          <boxGeometry args={[s.r, 0.09, s.r]} />
-          <meshStandardMaterial color="#4a4a4e" roughness={0.95} metalness={0.05} />
-        </mesh>
-      ))}
+      <Instances limit={stones.length} range={stones.length}>
+        <boxGeometry args={[1, 0.09, 1]} />
+        <meshStandardMaterial color="#4a4a4e" roughness={0.95} metalness={0.05} />
+        {stones.map((s, i) => (
+          <Instance
+            key={i}
+            position={[s.x, 0, s.z]}
+            rotation={[0, s.rot, 0]}
+            scale={[s.r, 1, s.r]}
+          />
+        ))}
+      </Instances>
     </group>
   );
 }
