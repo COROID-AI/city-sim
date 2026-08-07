@@ -64,6 +64,7 @@ export function EffectsModule() {
   if (enableAo) {
     effects.push(
       <SSAO
+        key="ssao"
         radius={config.ambientOcclusion.radius}
         intensity={config.ambientOcclusion.intensity}
         bias={0.025}
@@ -81,6 +82,7 @@ export function EffectsModule() {
   if (config.bloom.enabled) {
     effects.push(
       <Bloom
+        key="bloom"
         intensity={config.bloom.intensity}
         luminanceThreshold={config.bloom.luminanceThreshold}
         luminanceSmoothing={0.9}
@@ -92,6 +94,7 @@ export function EffectsModule() {
   if (config.vignette.enabled) {
     effects.push(
       <Vignette
+        key="vignette"
         eskil={false}
         offset={0.3}
         darkness={config.vignette.darkness}
@@ -101,6 +104,7 @@ export function EffectsModule() {
   if (config.chromaticAberration.enabled) {
     effects.push(
       <ChromaticAberration
+        key="chromaticAberration"
         offset={
           new Vector2(
             config.chromaticAberration.offset[0],
@@ -113,15 +117,16 @@ export function EffectsModule() {
     );
   }
   if (config.noise.enabled) {
-    effects.push(<Noise opacity={config.noise.opacity} />);
+    effects.push(<Noise key="noise" opacity={config.noise.opacity} />);
   }
   effects.push(
     <BrightnessContrast
+      key="brightnessContrast"
       brightness={config.brightness - 1}
       contrast={config.contrast - 1}
     />,
-    <HueSaturation saturation={config.saturation - 1} />,
-    <Temperature temperature={config.temperature} />,
+    <HueSaturation key="hueSaturation" saturation={config.saturation - 1} />,
+    <Temperature key="temperature" temperature={config.temperature} />,
   );
 
   return (
