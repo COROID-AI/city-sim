@@ -1,14 +1,13 @@
-import { useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { useEraStore } from '../store/useEraStore';
 import { getEraDescriptor } from '../contracts';
+import { EffectsModule } from '../modules/effects';
 
 /**
  * Base 3D canvas: an empty lit block footprint with a camera, orbit
- * controls, and a placeholder that stubs era switching by logging the
- * requested transition. Downstream modules replace the stub with real
- * morphing logic.
+ * controls, era-driven lighting, and the post-processing/effects module.
+ * Downstream modules (buildings, vehicles, ...) plug into the same scene.
  */
 
 /** The flat city-block footprint with a reference grid. */
@@ -44,35 +43,19 @@ function EraLighting() {
   );
 }
 
-/** Stub that logs the era transition path when one is requested. */
-function EraTransitionStub() {
-  const transitionRequest = useEraStore((s) => s.transitionRequest);
-  const clearTransition = useEraStore((s) => s.clearTransition);
-
-  useEffect(() => {
-    if (!transitionRequest) return;
-    console.log(
-      `[transition] ${transitionRequest.fromEra} -> ${transitionRequest.toEra} ` +
-        `(progress 0.0, duration ${transitionRequest.durationMs}ms)`,
-    );
-    clearTransition();
-  }, [transitionRequest, clearTransition]);
-
-  return null;
-}
-
 export function CityScene() {
   return (
     <Canvas
       shadows
       camera={{ position: [14, 14, 14], fov: 50 }}
       className="city-canvas"
+      gl={{ antialias: true, powerPreference: 'high-performance' }}
     >
       <color attach="background" args={['#0b0e14']} />
       <fog attach="fog" args={['#0b0e14', 25, 60]} />
       <EraLighting />
       <BlockFootprint />
-      <EraTransitionStub />
+      <EffectsModule />
       <OrbitControls enableDamping makeDefault />
     </Canvas>
   );
