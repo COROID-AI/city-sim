@@ -58,6 +58,7 @@ export function TimelineSlider() {
             className={`era-option${active ? ' active' : ''}`}
             aria-pressed={active}
             aria-label={`Time period ${era}`}
+            data-testid={`era-${era}`}
             onClick={() => requestTransition(era)}
           >
             <span className="era-year">{era}</span>

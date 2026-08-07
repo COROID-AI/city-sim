@@ -137,6 +137,7 @@ export function EffectsModule() {
 
   return (
     <EffectComposer
+      enableNormalPass={enableAo}
       multisampling={quality === 'high' ? 4 : 0}
       resolutionScale={quality === 'high' ? 1 : 0.6}
     >

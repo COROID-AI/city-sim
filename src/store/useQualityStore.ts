@@ -15,10 +15,12 @@ export interface QualityStore {
 }
 
 export const useQualityStore = create<QualityStore>((set, get) => ({
-  // Default to `low` so the scene stays responsive on lower-end devices and
-  // software WebGL renderers (e.g. SwiftShader). `high` remains available via
-  // the quality toggle for capable GPUs.
-  quality: 'low',
+  // Default to `high` so the full per-era post-processing stack (bloom,
+  // vignette, screen-space ambient occlusion, chromatic aberration) is
+  // visible and the scene reads as bright and detailed. `low` remains
+  // available via the quality toggle for lower-end devices and software
+  // WebGL renderers that cannot sustain the heavy multi-pass effects.
+  quality: 'high',
   setQuality: (quality) => set({ quality }),
   toggleQuality: () =>
     set({ quality: get().quality === 'high' ? 'low' : 'high' }),

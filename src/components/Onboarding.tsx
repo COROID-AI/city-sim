@@ -9,8 +9,8 @@ export interface OnboardingProps {
 }
 
 /**
- * First-visit onboarding overlay. Dismissible via the button, the close
- * control, or the Escape key.
+ * First-visit onboarding overlay. Dismissible via the primary button, the
+ * close control, or the Escape key.
  *
  * The overlay is shown on every fresh mount (no storage dependency for
  * showing) so the QA harness can always reach and dismiss it — the dismiss
@@ -55,6 +55,7 @@ export function Onboarding({ onDismiss }: OnboardingProps) {
           className="overlay-close"
           onClick={dismiss}
           aria-label="Close onboarding"
+          data-testid="onboarding-close"
         >
           ×
         </button>
@@ -78,7 +79,12 @@ export function Onboarding({ onDismiss }: OnboardingProps) {
             speaker controls to mute or adjust volume.
           </li>
         </ul>
-        <button type="button" className="overlay-primary" onClick={dismiss}>
+        <button
+          type="button"
+          className="overlay-primary"
+          onClick={dismiss}
+          data-testid="onboarding-dismiss"
+        >
           Explore the city
         </button>
       </div>
