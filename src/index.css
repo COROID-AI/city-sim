@@ -405,6 +405,61 @@ body {
   outline-offset: 2px;
 }
 
+/* Onboarding hint */
+.onboarding-hint {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 6;
+  max-width: 340px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(22, 27, 34, 0.92);
+  border: 1px solid #2a3140;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  color: #c6cdd8;
+  font-size: 13px;
+}
+
+.onboarding-hint-body strong {
+  display: block;
+  color: #e6e9ee;
+  margin-bottom: 4px;
+}
+
+.onboarding-hint-body p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.onboarding-dismiss {
+  appearance: none;
+  flex: none;
+  margin-top: 2px;
+  border: 1px solid #2f6feb;
+  background: #2f6feb;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.onboarding-dismiss:hover {
+  background: #3b7bf0;
+}
+
+.onboarding-dismiss:focus-visible {
+  outline: 2px solid #7aa6f5;
+  outline-offset: 2px;
+}
+
 /* Controls help modal */
 .help-backdrop {
   position: fixed;
@@ -535,5 +590,12 @@ body {
   .onboarding-card,
   .help-panel {
     padding: 20px;
+  }
+
+  .onboarding-hint {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    max-width: none;
   }
 }

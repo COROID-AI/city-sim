@@ -5,6 +5,7 @@ import { AudioControls } from './components/AudioControls';
 import { AudioManagerBridge } from './components/AudioManagerBridge';
 import { ControlsHelp } from './components/ControlsHelp';
 import { OnboardingOverlay } from './components/OnboardingOverlay';
+import { OnboardingHint } from './components/OnboardingHint';
 import { hasSeenOnboarding } from './components/onboarding';
 import { PerformanceHud } from './components/PerformanceHud';
 import { ERA_REGISTRY } from './contracts';
@@ -65,6 +66,7 @@ export default function App() {
           </div>
         )}
         <CityCanvas onReady={() => setSceneReady(true)} />
+        <OnboardingHint onDismiss={() => undefined} />
       </main>
       <footer className="app-footer">
         <span className="era-pill">{descriptor.label}</span>

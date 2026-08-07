@@ -215,6 +215,17 @@ export function CameraRig() {
   });
 
   return (
-    <>{mode === 'orbit' ? <OrbitControls makeDefault enableDamping dampingFactor={0.08} /> : null}</>
+    <>
+      {mode === 'orbit' ? (
+        <OrbitControls
+          makeDefault
+          enableDamping
+          dampingFactor={0.08}
+          minDistance={3}
+          maxDistance={60}
+          maxPolarAngle={Math.PI / 2 - 0.05}
+        />
+      ) : null}
+    </>
   );
 }
