@@ -1,0 +1,110 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  line-height: 1.5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: #14161a;
+  color: #e6e9ee;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.75rem 1.25rem;
+  background: #1c1f24;
+  border-bottom: 1px solid #2a2f37;
+  flex-wrap: wrap;
+}
+
+.app-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.app-stage {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Timeline slider ------------------------------------------------------- */
+
+.timeline {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: #0f1114;
+  border: 1px solid #2a2f37;
+  border-radius: 999px;
+}
+
+.timeline-option {
+  position: relative;
+  cursor: pointer;
+}
+
+.timeline-option input[type='radio'] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.timeline-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.75rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: #9aa2ad;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.timeline-option:hover .timeline-label {
+  color: #e6e9ee;
+}
+
+.timeline-option input[type='radio']:checked + .timeline-label {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.timeline-option input[type='radio']:focus-visible + .timeline-label {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
