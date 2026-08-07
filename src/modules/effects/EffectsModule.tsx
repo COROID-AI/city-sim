@@ -61,7 +61,13 @@ export function EffectsModule() {
   const enableAo = quality === 'high' && config.ambientOcclusion.enabled;
 
   const effects: JSX.Element[] = [];
-  if (enableAo) {
+  // On low quality we skip the expensive multi-pass effects (SSAO, bloom,
+  // vignette, chromatic aberration, noise) so the software WebGL renderer can
+  // sustain a responsive frame rate. The cheap single-pass color grading
+  // (brightness/contrast/saturation/temperature) is still applied per era, so
+  // the era-specific post-processing look remains visible.
+  const cheap = quality === 'low';
+  if (enableAo && !cheap) {
     effects.push(
       <SSAO
         key="ssao"
@@ -79,19 +85,19 @@ export function EffectsModule() {
       />,
     );
   }
-  if (config.bloom.enabled) {
+  if (config.bloom.enabled && !cheap) {
     effects.push(
       <Bloom
         key="bloom"
         intensity={config.bloom.intensity}
         luminanceThreshold={config.bloom.luminanceThreshold}
         luminanceSmoothing={0.9}
-        mipmapBlur
+        mipmapBlur={quality === 'high'}
         radius={0.8}
       />,
     );
   }
-  if (config.vignette.enabled) {
+  if (config.vignette.enabled && !cheap) {
     effects.push(
       <Vignette
         key="vignette"
@@ -101,7 +107,7 @@ export function EffectsModule() {
       />,
     );
   }
-  if (config.chromaticAberration.enabled) {
+  if (config.chromaticAberration.enabled && !cheap) {
     effects.push(
       <ChromaticAberration
         key="chromaticAberration"
@@ -116,7 +122,7 @@ export function EffectsModule() {
       />,
     );
   }
-  if (config.noise.enabled) {
+  if (config.noise.enabled && !cheap) {
     effects.push(<Noise key="noise" opacity={config.noise.opacity} />);
   }
   effects.push(
@@ -130,7 +136,10 @@ export function EffectsModule() {
   );
 
   return (
-    <EffectComposer multisampling={quality === 'high' ? 4 : 0}>
+    <EffectComposer
+      multisampling={quality === 'high' ? 4 : 0}
+      resolutionScale={quality === 'high' ? 1 : 0.6}
+    >
       {effects}
     </EffectComposer>
   );

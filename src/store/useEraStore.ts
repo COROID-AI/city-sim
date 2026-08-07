@@ -3,7 +3,7 @@ import type { EraId } from '../contracts';
 import { ERA_IDS } from '../contracts';
 
 /** Default duration of a cross-era transition in milliseconds. */
-export const DEFAULT_TRANSITION_DURATION_MS = 1500;
+export const DEFAULT_TRANSITION_DURATION_MS = 150;
 
 /** A request to morph the scene from one era to another. */
 export interface TransitionRequest {

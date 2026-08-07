@@ -34,7 +34,7 @@ export interface WindowGridProps {
 /** An instanced grid of window panes sharing one geometry + PBR material. */
 export function WindowGrid({ positions, size, material }: WindowGridProps) {
   return (
-    <Instances limit={positions.length} range={positions.length} castShadow>
+    <Instances limit={positions.length} range={positions.length} frames={1} castShadow>
       <boxGeometry args={[size[0], size[1], 0.06]} />
       <meshStandardMaterial
         color={material.color}
@@ -164,14 +164,14 @@ export function FireEscape({ width, height, floors, x, z }: FireEscapeProps) {
   return (
     <group position={[x, 0, z]}>
       {/* ladder rails (shared geometry) */}
-      <Instances limit={2} range={2} castShadow>
+      <Instances limit={2} range={2} frames={1} castShadow>
         <boxGeometry args={[0.06, height, 0.06]} />
         <meshStandardMaterial color="#2a2d31" metalness={0.7} roughness={0.5} />
         <Instance position={[railX - 0.06, height / 2, 0]} />
         <Instance position={[railX + 0.06, height / 2, 0]} />
       </Instances>
       {/* per-floor landings (shared geometry) */}
-      <Instances limit={landings.length} range={landings.length} castShadow>
+      <Instances limit={landings.length} range={landings.length} frames={1} castShadow>
         <boxGeometry args={[0.34, 0.08, 0.62]} />
         <meshStandardMaterial color="#33363b" metalness={0.7} roughness={0.5} />
         {landings.map((y, i) => (
@@ -205,7 +205,7 @@ export function Mullions({ width, height, x, z, spacingX, spacingY }: MullionsPr
   return (
     <group position={[x, 0, z]}>
       {/* vertical mullions */}
-      <Instances limit={countX} range={countX} castShadow>
+      <Instances limit={countX} range={countX} frames={1} castShadow>
         <boxGeometry args={[0.06, height, 0.06]} />
         <meshStandardMaterial color="#b8c4ce" metalness={0.9} roughness={0.3} />
         {xs.map((mx, i) => (
@@ -213,7 +213,7 @@ export function Mullions({ width, height, x, z, spacingX, spacingY }: MullionsPr
         ))}
       </Instances>
       {/* horizontal mullions */}
-      <Instances limit={countY} range={countY} castShadow>
+      <Instances limit={countY} range={countY} frames={1} castShadow>
         <boxGeometry args={[width, 0.05, 0.06]} />
         <meshStandardMaterial color="#b8c4ce" metalness={0.9} roughness={0.3} />
         {ys.map((my, i) => (
@@ -243,7 +243,7 @@ export function CladdingPanels({ width, height, floors, x, z, color }: CladdingP
   const bands = Array.from({ length: floors }, (_, f) => (f + 0.5) * floorH);
   return (
     <group position={[x, 0, z]}>
-      <Instances limit={bands.length} range={bands.length} castShadow>
+      <Instances limit={bands.length} range={bands.length} frames={1} castShadow>
         <boxGeometry args={[width + 0.08, 0.18, 0.12]} />
         <meshStandardMaterial color={color} roughness={0.55} metalness={0.25} />
         {bands.map((y, i) => (
@@ -268,7 +268,7 @@ export function StorefrontGlazing({ width, x, z }: StorefrontGlazingProps) {
   const xs = Array.from({ length: count }, (_, i) => -width / 2 + (i + 0.5) * paneW);
   return (
     <group position={[x, 0, z]}>
-      <Instances limit={count} range={count}>
+      <Instances limit={count} range={count} frames={1}>
         <boxGeometry args={[paneW - 0.08, 2.0, 0.08]} />
         <meshStandardMaterial
           color="#a8c8dc"
@@ -309,7 +309,7 @@ export function Greenery({ width, height, floors, x, z, color }: GreeneryProps) 
   rows.forEach((y) => xs.forEach((px) => positions.push([px, y, 0])));
   return (
     <group position={[x, 0, z]}>
-      <Instances limit={total} range={total} castShadow>
+      <Instances limit={total} range={total} frames={1} castShadow>
         <boxGeometry args={[0.85, 0.3, 0.5]} />
         <meshStandardMaterial color={color} roughness={0.9} metalness={0.05} />
         {positions.map((p, i) => (

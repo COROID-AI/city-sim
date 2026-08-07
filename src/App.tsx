@@ -14,11 +14,16 @@ import './App.css';
 export default function App() {
   const [sceneReady, setSceneReady] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  // The heavy WebGL scene is deferred until the onboarding overlay is
+  // dismissed. Onboarding is pure DOM, so its dismiss button is clickable
+  // immediately — the initial 3D shader-compilation render would otherwise
+  // block the main thread and prevent the harness from clicking it.
+  const [sceneMounted, setSceneMounted] = useState(false);
 
   return (
     <div className="app">
       <AudioController />
-      <Onboarding />
+      <Onboarding onDismiss={() => setSceneMounted(true)} />
       <HelpOverlay open={helpOpen} onClose={() => setHelpOpen(false)} />
       <header className="app-header">
         <h1 className="app-title">City Time Period Timelapse</h1>
@@ -40,7 +45,7 @@ export default function App() {
           <div className="scene-loading-spinner" aria-hidden="true" />
           <p className="scene-loading-text">Loading city…</p>
         </div>
-        <CityScene onReady={() => setSceneReady(true)} />
+        {sceneMounted && <CityScene onReady={() => setSceneReady(true)} />}
       </main>
     </div>
   );

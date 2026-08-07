@@ -15,7 +15,10 @@ export interface QualityStore {
 }
 
 export const useQualityStore = create<QualityStore>((set, get) => ({
-  quality: 'high',
+  // Default to `low` so the scene stays responsive on lower-end devices and
+  // software WebGL renderers (e.g. SwiftShader). `high` remains available via
+  // the quality toggle for capable GPUs.
+  quality: 'low',
   setQuality: (quality) => set({ quality }),
   toggleQuality: () =>
     set({ quality: get().quality === 'high' ? 'low' : 'high' }),

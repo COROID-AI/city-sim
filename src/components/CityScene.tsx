@@ -1,5 +1,5 @@
-import { useEffect, useRef, type ReactNode } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { useEffect, useRef } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useEraStore } from '../store/useEraStore';
 import { useQualityStore } from '../store/useQualityStore';
@@ -27,9 +27,9 @@ export interface CitySceneProps {
  * Pedestrians, StreetEnvironment) plus the post-processing EffectsModule and
  * the era transition orchestrator around the shared block footprint. On a
  * timeline change the {@link TransitionManager} drives a TransitionContext and
- * the scene crossfades the era-variant geometry/materials while blending the
- * lighting mood, sky, fog, and effects so the swap reads as a cinematic morph
- * rather than a jarring pop.
+ * the scene swaps the era-variant geometry while blending the lighting mood,
+ * sky, fog, and effects so the change reads as a cinematic morph rather than a
+ * jarring pop.
  */
 
 /** Linearly interpolate two hex colors. */
@@ -57,35 +57,6 @@ function interpolateSky(fromEra: EraId, toEra: EraId, t: number): EraSkyConfig {
   };
 }
 
-/**
- * Wraps an era module group and drives the opacity of every material it owns,
- * enabling a true crossfade between two era variants. Mutating each layer's
- * own material objects keeps the from/to instances independent.
- */
-function CrossfadeLayer({ opacity, children }: { opacity: number; children: ReactNode }) {
-  const ref = useRef<THREE.Group>(null);
-
-  useEffect(() => {
-    const group = ref.current;
-    if (!group) return;
-    group.traverse((obj) => {
-      const mesh = obj as THREE.Mesh;
-      const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
-      if (!mat) return;
-      const apply = (m: THREE.Material) => {
-        m.transparent = true;
-        m.opacity = opacity;
-        m.depthWrite = opacity >= 0.995;
-        m.needsUpdate = true;
-      };
-      if (Array.isArray(mat)) mat.forEach(apply);
-      else apply(mat);
-    });
-  }, [opacity]);
-
-  return <group ref={ref}>{children}</group>;
-}
-
 /** Lighting mood blended between the source and target era. */
 function EraLighting({ fromEra, toEra, progress }: { fromEra: EraId; toEra: EraId; progress: number }) {
   const a = getEraDescriptor(fromEra).lighting;
@@ -99,7 +70,7 @@ function EraLighting({ fromEra, toEra, progress }: { fromEra: EraId; toEra: EraI
         position={[8, 12, 6]}
         intensity={a.sunIntensity + (b.sunIntensity - a.sunIntensity) * progress}
         color={lerpColor(a.sunColor, b.sunColor, progress)}
-        castShadow
+        castShadow={quality === 'high'}
         shadow-mapSize-width={shadowMapSize}
         shadow-mapSize-height={shadowMapSize}
       />
@@ -125,7 +96,7 @@ function EraContent({ era }: { era: EraId }) {
   );
 }
 
-/** The composed scene body — crossfades every element during a morph. */
+/** The composed scene body — swaps content and blends atmosphere on a morph. */
 function SceneContent() {
   const era = useEraStore((s) => s.currentEra);
   const transition = useTransition();
@@ -151,21 +122,13 @@ function SceneContent() {
       <EraFog fromEra={fromEra} toEra={toEra} progress={progress} />
       <SkyDome config={interpolateSky(fromEra, toEra, progress)} />
 
-      {/* street / environment crossfade */}
-      <CrossfadeLayer opacity={1 - progress}>
-        <StreetEnvironment era={fromEra} includeLighting={false} />
-      </CrossfadeLayer>
-      <CrossfadeLayer opacity={progress}>
-        <StreetEnvironment era={toEra} includeLighting={false} />
-      </CrossfadeLayer>
-
-      {/* buildings, vehicles, storefronts/ads, pedestrians crossfade */}
-      <CrossfadeLayer opacity={1 - progress}>
-        <EraContent era={fromEra} />
-      </CrossfadeLayer>
-      <CrossfadeLayer opacity={progress}>
-        <EraContent era={toEra} />
-      </CrossfadeLayer>
+      {/* During a morph we render only the target era's geometry (1×) so the
+          transition stays affordable on software WebGL renderers. The sky,
+          lighting, fog, and post-processing still blend from the source to the
+          target era, so the change still reads as a cinematic morph rather than
+          a jarring pop — without doubling the geometry cost. */}
+      <StreetEnvironment era={toEra} includeLighting={false} />
+      <EraContent era={toEra} />
     </>
   );
 }
@@ -182,14 +145,31 @@ function ReadySignal({ onReady }: { onReady?: () => void }) {
   return null;
 }
 
+/**
+ * Keeps the demand-driven render loop alive only while a cross-era morph is
+ * in flight. With `frameloop="demand"` the Canvas renders on mount and on
+ * React state changes (era selection), but otherwise stays idle so the main
+ * thread remains responsive on software WebGL renderers. During a transition
+ * this invalidates every frame so the morph animates smoothly.
+ */
+function TransitionInvalidator() {
+  const invalidate = useThree((s) => s.invalidate);
+  const transitionRequest = useEraStore((s) => s.transitionRequest);
+  useFrame(() => {
+    if (transitionRequest) invalidate();
+  });
+  return null;
+}
+
 export function CityScene({ onReady }: CitySceneProps) {
   const quality = useQualityStore((s) => s.quality);
   return (
     <Canvas
       shadows
+      frameloop="demand"
       camera={{ position: [14, 14, 14], fov: 50 }}
       className="city-canvas"
-      dpr={quality === 'high' ? [1, 2] : [1, 1.5]}
+      dpr={quality === 'high' ? [1, 2] : [0.6, 0.6]}
       gl={{ antialias: quality === 'high', powerPreference: 'high-performance' }}
       onCreated={() => onReady?.()}
     >
@@ -198,6 +178,7 @@ export function CityScene({ onReady }: CitySceneProps) {
         <SceneContent />
       </TransitionManager>
       <EffectsModule />
+      <TransitionInvalidator />
       <ReadySignal onReady={onReady} />
       <CameraControls />
     </Canvas>

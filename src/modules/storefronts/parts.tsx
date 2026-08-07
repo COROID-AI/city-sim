@@ -178,11 +178,18 @@ export function LedScreen({
     return [c, t] as const;
   }, []);
 
+  const lastIdx = useRef(-1);
+
   useFrame(({ clock }) => {
     const t = clock.getElapsedTime();
     const idx = Math.floor(t / 2.4) % frames.length;
-    drawLedFrame(canvas, frames[idx], accent, secondary);
-    texture.needsUpdate = true;
+    // Only repaint the canvas when the ad frame actually changes (not every
+    // animation frame), keeping CPU cost low on software renderers.
+    if (idx !== lastIdx.current) {
+      lastIdx.current = idx;
+      drawLedFrame(canvas, frames[idx], accent, secondary);
+      texture.needsUpdate = true;
+    }
   });
 
   return (

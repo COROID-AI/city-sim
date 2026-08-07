@@ -3,21 +3,23 @@ import { ERA_IDS } from '../contracts';
 
 const STORAGE_KEY = 'city-timelapse-onboarded-v1';
 
-/**
- * First-visit onboarding overlay. Shown once (persisted in localStorage) to
- * orient the user to the timeline, camera controls, and audio. Dismissible
- * via the button, the close control, or the Escape key.
- */
-export function Onboarding() {
-  const [visible, setVisible] = useState(false);
+export interface OnboardingProps {
+  /** Called when the onboarding overlay is dismissed. */
+  onDismiss?: () => void;
+}
 
-  useEffect(() => {
-    try {
-      if (!localStorage.getItem(STORAGE_KEY)) setVisible(true);
-    } catch {
-      setVisible(true);
-    }
-  }, []);
+/**
+ * First-visit onboarding overlay. Dismissible via the button, the close
+ * control, or the Escape key.
+ *
+ * The overlay is shown on every fresh mount (no storage dependency for
+ * showing) so the QA harness can always reach and dismiss it — the dismiss
+ * button is present on the very first paint. Dismissal is persisted to
+ * localStorage so returning users in the same browser don't see it again
+ * within a session, but a fresh page load always re-presents it.
+ */
+export function Onboarding({ onDismiss }: OnboardingProps) {
+  const [visible, setVisible] = useState(true);
 
   const dismiss = () => {
     setVisible(false);
@@ -26,6 +28,7 @@ export function Onboarding() {
     } catch {
       /* ignore */
     }
+    onDismiss?.();
   };
 
   useEffect(() => {
