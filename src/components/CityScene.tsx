@@ -1,6 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useEraStore } from '../store/useEraStore';
 import { getEraDescriptor, type EraId } from '../contracts';
@@ -12,6 +11,7 @@ import { EffectsModule } from '../modules/effects';
 import { Vehicles } from './vehicles';
 import { Pedestrians } from './pedestrians';
 import { TransitionManager, useTransition } from './TransitionManager';
+import { CameraControls } from './CameraControls';
 
 /** Props for the composed main scene. */
 export interface CitySceneProps {
@@ -192,7 +192,7 @@ export function CityScene({ onReady }: CitySceneProps) {
       </TransitionManager>
       <EffectsModule />
       <ReadySignal onReady={onReady} />
-      <OrbitControls enableDamping makeDefault />
+      <CameraControls />
     </Canvas>
   );
 }
