@@ -5,7 +5,7 @@ import { canPlace } from '../rules';
 import { createInitialState, spawnPiece, step } from '../state';
 import type { GameConfig, GameState, Rng } from '../types';
 
-const CONFIG: GameConfig = { width: 10, height: 20, tickMs: 1000 };
+const CONFIG: GameConfig = { width: 10, height: 20, cell: 30, tickMs: 1000 };
 
 const ALL_IDS = ['I', 'O', 'T', 'S', 'Z', 'J', 'L'] as const;
 

@@ -9,7 +9,7 @@ import {
 } from '../board';
 import type { Board, Cell, GameConfig } from '../types';
 
-const config: GameConfig = { width: 10, height: 20, tickMs: 500 };
+const config: GameConfig = { width: 10, height: 20, cell: 30, tickMs: 500 };
 
 describe('board', () => {
   it('creates a board whose dimensions match the game config', () => {

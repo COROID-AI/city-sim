@@ -40,6 +40,8 @@ export interface GameConfig {
   width: number;
   /** Board height in cells. */
   height: number;
+  /** Canvas size of a single cell in CSS pixels. */
+  cell: number;
   /** Milliseconds per gravity tick. */
   tickMs: number;
 }
