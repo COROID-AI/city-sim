@@ -1,11 +1,47 @@
-Build a standalone, browser-based 2D city simulation. The city runs in real time with citizens, vehicles, companies, and a live economy — viewable in any browser. The details of all entities should be in great detail.
+# Browser Tetris
 
-Visuals day/night cycle visible; ≥20 buildings, ≥50 citizens, ≥10 vehicles active simultaneously.
+A browser-based Tetris game built with Vite, TypeScript, and Jest.
 
-Citizens follow daily schedules (home → work → entertainment → home); companies track revenue/employees; economy updates every sim-hour.
+Current phase: **Foundation** — project scaffold plus the core Tetris
+primitives (tetromino definitions and the board model).
 
-Top-overlay shows population, employment rate, city time, city budget.
+## Scripts
 
-Since the city is large and the window will only show a piece of the city, therefor a Minimap is needed to display what the browser window is looking at in the city.
+| Command           | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| `npm run dev`     | Start the Vite dev server                            |
+| `npm run build`   | Type-check with `tsc` and build into `dist/`         |
+| `npm run preview` | Preview the production build                         |
+| `npm test`        | Run the Jest unit tests for the game modules         |
 
-Use any stack you prefer, but it must load directly and start the simulation upon loaded in a browser.
+## Project structure
+
+```
+.
+├── index.html           # App shell: #app div + #canvas (ARIA-labeled)
+├── vite.config.ts       # Vite config (static build output in dist/)
+├── jest.config.mjs      # Jest config (tests under src/game/__tests__)
+├── tsconfig.json        # TypeScript config (ES2020, Vite-friendly)
+└── src
+    ├── main.ts          # Entry point; imports the game loop module
+    └── game
+        ├── loop.ts      # Game loop placeholder (implemented later)
+        ├── types.ts     # Shared types: Direction, Cell, TetrominoId,
+        │                #   Tetromino, Board, GameConfig
+        ├── tetrominoes.ts  # The 7 standard pieces + rotate(id, dir)
+        ├── board.ts     # Board helpers (createBoard, clearFullRows, ...)
+        └── __tests__    # Jest tests for tetrominoes and board
+```
+
+## Game modules
+
+- `src/game/types.ts` — shared types consumed by the other game modules.
+- `src/game/tetrominoes.ts` — a `TETROMINOES` record with four rotation
+  states per piece and a `rotate(id, dir: 1 | -1)` helper.
+- `src/game/board.ts` — immutable board helpers: `createBoard`, `inBounds`,
+  `getCell`, `setCell`, `isRowFull`, `clearFullRows`.
+
+## Dependency manifest
+
+The scaffold intentionally keeps its dependency manifest minimal: only
+TypeScript, Vite, Jest, and the Jest TypeScript transformer (`ts-jest`).
