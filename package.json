@@ -1,0 +1,17 @@
+{
+  "name": "browser-tetris",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "jest --config jest.config.mjs"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.12",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6"
+  }
+}
