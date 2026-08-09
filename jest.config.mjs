@@ -1,12 +1,16 @@
 /**
  * Jest configuration for the Tetris game modules.
  *
- * Only the unit tests under `src/game/__tests__` are collected. The Vite
- * entry point (`src/main.ts`, which side-imports `src/game/loop`) and
- * `vite.config.ts` are intentionally ignored.
+ * Only the unit tests under `src/game/__tests__` and
+ * `src/input/__tests__` are collected. The Vite entry point (`src/main.ts`,
+ * which side-imports `src/game/loop`) and `vite.config.ts` are
+ * intentionally ignored.
  */
 const config = {
-  testMatch: ['<rootDir>/src/game/__tests__/**/*.test.ts'],
+  testMatch: [
+    '<rootDir>/src/game/__tests__/**/*.test.ts',
+    '<rootDir>/src/input/__tests__/**/*.test.ts',
+  ],
   testPathIgnorePatterns: [
     '/node_modules/',
     '<rootDir>/src/main.ts',
