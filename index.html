@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tetris</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2300e5ff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="game">
+    <div class="board-wrap">
+      <canvas id="board" width="300" height="600" aria-label="Tetris playfield" data-testid="board"></canvas>
+    </div>
+
+    <aside class="panel">
+      <h1 class="title">Tetris</h1>
+
+      <div class="hud">
+        <div class="hud-row"><span class="hud-label">Score</span><span id="score" class="hud-value">0</span></div>
+        <div class="hud-row"><span class="hud-label">Level</span><span id="level" class="hud-value">1</span></div>
+        <div class="hud-row"><span class="hud-label">Lines</span><span id="lines" class="hud-value">0</span></div>
+      </div>
+
+      <div class="next-box">
+        <div class="next-label">Next</div>
+        <canvas id="next" width="160" height="160" aria-label="Next piece preview" data-testid="next"></canvas>
+      </div>
+
+      <div class="controls">
+        <button type="button" data-action="left" aria-label="Move left" data-testid="btn-left">&#9664;</button>
+        <button type="button" data-action="rotate" aria-label="Rotate clockwise" data-testid="btn-rotate">&#8635;</button>
+        <button type="button" data-action="right" aria-label="Move right" data-testid="btn-right">&#9654;</button>
+        <button type="button" data-action="soft" aria-label="Soft drop" data-testid="btn-soft">&#9660;</button>
+        <button type="button" data-action="hard" aria-label="Hard drop" data-testid="btn-hard">&#11021;</button>
+        <button type="button" data-action="pause" aria-label="Pause or resume" data-testid="btn-pause"><span id="pause-icon">&#9208;</span></button>
+        <button type="button" data-action="restart" aria-label="Restart" data-testid="btn-restart">&#8634;</button>
+      </div>
+
+      <p class="hint">
+        &#8592;&#8594; move &middot; &#8593; rotate &middot; &#8595; soft drop &middot;
+        Space hard drop &middot; P pause &middot; R restart
+      </p>
+    </aside>
+  </main>
+
+  <div id="overlay" class="overlay hidden">
+    <div class="overlay-card">
+      <h2 id="overlay-title">Paused</h2>
+      <p id="overlay-text"></p>
+      <button type="button" id="overlay-resume" data-testid="btn-overlay-resume">Resume</button>
+      <button type="button" id="overlay-restart" data-testid="btn-overlay-restart">Restart</button>
+    </div>
+  </div>
+
+  <!-- Classic scripts (not ES modules) so the page also loads directly via file:// -->
+  <script src="tetris.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

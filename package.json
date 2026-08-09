@@ -1,0 +1,9 @@
+{
+  "name": "simple-tetris",
+  "version": "1.0.0",
+  "description": "A simple browser Tetris clone. No build step, no external dependencies.",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  }
+}

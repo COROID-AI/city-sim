@@ -1,0 +1,214 @@
+/* Responsive layout: flex-wrap keeps the side panel from overlapping the
+ * board on narrow viewports, and auto overflow prevents any clipping. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: #0f1218;
+  color: #e6e9ef;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+
+main.game {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px;
+  max-width: 100%;
+}
+
+.board-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+}
+
+canvas#board {
+  display: block;
+  border: 2px solid #2a2f3a;
+  border-radius: 6px;
+  background: #0b0e14;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  max-width: 100%;
+  height: auto;
+}
+
+aside.panel {
+  flex: 0 1 auto;
+  min-width: 190px;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  background: #161b24;
+  border: 1px solid #262c37;
+  border-radius: 10px;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.5rem;
+  letter-spacing: 0.05em;
+  text-align: center;
+  color: #7ec8ff;
+}
+
+.hud {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hud-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.95rem;
+}
+
+.hud-row .hud-label {
+  color: #9aa4b2;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+}
+
+.hud-row .hud-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.next-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.next-label {
+  color: #9aa4b2;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+}
+
+canvas#next {
+  display: block;
+  width: 160px;
+  height: 160px;
+  max-width: 100%;
+  background: #0b0e14;
+  border: 1px solid #2a2f3a;
+  border-radius: 6px;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.controls button {
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 12px 8px;
+  border: 1px solid #333b47;
+  border-radius: 8px;
+  background: #212835;
+  color: #e6e9ef;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.controls button:hover,
+.controls button:focus-visible {
+  background: #2c3545;
+  outline: 2px solid #7ec8ff;
+}
+
+.controls button:active {
+  background: #39445a;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #7f8896;
+  text-align: center;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 11, 0.72);
+  backdrop-filter: blur(3px);
+  z-index: 10;
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+.overlay-card {
+  background: #161b24;
+  border: 2px solid #333b47;
+  border-radius: 12px;
+  padding: 28px 36px;
+  text-align: center;
+  max-width: min(90vw, 340px);
+}
+
+.overlay-card h2 {
+  margin: 0 0 8px;
+  color: #7ec8ff;
+}
+
+.overlay-card p {
+  margin: 0 0 18px;
+  color: #c3cad4;
+}
+
+.overlay-card button {
+  font-size: 1rem;
+  padding: 10px 22px;
+  border: 1px solid #3d6b8f;
+  border-radius: 8px;
+  background: #1d5c8c;
+  color: #ffffff;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.overlay-card #overlay-resume {
+  margin-right: 6px;
+}
+
+.overlay-card button:hover,
+.overlay-card button:focus-visible {
+  background: #2573ab;
+  outline: 2px solid #7ec8ff;
+}
