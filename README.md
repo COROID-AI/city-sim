@@ -1,11 +1,38 @@
-Build a standalone, browser-based 2D city simulation. The city runs in real time with citizens, vehicles, companies, and a live economy — viewable in any browser. The details of all entities should be in great detail.
+# Browser Tetris
 
-Visuals day/night cycle visible; ≥20 buildings, ≥50 citizens, ≥10 vehicles active simultaneously.
+A browser-based Tetris game built with Vite + TypeScript. Movement and
+rotation are controlled with the arrow keys only.
 
-Citizens follow daily schedules (home → work → entertainment → home); companies track revenue/employees; economy updates every sim-hour.
+## Current state — Foundation (scaffold + tetrominoes + board)
 
-Top-overlay shows population, employment rate, city time, city budget.
+- Vite dev server with a placeholder page (`index.html` mounts a `#app` div
+  and a `#canvas` element with ARIA attributes).
+- Shared game types in `src/game/types.ts`: `Direction`, `Cell`,
+  `TetrominoId`, `Tetromino`, `Board`, and `GameConfig`.
+- The seven standard tetrominoes (I, O, T, S, Z, J, L) as four-state rotation
+  arrays plus a `rotate(id, dir)` helper in `src/game/tetrominoes.ts`.
+- Immutable board primitives in `src/game/board.ts`: `createBoard`,
+  `inBounds`, `getCell`, `setCell`, `isRowFull`, `clearFullRows`.
+- Jest unit tests for the tetromino and board modules.
 
-Since the city is large and the window will only show a piece of the city, therefor a Minimap is needed to display what the browser window is looking at in the city.
+## Scripts
 
-Use any stack you prefer, but it must load directly and start the simulation upon loaded in a browser.
+| Command          | Description                          |
+| ---------------- | ------------------------------------ |
+| `npm install`    | Install dependencies                 |
+| `npm run dev`    | Start the Vite dev server            |
+| `npm run build`  | Type-check and create the production build |
+| `npm test`       | Run the Jest unit tests              |
+
+## Structure
+
+```
+src/
+  main.ts              # Vite entry point (imports src/game/loop)
+  game/
+    loop.ts            # Game loop stub (implemented in a later phase)
+    types.ts           # Shared game types
+    tetrominoes.ts     # 7 tetrominoes + rotation states + rotate()
+    board.ts           # Board primitives (create/set/get/clear)
+    __tests__/         # Jest unit tests
+```
