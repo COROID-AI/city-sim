@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+  />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <title>Tetris</title>
+</head>
+<body>
+  <div id="app">
+    <div class="game">
+      <aside class="side side-left">
+        <section class="panel">
+          <h2>Hold</h2>
+          <canvas id="hold" class="preview" width="96" height="64"></canvas>
+        </section>
+        <section class="panel">
+          <h2>Score</h2>
+          <div id="score" class="stat">0</div>
+        </section>
+        <section class="panel">
+          <h2>Lines</h2>
+          <div id="lines" class="stat">0</div>
+        </section>
+        <section class="panel">
+          <h2>Level</h2>
+          <div id="level" class="stat">1</div>
+        </section>
+      </aside>
+
+      <div class="board-wrap">
+        <canvas id="board" data-testid="board"></canvas>
+        <div id="overlay" class="overlay">
+          <h1 id="overlay-title">TETRIS</h1>
+          <p id="overlay-text">Press Enter or tap Start</p>
+          <button id="start-btn" type="button" data-testid="start-btn">Start</button>
+        </div>
+      </div>
+
+      <aside class="side side-right">
+        <section class="panel">
+          <h2>Next</h2>
+          <canvas id="next" class="preview" width="96" height="320"></canvas>
+        </section>
+      </aside>
+    </div>
+
+    <div class="touch-controls" aria-label="Touch controls">
+      <button type="button" data-action="left" aria-label="Move left">◀</button>
+      <button type="button" data-action="rotateCCW" aria-label="Rotate counter-clockwise">⟲</button>
+      <button type="button" data-action="rotateCW" aria-label="Rotate clockwise">⟳</button>
+      <button type="button" data-action="right" aria-label="Move right">▶</button>
+      <button type="button" data-action="softDrop" aria-label="Soft drop">▼</button>
+      <button type="button" data-action="hardDrop" aria-label="Hard drop">⤓</button>
+      <button type="button" data-action="hold" aria-label="Hold piece">Hold</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

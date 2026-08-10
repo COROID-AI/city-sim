@@ -1,0 +1,272 @@
+/* ---------------------------------------------------------------------------
+   Design tokens. Dark arcade theme; the play scene is the canvas, so dark
+   surfaces with a bright board read best.
+--------------------------------------------------------------------------- */
+:root {
+  --bg: #0b0f17;
+  --surface: #141a26;
+  --surface-2: #1b2333;
+  --text: #e8edf5;
+  --text-dim: #9aa7bd;
+  --accent: #4fd1ff;
+  --accent-strong: #2fb8f0;
+  --border: #263149;
+  --shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  --radius: 10px;
+  --font-display: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-display);
+  overflow: hidden;
+  touch-action: manipulation;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 14px;
+  padding: 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   Game layout: side panels flank the board.
+--------------------------------------------------------------------------- */
+.game {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 16px;
+  max-width: 100%;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 12px;
+  min-width: 96px;
+}
+
+.panel {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.panel h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.stat {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.preview {
+  display: block;
+  width: 96px;
+  height: 64px;
+  margin: 0 auto;
+}
+
+#next {
+  height: 320px;
+}
+
+/* ---------------------------------------------------------------------------
+   Board: fixed 1:2 aspect ratio, sized to the viewport.
+--------------------------------------------------------------------------- */
+.board-wrap {
+  position: relative;
+  height: min(78vh, 620px);
+  aspect-ratio: 1 / 2;
+  flex: 0 0 auto;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  background: #0a0e18;
+}
+
+#board {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------------------------------------------------------------------------
+   Overlay (start / pause / game over).
+--------------------------------------------------------------------------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(8, 11, 18, 0.88);
+  text-align: center;
+  padding: 16px;
+  z-index: 5;
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+.overlay h1 {
+  margin: 0;
+  font-size: clamp(28px, 6vw, 44px);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--text);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+}
+
+.overlay p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-dim);
+}
+
+#start-btn {
+  margin-top: 6px;
+  padding: 12px 28px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #06121a;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 6px 0 #0d5e80, 0 10px 18px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+#start-btn:hover {
+  background: var(--accent-strong);
+}
+
+#start-btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 #0d5e80, 0 6px 12px rgba(0, 0, 0, 0.4);
+}
+
+#start-btn:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Touch controls: only shown on touch-capable / narrow viewports so they
+   never clutter the desktop layout.
+--------------------------------------------------------------------------- */
+.touch-controls {
+  display: none;
+}
+
+@media (pointer: coarse), (max-width: 720px) {
+  .touch-controls {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+    width: 100%;
+    max-width: 560px;
+    padding: 0 8px;
+  }
+
+  .touch-controls button {
+    min-height: 52px;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+  }
+
+  .touch-controls button:active {
+    transform: translateY(2px);
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Narrow viewport: shrink panels, keep the board dominant.
+--------------------------------------------------------------------------- */
+@media (max-width: 560px) {
+  .game {
+    gap: 8px;
+  }
+
+  .side {
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .side-left {
+    display: none;
+  }
+
+  .side-right {
+    min-width: 68px;
+  }
+
+  .panel {
+    padding: 8px;
+  }
+
+  .panel h2 {
+    font-size: 11px;
+  }
+
+  .stat {
+    font-size: 16px;
+  }
+
+  .preview {
+    width: 68px;
+    height: 44px;
+  }
+
+  #next {
+    height: 220px;
+  }
+
+  .board-wrap {
+    height: min(72vh, 560px);
+  }
+}
