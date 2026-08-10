@@ -1,0 +1,16 @@
+{
+  "name": "tetris",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A web-based Tetris game: vanilla HTML/CSS/Canvas, ESM, zero dependencies.",
+  "scripts": {
+    "check": "for f in server.js src/*.js test/*.js; do node --check \"$f\" || exit 1; done",
+    "test": "node --test",
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

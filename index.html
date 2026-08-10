@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="A web-based Tetris game with 7-bag randomizer, SRS rotation and wall kicks." />
+  <title>Tetris</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <h1>TETRIS</h1>
+    </header>
+
+    <div class="game-layout">
+      <aside class="side-panel">
+        <section class="panel-card" id="hold-panel">
+          <h2>Hold</h2>
+          <canvas id="hold-canvas" width="120" height="80" aria-label="Held piece preview"></canvas>
+          <p class="panel-hint">C to hold</p>
+        </section>
+        <section class="panel-card">
+          <h2>Score</h2>
+          <p class="value" id="score">0</p>
+        </section>
+        <section class="panel-card">
+          <h2>Lines</h2>
+          <p class="value" id="lines">0</p>
+        </section>
+        <section class="panel-card">
+          <h2>Level</h2>
+          <p class="value" id="level">1</p>
+        </section>
+      </aside>
+
+      <main class="board-column">
+        <div class="board-frame">
+          <canvas id="board-canvas" tabindex="0" role="application"
+                  aria-label="Tetris play field: 10 by 20 grid"></canvas>
+          <div id="overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
+            <div class="overlay-card">
+              <h2 id="overlay-title">TETRIS</h2>
+              <p id="overlay-message"></p>
+              <button id="overlay-btn" type="button">Start Game</button>
+            </div>
+          </div>
+        </div>
+        <div class="controls">
+          <button id="start-btn" type="button">Start</button>
+          <button id="pause-btn" type="button">Pause</button>
+        </div>
+        <p class="keys-hint">
+          ←/→ move · ↓ soft drop · Space hard drop · ↑/X rotate CW · Z rotate CCW · C hold · P pause · Enter start
+        </p>
+      </main>
+
+      <aside class="side-panel">
+        <section class="panel-card">
+          <h2>Next</h2>
+          <canvas id="next-canvas" width="120" height="168" aria-label="Next piece previews"></canvas>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
