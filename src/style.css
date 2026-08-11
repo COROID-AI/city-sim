@@ -1,0 +1,347 @@
+/* ---------------------------------------------------------------------------
+ * Design tokens — only system fonts/assets; nothing is fetched from a CDN.
+ * ------------------------------------------------------------------------- */
+:root {
+  --bg: #0b0e14;
+  --panel: #12161f;
+  --panel-raised: #191f2b;
+  --border: #242c3b;
+  --text: #e6ebf2;
+  --text-muted: #98a2b3;
+  --accent: #e8a33d;
+  --accent-strong: #f5b84d;
+  --accent-contrast: #2a1c05;
+  --danger: #e05656;
+  --radius: 12px;
+  --font-ui:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(46, 196, 214, 0.08), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.app {
+  width: min(100%, 1080px);
+  padding: 24px clamp(12px, 3vw, 32px) 32px;
+}
+
+.app-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.app-title {
+  margin: 0;
+  font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+.app-subtitle {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+}
+
+.game {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: clamp(12px, 2vw, 24px);
+  align-items: start;
+  justify-content: center;
+}
+
+.board-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ---------------------------------------------------------------------------
+ * Panels: hold / next
+ * ------------------------------------------------------------------------- */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  width: 152px;
+}
+
+.panel-title {
+  margin: 0 0 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.panel canvas {
+  display: block;
+  background: #0d1118;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.panel-note {
+  margin: 10px 0 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------------------
+ * HUD + board
+ * ------------------------------------------------------------------------- */
+.hud {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-width: 560px;
+}
+
+.hud-item {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hud-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.hud-value {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-frame {
+  position: relative;
+  line-height: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.board-frame canvas {
+  display: block;
+  background: #0d1118;
+}
+
+/* ---------------------------------------------------------------------------
+ * Overlay
+ * ------------------------------------------------------------------------- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(11, 14, 20, 0.92);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.overlay-title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 1.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.overlay-text {
+  margin: 0;
+  max-width: 26em;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.overlay-score {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------------------
+ * Buttons
+ * ------------------------------------------------------------------------- */
+.button {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-raised);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 10px 22px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    transform 80ms ease;
+}
+
+.button:hover {
+  background: #232b3b;
+  border-color: #344058;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.button:active {
+  transform: translateY(1px);
+}
+
+.button-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.button-primary:hover {
+  background: var(--accent-strong);
+  border-color: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+ * Footer controls legend
+ * ------------------------------------------------------------------------- */
+.app-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 22px;
+}
+
+.controls {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.controls li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.5em;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--panel-raised);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------------------
+ * Responsive: stack panels beside the board on small screens
+ * ------------------------------------------------------------------------- */
+@media (max-width: 760px) {
+  .game {
+    grid-template-columns: 1fr auto 1fr;
+    gap: 8px;
+  }
+
+  .panel {
+    width: auto;
+    min-width: 96px;
+    padding: 10px;
+  }
+
+  .controls {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 560px) {
+  .game {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .board-column {
+    order: -1;
+  }
+
+  .panel {
+    width: 100%;
+    max-width: 280px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Reduced motion: no flashes, no button transitions
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}

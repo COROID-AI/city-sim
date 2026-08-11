@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='6' fill='%2312161f' stroke='%23e8a33d' stroke-width='2'/%3E%3Crect x='8' y='8' width='8' height='8' rx='2' fill='%23e8a33d'/%3E%3Crect x='16' y='8' width='8' height='8' rx='2' fill='%23e8a33d'/%3E%3Crect x='16' y='16' width='8' height='8' rx='2' fill='%23e8a33d'/%3E%3C/svg%3E"
+    />
+    <title>Tetris</title>
+  </head>
+  <body>
+    <div class="app">
+      <header class="app-header">
+        <h1 class="app-title">Tetris</h1>
+        <p class="app-subtitle">Guideline SRS &middot; 7-bag randomizer &middot; ghost piece</p>
+      </header>
+
+      <main class="game">
+        <aside class="panel" aria-label="Hold piece">
+          <h2 class="panel-title">Hold</h2>
+          <canvas id="hold" aria-hidden="true"></canvas>
+          <p class="panel-note">Hold with C</p>
+        </aside>
+
+        <section class="board-column">
+          <div class="hud">
+            <div class="hud-item">
+              <span class="hud-label">Score</span>
+              <span class="hud-value" id="score">0</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-label">Level</span>
+              <span class="hud-value" id="level">1</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-label">Lines</span>
+              <span class="hud-value" id="lines">0</span>
+            </div>
+            <div class="hud-item">
+              <span class="hud-label">Best</span>
+              <span class="hud-value" id="high">0</span>
+            </div>
+          </div>
+
+          <div class="board-frame">
+            <canvas id="board" data-testid="board" tabindex="-1" aria-label="Tetris play field"></canvas>
+            <div class="overlay" id="overlay" hidden>
+              <h2 class="overlay-title" id="overlay-title">Tetris</h2>
+              <p class="overlay-text" id="overlay-text"></p>
+              <p class="overlay-score" id="final-score" hidden></p>
+              <button class="button button-primary" id="overlay-primary" type="button">Start</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel" aria-label="Next pieces">
+          <h2 class="panel-title">Next</h2>
+          <canvas id="next" aria-hidden="true"></canvas>
+        </aside>
+      </main>
+
+      <footer class="app-footer">
+        <ul class="controls">
+          <li><kbd>&larr;</kbd><kbd>&rarr;</kbd> move</li>
+          <li><kbd>&darr;</kbd> soft drop</li>
+          <li><kbd>Space</kbd> hard drop</li>
+          <li><kbd>&uarr;</kbd>/<kbd>X</kbd> rotate CW</li>
+          <li><kbd>Z</kbd> rotate CCW</li>
+          <li><kbd>C</kbd> hold</li>
+          <li><kbd>P</kbd> pause</li>
+        </ul>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
