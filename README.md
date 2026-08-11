@@ -1,11 +1,36 @@
-Build a standalone, browser-based 2D city simulation. The city runs in real time with citizens, vehicles, companies, and a live economy — viewable in any browser. The details of all entities should be in great detail.
+# Snake
 
-Visuals day/night cycle visible; ≥20 buildings, ≥50 citizens, ≥10 vehicles active simultaneously.
+A polished, zero-build browser snake game written in vanilla HTML/CSS/JavaScript with a canvas renderer. No bundler, no framework, no external runtime dependencies — it loads directly in any modern browser.
 
-Citizens follow daily schedules (home → work → entertainment → home); companies track revenue/employees; economy updates every sim-hour.
+## Running
 
-Top-overlay shows population, employment rate, city time, city budget.
+```sh
+npm start      # or: npm run dev
+```
 
-Since the city is large and the window will only show a piece of the city, therefor a Minimap is needed to display what the browser window is looking at in the city.
+The game is then served at `http://127.0.0.1:3000` (the port comes from `process.env.PORT`, default `3000`).
 
-Use any stack you prefer, but it must load directly and start the simulation upon loaded in a browser.
+You can also just open `index.html` in a browser — the game runs with no server at all.
+
+## How to play
+
+- **Steer** — Arrow keys or WASD (a 180-degree reversal is ignored).
+- **Pause / resume** — Space (or the Resume button); Enter also resumes.
+- **Start / restart** — Enter or Space on the start and game-over screens, or click Start Game / Play Again.
+- **Touch devices** — on-screen D-pad buttons and swipe gestures on the playfield.
+- **High score** — persisted across reloads via `localStorage`.
+
+Eat the food to grow and score. Each level (every 3 foods) makes the snake move faster, up to a maximum speed. The game ends when the snake hits a wall or itself — or you win by filling the board.
+
+## Accessibility
+
+- All controls are real focusable `<button>` elements with visible focus outlines.
+- Keyboard input is handled on `window`, and the playfield is a focusable `role="application"` surface.
+- An ARIA live region announces score milestones and state changes.
+- `prefers-reduced-motion` disables button transitions.
+
+## Files
+
+- `index.html` / `styles.css` / `game.js` — the game itself
+- `server.js` — zero-dependency Node static server
+- `package.json` — `npm start` / `npm run dev` scripts

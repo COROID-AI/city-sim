@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Snake</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="hud" id="hud">
+      <div class="stat">
+        <span class="stat-label">Score</span>
+        <span class="stat-value" id="hudScore">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Level</span>
+        <span class="stat-value" id="hudLevel">1</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">High Score</span>
+        <span class="stat-value" id="hudHigh">0</span>
+      </div>
+    </header>
+
+    <div class="stage">
+      <div class="playfield" id="playfield" role="application" tabindex="0"
+           aria-label="Snake game playfield. Use arrow keys or WASD to steer.">
+        <canvas id="canvas" aria-hidden="true"></canvas>
+
+        <div class="overlay" id="startOverlay">
+          <h1 class="overlay-title">Snake</h1>
+          <p class="overlay-text">Eat the food, grow longer, and don't hit the walls — or yourself.</p>
+          <button type="button" class="btn btn-primary" id="btnStart">Start Game</button>
+          <p class="overlay-hint">Arrow keys / WASD to steer · Space to pause</p>
+        </div>
+
+        <div class="overlay" id="pauseOverlay" hidden>
+          <h2 class="overlay-title">Paused</h2>
+          <button type="button" class="btn btn-primary" id="btnResume">Resume Game</button>
+          <p class="overlay-hint">Press Space or Enter to resume</p>
+        </div>
+
+        <div class="overlay" id="gameoverOverlay" hidden>
+          <h2 class="overlay-title">Game Over</h2>
+          <p class="overlay-text">Score: <strong id="finalScore">0</strong></p>
+          <p class="overlay-text">High Score: <strong id="finalHighScore">0</strong></p>
+          <button type="button" class="btn btn-primary" id="btnRestart">Play Again</button>
+          <p class="overlay-hint">Press Enter to play again</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="dpad" id="dpad" aria-label="On-screen controls">
+      <button type="button" class="dpad-btn dpad-up" id="btnUp" aria-label="Up">&#8593;</button>
+      <button type="button" class="dpad-btn dpad-left" id="btnLeft" aria-label="Left">&#8592;</button>
+      <button type="button" class="dpad-btn dpad-right" id="btnRight" aria-label="Right">&#8594;</button>
+      <button type="button" class="dpad-btn dpad-down" id="btnDown" aria-label="Down">&#8595;</button>
+    </div>
+
+    <div class="live" id="liveRegion" role="status" aria-live="polite"></div>
+  </main>
+  <script src="game.js" defer></script>
+</body>
+</html>
