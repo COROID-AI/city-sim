@@ -1,0 +1,21 @@
+{
+  "name": "city-sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test": "jest"
+  },
+  "dependencies": {
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.2.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.12",
+    "vite": "^7.3.6"
+  }
+}
