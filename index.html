@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snake</title>
+  <link
+    rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231a1f33'/%3E%3Ccircle cx='10' cy='22' r='4' fill='%2339e08a'/%3E%3Ccircle cx='18' cy='18' r='4' fill='%2339e08a'/%3E%3Ccircle cx='24' cy='12' r='4' fill='%23b6ffd9'/%3E%3Ccircle cx='26' cy='10' r='1.2' fill='%2307110b'/%3E%3C/svg%3E"
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app" id="app">
+    <header class="hud" aria-label="Scoreboard">
+      <div class="hud-item">
+        <span class="hud-label">Score</span>
+        <span class="hud-value" id="score">0</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Best</span>
+        <span class="hud-value" id="best">0</span>
+      </div>
+      <div class="hud-item hud-item--speed">
+        <span class="hud-label">Speed</span>
+        <span class="hud-value" id="speed">1</span>
+      </div>
+      <div class="hud-item hud-item--status">
+        <span class="hud-label">Status</span>
+        <span class="hud-value" id="status">Ready</span>
+      </div>
+    </header>
+
+    <section class="board-wrap" aria-label="Game board">
+      <canvas id="game" tabindex="0" aria-label="Snake game board. Arrow keys or WASD to steer, P or Space to pause."></canvas>
+
+      <div class="overlay" id="overlay-start" role="dialog" aria-modal="false" aria-labelledby="start-title">
+        <div class="overlay-card">
+          <h1 id="start-title" class="overlay-title">Snake</h1>
+          <p class="overlay-text">Eat the food, grow, and don't hit the walls or yourself.</p>
+          <button class="btn" id="btn-start" type="button">Start</button>
+          <p class="overlay-hint">or press <kbd>Space</kbd> / <kbd>Enter</kbd></p>
+        </div>
+      </div>
+
+      <div class="overlay hidden" id="overlay-paused" role="dialog" aria-modal="false" aria-labelledby="paused-title">
+        <div class="overlay-card">
+          <h2 id="paused-title" class="overlay-title">Paused</h2>
+          <p class="overlay-text">Press <kbd>P</kbd>, <kbd>Space</kbd>, or Resume to continue.</p>
+          <button class="btn" id="btn-resume" type="button">Resume</button>
+        </div>
+      </div>
+
+      <div class="overlay hidden" id="overlay-gameover" role="dialog" aria-modal="false" aria-labelledby="gameover-title">
+        <div class="overlay-card">
+          <h2 id="gameover-title" class="overlay-title">Game Over</h2>
+          <p class="overlay-text">Final score: <strong id="final-score">0</strong></p>
+          <p class="overlay-text">Best: <strong id="final-best">0</strong></p>
+          <button class="btn" id="btn-restart" type="button">Restart</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="controls" aria-label="Touch controls">
+      <div class="dpad" role="group" aria-label="Directional pad">
+        <button class="dpad-btn dpad-btn--up" data-dir="up" type="button" aria-label="Move up">▲</button>
+        <button class="dpad-btn dpad-btn--left" data-dir="left" type="button" aria-label="Move left">◀</button>
+        <button class="dpad-btn dpad-btn--right" data-dir="right" type="button" aria-label="Move right">▶</button>
+        <button class="dpad-btn dpad-btn--down" data-dir="down" type="button" aria-label="Move down">▼</button>
+      </div>
+      <button class="btn btn--pause" id="btn-pause" type="button" aria-label="Pause or resume">Pause</button>
+    </section>
+  </main>
+
+  <script src="game.js" defer></script>
+</body>
+</html>
