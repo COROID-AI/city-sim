@@ -190,6 +190,10 @@ kbd {
   padding: 10px 18px;
 }
 
+.btn--pause:hover {
+  background: #262e4c;
+}
+
 .controls {
   display: flex;
   align-items: center;
