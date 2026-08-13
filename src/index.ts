@@ -1,10 +1,15 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { BloomPass } from 'three/examples/jsm/postprocessing/BloomPass.js';
 import { buildEra, EraConfig } from './eraBuilder.js';
 import { TimelineSlider } from './timelineSlider.js';
 
 // Initialize scene, camera, renderer
 const scene = new THREE.Scene();
+// We'll set a background color, but it will be overridden by the environment map if loaded
 scene.background = new THREE.Color(0x87ceeb); // Sky blue
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -12,6 +17,8 @@ camera.position.set(0, 5, 10);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Default is PCFShadowMap, but we can use soft
 document.body.appendChild(renderer.domElement);
 
 // Add OrbitControls
@@ -24,6 +31,7 @@ const groundGeometry = new THREE.PlaneGeometry(100, 100);
 const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x4CAF50, side: THREE.DoubleSide });
 const ground = new THREE.Mesh(groundGeometry, groundMaterial);
 ground.rotation.x = -Math.PI / 2; // Rotate to be horizontal
+ground.receiveShadow = true; // Important for receiving shadows
 scene.add(ground);
 
 // Add a grid helper
@@ -36,7 +44,26 @@ scene.add(ambientLight);
 
 const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
 directionalLight.position.set(10, 20, 10);
+directionalLight.castShadow = true; // Enable shadow casting for the directional light
+// Set up shadow properties for the directional light
+directionalLight.shadow.mapSize.width = 1024; // default
+directionalLight.shadow.mapSize.height = 1024; // default
+directionalLight.shadow.camera.near = 0.5; // default
+directionalLight.shadow.camera.far = 50; // default
+directionalLight.shadow.camera.left = -10;
+directionalLight.shadow.camera.right = 10;
+directionalLight.shadow.camera.top = 10;
+directionalLight.shadow.camera.bottom = -10;
 scene.add(directionalLight);
+
+// Load HDRI environment map
+new RGBELoader()
+  .setPath('https://threejs.org/examples/textures/hdr/')
+  .load('pedestrian_bridge_2k.hdr', (texture) => {
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    scene.environment = texture;
+    scene.background = null; // Remove the solid background when environment map is loaded
+  });
 
 // Era configurations for the slider years: 1945, 1965, 1985, 2005, 2025
 const eraConfigs: EraConfig[] = [
@@ -238,11 +265,23 @@ const timelineSlider = new TimelineSlider({
   initialYear: 1945
 });
 
+// Set up post-processing
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
+
+const bloomPass = new BloomPass(
+  1.5, // strength
+  25,  // kernel size
+  4.0  // sigma
+);
+composer.addPass(bloomPass);
+
 // Animation loop
 function animate() {
   requestAnimationFrame(animate);
   controls.update(); // Required if controls.enableDamping = true
-  renderer.render(scene, camera);
+  composer.render(); // Use composer to render the scene with post-processing
 }
 
 animate();
