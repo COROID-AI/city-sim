@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { buildEra, EraConfig } from './eraBuilder.js';
+import { TimelineSlider } from './timelineSlider.js';
 
 // Initialize scene, camera, renderer
 const scene = new THREE.Scene();
@@ -37,15 +38,15 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
 directionalLight.position.set(10, 20, 10);
 scene.add(directionalLight);
 
-// Era configurations
+// Era configurations for the slider years: 1945, 1965, 1985, 2005, 2025
 const eraConfigs: EraConfig[] = [
   {
-    year: 1400,
-    name: 'Medieval',
+    year: 1945,
+    name: 'Post-war',
     buildingCount: 20,
     vehicleCount: 5,
     pedestrianCount: 30,
-    buildingHeightMin: 5,
+    buildingHeightMin: 10,
     buildingHeightMax: 15,
     buildingColor: 0x8B4513, // SaddleBrown
     vehicleColor: 0x654321, // SaddleBrown for carts
@@ -53,43 +54,56 @@ const eraConfigs: EraConfig[] = [
     billboardCount: 2
   },
   {
-    year: 1900,
-    name: 'Industrial',
+    year: 1965,
+    name: 'Space Age',
     buildingCount: 25,
     vehicleCount: 10,
     pedestrianCount: 40,
-    buildingHeightMin: 10,
-    buildingHeightMax: 30,
+    buildingHeightMin: 15,
+    buildingHeightMax: 25,
     buildingColor: 0x2F4F4F, // DarkSlateGray
     vehicleColor: 0x000000, // Black
     pedestrianColor: 0x808080, // Gray
     billboardCount: 5
   },
   {
-    year: 2020,
-    name: 'Modern',
+    year: 1985,
+    name: 'Digital Dawn',
     buildingCount: 30,
     vehicleCount: 20,
     pedestrianCount: 50,
-    buildingHeightMin: 15,
-    buildingHeightMax: 60,
+    buildingHeightMin: 25,
+    buildingHeightMax: 35,
     buildingColor: 0xFFFFFF, // White
     vehicleColor: 0xFF0000, // Red
     pedestrianColor: 0x0000FF, // Blue
     billboardCount: 10
   },
   {
-    year: 2100,
-    name: 'Futuristic',
+    year: 2005,
+    name: 'Information Age',
     buildingCount: 35,
     vehicleCount: 25,
     pedestrianCount: 60,
-    buildingHeightMin: 20,
-    buildingHeightMax: 100,
+    buildingHeightMin: 30,
+    buildingHeightMax: 40,
     buildingColor: 0x00FFFF, // Cyan
     vehicleColor: 0xFFFF00, // Yellow
     pedestrianColor: 0xFF00FF, // Magenta
     billboardCount: 15
+  },
+  {
+    year: 2025,
+    name: 'Future',
+    buildingCount: 40,
+    vehicleCount: 30,
+    pedestrianCount: 70,
+    buildingHeightMin: 35,
+    buildingHeightMax: 45,
+    buildingColor: 0xFF00FF, // Magenta
+    vehicleColor: 0x00FFFF, // Cyan
+    pedestrianColor: 0xFFFF00, // Yellow
+    billboardCount: 20
   }
 ];
 
@@ -116,6 +130,16 @@ function updateEraDisplay() {
 }
 
 // Function to clear current era and build new one
+function switchEraByYear(year: number) {
+  // Find the index of the year in eraConfigs
+  const index = eraConfigs.findIndex(config => config.year === year);
+  if (index === -1) {
+    console.error(`Year ${year} not found in eraConfigs`);
+    return;
+  }
+  switchEra(index);
+}
+
 function switchEra(newEraIndex: number) {
   // Clear previous era objects
   if (currentEraObjects.length > 0) {
@@ -152,7 +176,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Start with the first era
+// Start with the first era (1945)
 switchEra(0);
 
 // Optional: automatically cycle through eras every 5 seconds
@@ -160,6 +184,14 @@ setInterval(() => {
   const nextIndex = (currentEraIndex + 1) % eraConfigs.length;
   switchEra(nextIndex);
 }, 5000);
+
+// Create timeline slider
+const timelineSlider = new TimelineSlider({
+  onYearSelect: (year) => {
+    switchEraByYear(year);
+  },
+  initialYear: 1945
+});
 
 // Animation loop
 function animate() {
