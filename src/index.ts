@@ -157,6 +157,7 @@ let currentEraObjects: THREE.Object3D[] = [];
 
 // UI element to display current era
 const eraDisplay = document.createElement('div');
+eraDisplay.dataset.testId = 'era-display';
 eraDisplay.style.position = 'absolute';
 eraDisplay.style.top = '20px';
 eraDisplay.style.left = '20px';
@@ -183,6 +184,7 @@ document.body.appendChild(sliderContainer);
 eraConfigs.forEach((config, index) => {
   const button = document.createElement('button');
   button.textContent = `${config.name} (${config.year})`;
+  button.dataset.testId = `era-button-${config.name.toLowerCase().replace(/\s+/g, '-')}`;
   button.style.padding = '8px 16px';
   button.style.fontSize = '14px';
   button.style.cursor = 'pointer';

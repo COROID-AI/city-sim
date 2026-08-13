@@ -42,6 +42,7 @@ export class TimelineSlider {
     years.forEach(year => {
       const button = document.createElement('button');
       button.textContent = year.toString();
+      button.dataset.testId = `year-button-${year}`;
       button.style.padding = '8px 16px';
       button.style.fontSize = '16px';
       button.style.cursor = 'pointer';
