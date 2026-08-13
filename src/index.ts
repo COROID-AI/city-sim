@@ -110,9 +110,51 @@ eraDisplay.style.fontFamily = 'Arial, sans-serif';
 eraDisplay.style.zIndex = '1000';
 document.body.appendChild(eraDisplay);
 
+// Slider container for era buttons
+const sliderContainer = document.createElement('div');
+sliderContainer.style.position = 'absolute';
+sliderContainer.style.bottom = '20px';
+sliderContainer.style.left = '50%';
+sliderContainer.style.transform = 'translateX(-50%)';
+sliderContainer.style.display = 'flex';
+sliderContainer.style.gap = '10px';
+sliderContainer.style.zIndex = '1000';
+document.body.appendChild(sliderContainer);
+
+// Create buttons for each era
+eraConfigs.forEach((config, index) => {
+  const button = document.createElement('button');
+  button.textContent = `${config.name} (${config.year})`;
+  button.style.padding = '8px 16px';
+  button.style.fontSize = '14px';
+  button.style.cursor = 'pointer';
+  button.style.borderRadius = '4px';
+  button.style.border = 'none';
+  button.style.backgroundColor = index === currentEraIndex ? 'rgba(0,150,255,0.7)' : 'rgba(0,0,0,0.5)';
+  button.style.color = 'white';
+  button.addEventListener('click', () => {
+    switchEra(index);
+    updateButtonStyles(index);
+  });
+  sliderContainer.appendChild(button);
+});
+
 // Function to update era display
 function updateEraDisplay() {
   eraDisplay.textContent = `Era: ${eraConfigs[currentEraIndex].name} (${eraConfigs[currentEraIndex].year})`;
+}
+
+// Function to update button styles based on current era
+function updateButtonStyles(currentIndex: number) {
+  const buttons = sliderContainer.children;
+  for (let i = 0; i < buttons.length; i++) {
+    const button = buttons[i] as HTMLButtonElement;
+    if (i === currentIndex) {
+      button.style.backgroundColor = 'rgba(0,150,255,0.7)';
+    } else {
+      button.style.backgroundColor = 'rgba(0,0,0,0.5)';
+    }
+  }
 }
 
 // Function to clear current era and build new one
@@ -154,11 +196,14 @@ window.addEventListener('resize', () => {
 
 // Start with the first era
 switchEra(0);
+// Initialize button styles
+updateButtonStyles(0);
 
 // Optional: automatically cycle through eras every 5 seconds
 setInterval(() => {
   const nextIndex = (currentEraIndex + 1) % eraConfigs.length;
   switchEra(nextIndex);
+  updateButtonStyles(nextIndex);
 }, 5000);
 
 // Animation loop
