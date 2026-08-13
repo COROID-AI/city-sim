@@ -1,0 +1,19 @@
+{
+  "name": "repository",
+  "version": "1.0.0",
+  "description": "Build a standalone, browser-based 2D city simulation. The city runs in real time with citizens, vehicles, companies, and a live economy — viewable in any browser. The details of all entities should be in great detail.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "vite": "^5.2.0",
+    "@types/three": "^0.165.0"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
+  }
+}
