@@ -14,10 +14,26 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
+// Create transition overlay for smooth era transitions
+const transitionOverlay = document.createElement('div');
+transitionOverlay.style.position = 'fixed';
+transitionOverlay.style.top = '0';
+transitionOverlay.style.left = '0';
+transitionOverlay.style.width = '100%';
+transitionOverlay.style.height = '100%';
+transitionOverlay.style.backgroundColor = 'black';
+transitionOverlay.style.opacity = '0';
+transitionOverlay.style.pointerEvents = 'none';
+transitionOverlay.style.transition = 'opacity 0.5s ease';
+document.body.appendChild(transitionOverlay);
+
 // Add OrbitControls
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; // Smooth controls
 controls.dampingFactor = 0.05;
+
+// Enable touch support for OrbitControls by preventing default touch actions on the domElement
+(renderer.domElement as HTMLElement).style.touchAction = 'none';
 
 // Add a simple ground plane
 const groundGeometry = new THREE.PlaneGeometry(100, 100);
@@ -147,7 +163,7 @@ eraConfigs.forEach((config, index) => {
   button.style.backgroundColor = index === currentEraIndex ? 'rgba(0,150,255,0.7)' : 'rgba(0,0,0,0.5)';
   button.style.color = 'white';
   button.addEventListener('click', () => {
-    switchEra(index);
+    switchEraWithTransition(index).catch(console.error);
     updateButtonStyles(index);
   });
   sliderContainer.appendChild(button);
@@ -172,16 +188,6 @@ function updateButtonStyles(currentIndex: number) {
 }
 
 // Function to clear current era and build new one
-function switchEraByYear(year: number) {
-  // Find the index of the year in eraConfigs
-  const index = eraConfigs.findIndex(config => config.year === year);
-  if (index === -1) {
-    console.error(`Year ${year} not found in eraConfigs`);
-    return;
-  }
-  switchEra(index);
-}
-
 function switchEra(newEraIndex: number) {
   // Clear previous era objects
   if (currentEraObjects.length > 0) {
@@ -211,6 +217,30 @@ function switchEra(newEraIndex: number) {
   console.log(`Switched to era: ${eraConfigs[currentEraIndex].name}`);
 }
 
+/**
+ * Switches era with a smooth fade transition
+ * @param newEraIndex Index of the era to switch to
+ * @returns Promise that resolves when the transition is complete
+ */
+function switchEraWithTransition(newEraIndex: number): Promise<void> {
+  // Fade out
+  transitionOverlay.style.opacity = '1';
+
+  // Wait for fade out to complete (0.5s)
+  return new Promise<void>((resolve) => {
+    setTimeout(() => {
+      // Switch era while overlay is opaque
+      switchEra(newEraIndex);
+      // Fade in
+      transitionOverlay.style.opacity = '0';
+      // Wait for fade in to complete
+      setTimeout(() => {
+        resolve();
+      }, 500);
+    }, 500);
+  });
+}
+
 // Handle window resize
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -226,17 +256,28 @@ updateButtonStyles(0);
 // Optional: automatically cycle through eras every 5 seconds
 setInterval(() => {
   const nextIndex = (currentEraIndex + 1) % eraConfigs.length;
-  switchEra(nextIndex);
+  switchEraWithTransition(nextIndex).catch(console.error);
   updateButtonStyles(nextIndex);
 }, 5000);
 
 // Create timeline slider
 const timelineSlider = new TimelineSlider({
   onYearSelect: (year) => {
-    switchEraByYear(year);
+    switchEraByYear(year).catch(console.error);
   },
   initialYear: 1945
 });
+
+// Helper function to switch era by year (used by timeline slider)
+function switchEraByYear(year: number): Promise<void> {
+  // Find the index of the year in eraConfigs
+  const index = eraConfigs.findIndex(config => config.year === year);
+  if (index === -1) {
+    console.error(`Year ${year} not found in eraConfigs`);
+    return Promise.resolve(); // Resolve immediately to avoid breaking the chain
+  }
+  return switchEraWithTransition(index);
+}
 
 // Animation loop
 function animate() {
