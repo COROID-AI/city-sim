@@ -1,0 +1,16 @@
+{
+  "name": "city-timelapse",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "three": "^0.165.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.165.0",
+    "vite": "^5.2.0"
+  }
+}
