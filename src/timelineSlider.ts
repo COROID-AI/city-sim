@@ -25,6 +25,7 @@ export class TimelineSlider {
   private createUI(): void {
     // Create container div
     this.container = document.createElement('div');
+    this.container.dataset.testId = 'timeline-slider';
     this.container.style.position = 'fixed';
     this.container.style.top = '10px';
     this.container.style.left = '50%';
