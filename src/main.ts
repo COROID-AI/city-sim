@@ -1,82 +1,103 @@
 import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
+import {
+  EraSceneBuilder,
+  EraKey,
+  eraConfigs,
+  getEraConfig
+} from './eraSceneBuilder'
 
-// Scene setup
-const scene = new THREE.Scene()
+// Initialize the era-based scene builder
+const sceneBuilder = new EraSceneBuilder()
 
-// Camera setup
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
-camera.position.z = 5
+// Start the animation loop
+sceneBuilder.start()
 
-// Renderer setup
-const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(window.innerWidth, window.innerHeight)
-document.body.appendChild(renderer.domElement)
+// Era switching controls
+const ERA_YEARS = [1945, 1965, 1985, 2005, 2025] as EraKey[]
+let currentEraIndex = 4 // Start with 2025
 
-// Orbit controls
-const controls = new OrbitControls(camera, renderer.domElement)
+// UI elements
+const eraDisplay = document.createElement('div')
+eraDisplay.style.position = 'absolute'
+eraDisplay.style.top = '20px'
+eraDisplay.style.right = '20px'
+eraDisplay.style.background = 'rgba(0,0,0,0.7)'
+eraDisplay.style.padding = '10px'
+eraDisplay.style.borderRadius = '5px'
+eraDisplay.style.color = 'white'
+eraDisplay.style.fontFamily = 'sans-serif'
+eraDisplay.style.zIndex = '100'
+eraDisplay.innerHTML = `Era: ${ERA_YEARS[currentEraIndex]}`
 
-// Ground
-const groundGeometry = new THREE.PlaneGeometry(10, 10)
-const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.6 })
-const ground = new THREE.Mesh(groundGeometry, groundMaterial)
-ground.rotation.x = -Math.PI / 2
-scene.add(ground)
+document.body.appendChild(eraDisplay)
 
-// Roads
-const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 })
-const roadWidth = 1
+// Control buttons
+const prevBtn = document.createElement('button')
+prevBtn.textContent = '← Previous'
+prevBtn.style.position = 'absolute'
+prevBtn.style.bottom = '20px'
+prevBtn.style.left = '20px'
+prevBtn.style.padding = '8px 16px'
+prevBtn.style.background = 'rgba(0,0,0,0.7)'
+prevBtn.style.color = 'white'
+prevBtn.style.border = 'none'
+prevBtn.style.borderRadius = '4px'
+prevBtn.style.zIndex = '100'
 
-// Horizontal road
-const roadH = new THREE.Mesh(new THREE.BoxGeometry(10, 0.5, roadWidth), roadMaterial)
-roadH.position.y = -0.1
-scene.add(roadH)
+const nextBtn = document.createElement('button')
+nextBtn.textContent = 'Next →'
+nextBtn.style.position = 'absolute'
+nextBtn.style.bottom = '20px'
+nextBtn.style.right = '20px'
+nextBtn.style.padding = '8px 16px'
+nextBtn.style.background = 'rgba(0,0,0,0.7)'
+nextBtn.style.color = 'white'
+nextBtn.style.border = 'none'
+nextBtn.style.borderRadius = '4px'
+nextBtn.style.zIndex = '100'
 
-// Vertical road
-const roadV = new THREE.Mesh(new THREE.BoxGeometry(roadWidth, 0.5, 10), roadMaterial)
-roadV.position.x = -0.1
-scene.add(roadV)
+document.body.appendChild(prevBtn)
+document.body.appendChild(nextBtn)
 
-// Sidewalks
-const sidewalkMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc })
-const sidewalkWidth = 1
-
-// Sidewalk segments
-const sidewalkTop = new THREE.Mesh(new THREE.BoxGeometry(10, 0.2, sidewalkWidth), sidewalkMaterial)
-scene.add(sidewalkTop)
-
-const sidewalkBottom = new THREE.Mesh(new THREE.BoxGeometry(10, 0.2, sidewalkWidth), sidewalkMaterial)
-sidewalkBottom.position.y = -2.9
-scene.add(sidewalkBottom)
-
-const sidewalkLeft = new THREE.Mesh(new THREE.BoxGeometry(sidewalkWidth, 0.2, 10), sidewalkMaterial)
-scene.add(sidewalkLeft)
-
-const sidewalkRight = new THREE.Mesh(new THREE.BoxGeometry(sidewalkWidth, 0.2, 10), sidewalkMaterial)
-sidewalkRight.position.x = -2.9
-scene.add(sidewalkRight)
-
-// Simple building
-const buildingMaterial = new THREE.MeshStandardMaterial({ color: 0x888888 })
-const building = new THREE.Mesh(
-  new THREE.BoxGeometry(2, 3, 2),
-  buildingMaterial
-)
-building.position.set(1, 1.5, 1)
-scene.add(building)
-
-// Animation loop
-function animate() {
-  requestAnimationFrame(animate)
-  controls.update()
-  renderer.render(scene, camera)
+// Era change functions
+function switchToEra(index: number): void {
+  const year = ERA_YEARS[index]
+  sceneBuilder.switchEra(year)
+  eraDisplay.innerHTML = `Era: ${year}`
+  currentEraIndex = index
 }
 
-animate()
-
-// Handle resize
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight
-  camera.updateProjectionMatrix()
-  renderer.setSize(window.innerWidth, window.innerHeight)
+prevBtn.addEventListener('click', () => {
+  currentEraIndex = (currentEraIndex - 1 + ERA_YEARS.length) % ERA_YEARS.length
+  switchToEra(currentEraIndex)
 })
+
+nextBtn.addEventListener('click', () => {
+  currentEraIndex = (currentEraIndex + 1) % ERA_YEARS.length
+  switchToEra(currentEraIndex)
+})
+
+// Keyboard shortcuts for era switching
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') {
+    currentEraIndex = (currentEraIndex - 1 + ERA_YEARS.length) % ERA_YEARS.length
+    switchToEra(currentEraIndex)
+  } else if (e.key === 'ArrowRight') {
+    currentEraIndex = (currentEraIndex + 1) % ERA_YEARS.length
+    switchToEra(currentEraIndex)
+  } else if (e.key === '1') {
+    switchToEra(0) // 1945
+  } else if (e.key === '2') {
+    switchToEra(1) // 1965
+  } else if (e.key === '3') {
+    switchToEra(2) // 1985
+  } else if (e.key === '4') {
+    switchToEra(3) // 2005
+  } else if (e.key === '5') {
+    switchToEra(4) // 2025
+  }
+})
+
+// Initialize with 2025 era
+switchToEra(4)
