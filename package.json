@@ -1,17 +1,23 @@
 {
   "name": "city-time-period-timelapse",
   "version": "1.0.0",
-  "description": "City simulation with 3D elements",
+  "description": "Build a standalone, browser-based 2D city simulation. The city runs in real time with citizens, vehicles, companies, and a live economy — viewable in any browser. The details of all entities should be in great detail.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "start": "serve"
   },
+  "keywords": [],
   "author": "",
   "license": "ISC",
+  "type": "module",
   "dependencies": {
-    "three": "^0.160.0"
+    "three": "^0.185.1"
   },
   "devDependencies": {
-    "@types/three": "^0.160.0"
+    "@types/three": "^0.185.4",
+    "serve": "^14.2.6",
+    "typescript": "^5.9.3"
   }
 }
