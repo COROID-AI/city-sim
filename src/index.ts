@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { buildEra, EraConfig } from './eraBuilder.js';
 import { TimelineSlider } from './timelineSlider.js';
+import { audioManager } from './audioManager.js';
 
 // Initialize scene, camera, renderer
 const scene = new THREE.Scene();
@@ -162,9 +163,15 @@ eraConfigs.forEach((config, index) => {
   button.style.border = 'none';
   button.style.backgroundColor = index === currentEraIndex ? 'rgba(0,150,255,0.7)' : 'rgba(0,0,0,0.5)';
   button.style.color = 'white';
-  button.addEventListener('click', () => {
-    switchEraWithTransition(index).catch(console.error);
+  button.addEventListener('click', async () => {
+    await switchEraWithTransition(index);
     updateButtonStyles(index);
+    // Initialize audio manager on first user interaction
+    if (!audioManager.isInitialized) {
+      await audioManager.initialize();
+    }
+    // Play era sound
+    await audioManager.playEraSound(index);
   });
   sliderContainer.appendChild(button);
 });
@@ -222,12 +229,12 @@ function switchEra(newEraIndex: number) {
  * @param newEraIndex Index of the era to switch to
  * @returns Promise that resolves when the transition is complete
  */
-function switchEraWithTransition(newEraIndex: number): Promise<void> {
+async function switchEraWithTransition(newEraIndex: number): Promise<void> {
   // Fade out
   transitionOverlay.style.opacity = '1';
 
   // Wait for fade out to complete (0.5s)
-  return new Promise<void>((resolve) => {
+  await new Promise<void>((resolve) => {
     setTimeout(() => {
       // Switch era while overlay is opaque
       switchEra(newEraIndex);
@@ -253,30 +260,44 @@ switchEra(0);
 // Initialize button styles
 updateButtonStyles(0);
 
+// Initialize audio manager (will be suspended until user interaction)
+await audioManager.initialize();
+// Play initial era sound
+await audioManager.playEraSound(0);
+
 // Optional: automatically cycle through eras every 5 seconds
-setInterval(() => {
+setInterval(async () => {
   const nextIndex = (currentEraIndex + 1) % eraConfigs.length;
-  switchEraWithTransition(nextIndex).catch(console.error);
+  await switchEraWithTransition(nextIndex);
   updateButtonStyles(nextIndex);
+  // Play sound for the new era
+  if (audioManager.isInitialized) {
+    await audioManager.playEraSound(nextIndex);
+  }
 }, 5000);
 
 // Create timeline slider
 const timelineSlider = new TimelineSlider({
-  onYearSelect: (year) => {
-    switchEraByYear(year).catch(console.error);
+  onYearSelect: async (year) => {
+    await switchEraByYear(year);
+    // Play sound for the new era
+    if (audioManager.isInitialized) {
+      await audioManager.playEraSound(currentEraIndex);
+    }
   },
   initialYear: 1945
 });
 
 // Helper function to switch era by year (used by timeline slider)
-function switchEraByYear(year: number): Promise<void> {
+async function switchEraByYear(year: number): Promise<void> {
   // Find the index of the year in eraConfigs
   const index = eraConfigs.findIndex(config => config.year === year);
   if (index === -1) {
     console.error(`Year ${year} not found in eraConfigs`);
-    return Promise.resolve(); // Resolve immediately to avoid breaking the chain
+    return; // Resolve immediately to avoid breaking the chain
   }
-  return switchEraWithTransition(index);
+  await switchEraWithTransition(index);
+  updateButtonStyles(index);
 }
 
 // Animation loop
