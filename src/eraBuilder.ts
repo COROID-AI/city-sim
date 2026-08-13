@@ -75,6 +75,8 @@ export function buildEra(scene: THREE.Scene, eraConfig: EraConfig): THREE.Object
     const geometry = new THREE.BoxGeometry(width, height, depth);
     const material = new THREE.MeshStandardMaterial({ color: eraConfig.buildingColor });
     const building = new THREE.Mesh(geometry, material);
+    building.castShadow = true;
+    building.receiveShadow = true;
 
     // Position the building on the ground (y = height/2)
     building.position.set(
@@ -96,6 +98,8 @@ export function buildEra(scene: THREE.Scene, eraConfig: EraConfig): THREE.Object
     const geometry = new THREE.BoxGeometry(length, width, height);
     const material = new THREE.MeshStandardMaterial({ color: eraConfig.vehicleColor });
     const vehicle = new THREE.Mesh(geometry, material);
+    vehicle.castShadow = true;
+    vehicle.receiveShadow = true;
 
     // Position the vehicle on the ground (y = height/2)
     vehicle.position.set(
@@ -124,6 +128,8 @@ export function buildEra(scene: THREE.Scene, eraConfig: EraConfig): THREE.Object
     const bodyGeometry = new THREE.CylinderGeometry(width, width, height * 0.8, 8);
     const bodyMaterial = new THREE.MeshStandardMaterial({ color: eraConfig.pedestrianColor });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.castShadow = true;
+    body.receiveShadow = true;
     body.position.y = height * 0.4; // Adjust for the body's height
     personGroup.add(body);
 
@@ -131,6 +137,8 @@ export function buildEra(scene: THREE.Scene, eraConfig: EraConfig): THREE.Object
     const headGeometry = new THREE.SphereGeometry(width * 0.6, 8, 8);
     const headMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff }); // Simple skin color
     const head = new THREE.Mesh(headGeometry, headMaterial);
+    head.castShadow = true;
+    head.receiveShadow = true;
     head.position.y = height * 0.8 + width * 0.3; // Above the body
     personGroup.add(head);
 
@@ -151,11 +159,14 @@ export function buildEra(scene: THREE.Scene, eraConfig: EraConfig): THREE.Object
     const height = randInt(2, 4);
 
     const geometry = new THREE.PlaneGeometry(width, height);
-    const material = new THREE.MeshStandardMaterial({ 
+    const material = new THREE.MeshStandardMaterial({
       color: 0xff0000, // Red for advertisement
-      side: THREE.DoubleSide 
+      side: THREE.DoubleSide
     });
     const billboard = new THREE.Mesh(geometry, material);
+    // Billboards typically don't cast shadows but can receive them
+    billboard.castShadow = false;
+    billboard.receiveShadow = true;
 
     // Position the billboard vertically (rotated 90 degrees on x-axis) and place it above ground
     billboard.rotation.x = -Math.PI / 2; // Make it face upwards? Actually, we want it vertical facing outward.
