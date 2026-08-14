@@ -1,14 +1,13 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
-import {
-  EraSceneBuilder,
-  EraKey,
-  eraConfigs,
-  getEraConfig
-} from './eraSceneBuilder'
+import { EraSceneBuilder, EraKey, eraConfigs, getEraConfig } from './eraSceneBuilder'
+import { VehicleSystem } from './vehicles/VehicleSystem'
 
 // Initialize the era-based scene builder
 const sceneBuilder = new EraSceneBuilder()
+
+// Initialize VehicleSystem with current era
+const vehicleSystem = new VehicleSystem(2025, sceneBuilder.scene)
 
 // Start the animation loop
 sceneBuilder.start()
@@ -29,7 +28,6 @@ eraDisplay.style.color = 'white'
 eraDisplay.style.fontFamily = 'sans-serif'
 eraDisplay.style.zIndex = '100'
 eraDisplay.innerHTML = `Era: ${ERA_YEARS[currentEraIndex]}`
-
 document.body.appendChild(eraDisplay)
 
 // Control buttons
@@ -64,6 +62,7 @@ document.body.appendChild(nextBtn)
 function switchToEra(index: number): void {
   const year = ERA_YEARS[index]
   sceneBuilder.switchEra(year)
+  vehicleSystem.switchEra(year)
   eraDisplay.innerHTML = `Era: ${year}`
   currentEraIndex = index
 }
