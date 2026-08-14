@@ -63,7 +63,13 @@ export class TimelineSlider {
 				max="2025"
 				step="20"
 				value="${this.currentYear}"
-			style="flex: 1; height: 20px; cursor: pointer;"
+				role="slider"
+				aria-label="City time period slider"
+				aria-valuemin="1945"
+				aria-valuemax="2025"
+				aria-valuenow="${this.currentYear}"
+				data-testid="timeline-slider"
+				style="flex: 1; height: 20px; cursor: pointer;"
 			/>
 			<div style="display: flex; gap: 10px; font-size: 12px;">
 				${this.years.map(y => String(y)).join(' ')}
@@ -105,10 +111,11 @@ export class TimelineSlider {
 			yearDisplay.textContent = String(this.currentYear);
 		}
 
-		// Also update the range input value
+		// Also update the range input value and ARIA attributes
 		const slider = this.container.querySelector('input[type="range"]') as HTMLInputElement;
 		if (slider) {
 			slider.value = String(this.currentYear);
+			slider.setAttribute('aria-valuenow', String(this.currentYear));
 		}
 	}
 
