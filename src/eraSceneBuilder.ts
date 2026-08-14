@@ -73,18 +73,58 @@ export class EraSceneBuilder {
   /**
    * Switch to a specific era, clearing previous era's objects first
    */
+  /** Transition state for era switching */
+  private transitionState = {
+    isTransitioning: false,
+    startTime: 0,
+    duration: 1000, // 1 second transition
+    endAlpha: 0.3
+  };
+
+  /** Switch to a specific era with smooth transition */
   switchEra(year: number): void {
+    // Prevent multiple simultaneous transitions
+    if (this.transitionState.isTransitioning) {
+      console.warn('Transition already in progress, skipping');
+      return;
+    }
+
     const eraConfig = getEraConfig(year);
     if (!eraConfig) {
       console.warn(`No era configuration found for year ${year}`);
       return;
     }
 
-    this._clearEraObjects();
-    this.currentEra = ` ${year}` as EraKey;
+    this.transitionState.isTransitioning = true;
+    this.transitionState.startTime = Date.now();
 
-    // Generate the new era's city block
+    // Clear previous era objects first
+    this._clearEraObjects();
+
+    // Generate the new era's city block immediately
     this._buildEraCityBlock(eraConfig);
+
+    // Fade in the new era over the transition duration
+    const start = performance.now();
+    const animateTransition = () => {
+      const elapsed = performance.now() - start;
+      const t = Math.min(elapsed / this.transitionState.duration, 1);
+
+      // Apply fade alpha to all era objects
+      this.eraObjects.forEach((obj) => {
+        if ('opacity' in obj.material) {
+          ;(obj.material as THREE.Material).opacity = 1 - t;
+        }
+      });
+
+      if (t < 1) {
+        requestAnimationFrame(animateTransition);
+      } else {
+        this.transitionState.isTransitioning = false;
+      }
+    };
+
+    requestAnimationFrame(animateTransition);
 
     console.log(`Switched to era: ${eraConfig.year}`);
   }
@@ -120,19 +160,20 @@ export class EraSceneBuilder {
    * Build buildings as extruded shapes with era-appropriate styles
    */
   private _buildBuildings(config: EraConfig): void {
-    const gridSize = 10;
-    const buildingWidth = 4;
-    const buildingDepth = 4;
+    const gridSize = 8;
+    const buildingWidth = 5;
+    const buildingDepth = 5;
 
+    // Create a proper city block - buildings along the perimeter with a central plaza
     for (let row = 0; row < gridSize; row++) {
       for (let col = 0; col < gridSize; col++) {
-        // Stagger buildings with some gaps
-        if (Math.random() > 0.3) {
-          const height = 2 + Math.random() * config.buildingHeightFactor;
+        // Create corner buildings (larger, more prominent)
+        if (row === 0 || row === gridSize - 1 || col === 0 || col === gridSize - 1) {
+          const height = 4 + config.buildingHeightFactor * (row < 3 ? 0.5 : 1);
 
           // Create building material with era-appropriate colors
           const material = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(config.buildingColors.primary),
+            color: this._getEraBuildingColor(config, row, col),
             roughness: 0.7,
           });
 
@@ -141,21 +182,80 @@ export class EraSceneBuilder {
             material
           );
 
-          // Position with some variation
-          building.position.set(
-            col * (buildingWidth + 1) - 20,
-            height / 2,
-            row * (buildingDepth + 1) - 20
-          );
+          // Position buildings around the perimeter
+          const offset = 2;
+          if (row === 0) {
+            // Top row
+            building.position.set(
+              -20 + col * (buildingWidth + offset),
+              height / 2,
+              -20
+            );
+          } else if (row === gridSize - 1) {
+            // Bottom row
+            building.position.set(
+              -20 + col * (buildingWidth + offset),
+              height / 2,
+              20 - buildingDepth
+            );
+          } else if (col === 0) {
+            // Left column
+            building.position.set(
+              -20,
+              height / 2,
+              -20 + row * (buildingDepth + offset)
+            );
+          } else if (col === gridSize - 1) {
+            // Right column
+            building.position.set(
+              20 - buildingWidth,
+              height / 2,
+              -20 + row * (buildingDepth + offset)
+            );
+          }
 
-          // Add slight random rotation
-          building.rotation.y = Math.random() * 0.3;
+          // Add slight rotation variation
+          building.rotation.y = Math.random() * 0.2;
 
           this.scene.add(building);
           this.eraObjects.push(building);
         }
+        // Add a central plaza (open space)
+        else if (row >= 3 && row <= 4 && col >= 3 && col <= 4) {
+          // Central plaza - just leave empty space
+        }
       }
     }
+    // Add a central monument/tower for visual interest
+    this._addCentralMonument(config);
+  }
+
+  /** Get era-appropriate building color based on config and position */
+  private _getEraBuildingColor(config: EraConfig, row: number, col: number): THREE.Color {
+    const baseColors: {[key: string]: THREE.Color} = {
+      '1945': new THREE.Color('#8B4513'),      // Art Deco/Traditional - brown brick
+      '1965': new THREE.Color('#FF4500'),      // Mid-Century Modern - orange concrete
+      '1985': new THREE.Color('#DA70D6'),      // Post-Modern - purple glass
+      '2005': new THREE.Color('#1E90FF'),      // Contemporary - blue glass
+      '2025': new THREE.Color('#32CD32'),      // Sustainable/High-Tech - green concrete
+    };
+    return baseColors[config.year] || new THREE.Color('#808080');
+  }
+
+  /** Add a central monument/tower for visual interest */
+  private _addCentralMonument(config: EraConfig): void {
+    const monumentHeight = 8 + config.buildingHeightFactor * 2;
+    const monumentMaterial = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(config.buildingColors.primary),
+      roughness: 0.5,
+    });
+
+    // Create a pyramid/obelisk style monument based on era
+    const geometry = new THREE.BoxGeometry(4, monumentHeight, 4);
+    const monument = new THREE.Mesh(geometry, monumentMaterial);
+    monument.position.set(0, monumentHeight / 2, 0);
+    this.scene.add(monument);
+    this.eraObjects.push(monument);
   }
 
   /**
