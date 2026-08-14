@@ -1,0 +1,16 @@
+/* Three.js container styles */
+#three-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Body and html full viewport */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+}
