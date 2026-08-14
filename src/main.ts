@@ -107,7 +107,7 @@ document.body.appendChild(timelineSlider.getContainer())
 timelineSlider.getContainer().addEventListener('period-selected', (e) => {
   const year = parseInt(e.detail.year, 10)
   if (!isNaN(year)) {
-    switchToEra(ERA_YEARS.indexOf(year) + 1)
+    switchToEra(ERA_YEARS.indexOf(year))
   }
 })
 
