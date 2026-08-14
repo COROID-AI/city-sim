@@ -39,6 +39,11 @@ export class TimelineSlider {
 		this.container.style.alignItems = 'center';
 		this.container.style.gap = '10px';
 
+		// Add accessible name and test identifier for browser probe
+		this.container.setAttribute('role', 'timeline');
+		this.container.setAttribute('aria-label', 'City timelapse period selector');
+		this.container.setAttribute('data-testid', 'timeline-slider');
+
 		// If no container was provided, append to body
 		if (!container) {
 			document.body.appendChild(this.container);
