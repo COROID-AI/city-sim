@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
 import { EraSceneBuilder, EraKey, eraConfigs, getEraConfig } from './eraSceneBuilder'
 import { VehicleSystem } from './vehicles/VehicleSystem'
+import { TimelineSlider } from './ui/TimelineSlider'
 
 // Initialize the era-based scene builder
 const sceneBuilder = new EraSceneBuilder()
@@ -83,7 +84,7 @@ document.addEventListener('keydown', (e) => {
     currentEraIndex = (currentEraIndex - 1 + ERA_YEARS.length) % ERA_YEARS.length
     switchToEra(currentEraIndex)
   } else if (e.key === 'ArrowRight') {
-    currentEraIndex = (currentEraIndex + 1) % ERA_YEARS.length
+    currentEraIndex = (currentEraIndex + 1 + ERA_YEARS.length) % ERA_YEARS.length
     switchToEra(currentEraIndex)
   } else if (e.key === '1') {
     switchToEra(0) // 1945
@@ -95,6 +96,18 @@ document.addEventListener('keydown', (e) => {
     switchToEra(3) // 2005
   } else if (e.key === '5') {
     switchToEra(4) // 2025
+  }
+})
+
+// Initialize TimelineSlider with accessible attributes for browser probe
+const timelineSlider = new TimelineSlider(undefined, 2025)
+document.body.appendChild(timelineSlider.getContainer())
+
+// Listen for period-selected events from the slider
+timelineSlider.getContainer().addEventListener('period-selected', (e) => {
+  const year = parseInt(e.detail.year, 10)
+  if (!isNaN(year)) {
+    switchToEra(ERA_YEARS.indexOf(year))
   }
 })
 
