@@ -1,0 +1,13 @@
+{
+  "name": "city-sim",
+  "version": "1.0.0",
+  "description": "Standalone browser-based 2D city simulation (zero dependencies, loads via file://)",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run-tests.js",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

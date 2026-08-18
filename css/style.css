@@ -1,0 +1,142 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0e12;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  color: #e8e8f0;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  display: block;
+  cursor: default;
+}
+
+.hud {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  background: rgba(10, 14, 20, 0.72);
+  backdrop-filter: blur(4px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.hud-stats {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.stat {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.hud-speed {
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.hud-speed button {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cfd6e4;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hud-speed button:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.hud-speed button.active {
+  background: #3f6fd8;
+  color: #ffffff;
+  border-color: #6f9bff;
+}
+
+#minimap {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  width: 220px;
+  height: 220px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: #10141c;
+  z-index: 10;
+  cursor: crosshair;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+}
+
+.inspector {
+  position: fixed;
+  right: 14px;
+  top: 64px;
+  width: 260px;
+  max-height: calc(100% - 320px);
+  overflow-y: auto;
+  background: rgba(12, 16, 24, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 12px 14px;
+  z-index: 10;
+  display: none;
+}
+
+.inspector.open {
+  display: block;
+}
+
+.inspector h3 {
+  font-size: 14px;
+  margin-bottom: 8px;
+  color: #9fb4e8;
+}
+
+.inspector-body {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.inspector-body .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 3px 0;
+}
+
+.inspector-body .row b {
+  color: #ffffff;
+  font-weight: 600;
+  text-align: right;
+}
+
+.inspector-body .kv {
+  color: #aab4c8;
+}
+
+.inspector-body .hint {
+  color: #8b93a7;
+}

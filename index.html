@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CitySim</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="hud" class="hud">
+    <div class="hud-stats">
+      <span class="stat">👥 <span data-testid="hud-population">0</span></span>
+      <span class="stat">💼 <span data-testid="hud-employment">0%</span></span>
+      <span class="stat">🕐 <span data-testid="hud-time">Day 1 · Monday · 07:00</span></span>
+      <span class="stat">💰 <span data-testid="hud-budget">$0</span></span>
+    </div>
+    <div class="hud-speed">
+      <button data-speed="0" data-testid="hud-speed-0" title="Pause">⏸</button>
+      <button data-speed="1" data-testid="hud-speed-1" title="1x">1x</button>
+      <button data-speed="2" data-testid="hud-speed-2" title="2x">2x</button>
+      <button data-speed="3" data-testid="hud-speed-3" title="4x">4x</button>
+    </div>
+  </div>
+
+  <canvas id="game"></canvas>
+  <canvas id="minimap"></canvas>
+
+  <aside id="inspector" class="inspector">
+    <h3>Inspector</h3>
+    <div data-testid="inspector-body" class="inspector-body">
+      <p class="hint">Click a citizen, vehicle, or building for details.</p>
+    </div>
+  </aside>
+
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/city.js"></script>
+  <script src="js/pathfinding.js"></script>
+  <script src="js/buildings.js"></script>
+  <script src="js/companies.js"></script>
+  <script src="js/citizens.js"></script>
+  <script src="js/vehicles.js"></script>
+  <script src="js/economy.js"></script>
+  <script src="js/sim.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/minimap.js"></script>
+  <script src="js/hud.js"></script>
+  <script src="js/inspector.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
