@@ -1,0 +1,9 @@
+{
+  "name": "browser-tetris",
+  "version": "1.0.0",
+  "description": "A standalone browser-based Tetris game with pure core logic and unit tests",
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT"
+}

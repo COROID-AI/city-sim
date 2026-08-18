@@ -1,0 +1,143 @@
+/* Tetris — dark, centered layout. System font stack only (no external fonts). */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #10131c;
+  color: #e8ecf4;
+  font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.game-wrap {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  padding: 24px;
+}
+
+.board-shell {
+  position: relative;
+  border: 3px solid #2a3142;
+  border-radius: 8px;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  background: #0a0d14;
+}
+
+#board {
+  display: block;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  background: rgba(8, 10, 16, 0.86);
+  padding: 20px;
+}
+
+.overlay h1 {
+  font-size: 44px;
+  letter-spacing: 6px;
+  color: #f9c440;
+}
+
+.overlay h2 {
+  font-size: 34px;
+  letter-spacing: 4px;
+  color: #f87171;
+}
+
+.overlay p {
+  font-size: 16px;
+  color: #b6c0d4;
+}
+
+.overlay p#final-score {
+  font-size: 22px;
+  color: #e8ecf4;
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 150px;
+}
+
+.stat {
+  background: #171c29;
+  border: 1px solid #2a3142;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat .label {
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #7d8aa5;
+}
+
+.stat .value {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #e8ecf4;
+}
+
+.next {
+  background: #171c29;
+  border: 1px solid #2a3142;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.next .label {
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #7d8aa5;
+}
+
+#next {
+  display: block;
+  align-self: center;
+}
+
+.hint {
+  font-size: 13px;
+  color: #7d8aa5;
+  text-align: center;
+  line-height: 1.7;
+}
