@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>City Sim</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #14141f; }
+  #main-canvas { position: fixed; inset: 0; display: block; }
+  #hud-bar {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 44px; background: rgba(10, 12, 20, 0.88);
+    color: #e8e8f0; font: 600 14px/44px system-ui, sans-serif;
+    padding: 0 16px; border-bottom: 1px solid #2a2f3a; z-index: 10;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    white-space: nowrap; overflow: hidden;
+  }
+  #minimap-canvas {
+    position: fixed; right: 16px; bottom: 16px; width: 220px; height: 220px;
+    border: 1px solid #3a3f4d; background: #101018; z-index: 10;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  }
+  #inspector-panel {
+    position: fixed; right: 16px; top: 60px; width: 280px;
+    background: rgba(10, 12, 20, 0.92); color: #d8dce4;
+    border: 1px solid #2a2f3a; border-radius: 8px; padding: 12px;
+    font: 13px system-ui, sans-serif; z-index: 10;
+    display: none;
+  }
+  #debug-stats {
+    position: fixed; left: 16px; bottom: 16px;
+    background: rgba(10, 12, 20, 0.85); color: #9fe0a7;
+    border: 1px solid #2a2f3a; border-radius: 6px; padding: 10px 12px;
+    font: 12px/1.5 ui-monospace, monospace; z-index: 10;
+    white-space: pre-line;
+  }
+</style>
+</head>
+<body>
+  <canvas id="main-canvas"></canvas>
+  <div id="hud-bar"></div>
+  <canvas id="minimap-canvas"></canvas>
+  <div id="inspector-panel"></div>
+  <div id="debug-stats"></div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
