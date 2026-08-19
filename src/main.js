@@ -22,6 +22,7 @@ import {
   drawCitizens,
   registerDrawDynamic,
 } from './citizens/update.js';
+import { createEconomy, tickEconomy } from './economy/index.js';
 
 // --- World boot -------------------------------------------------------------
 const world = generateCity(CONFIG.SEED, CONFIG);
@@ -43,23 +44,10 @@ const camera = { x: 0, y: 0, zoom: 1 };
 const clock = new SimClock(CONFIG);
 clock.start(performance.now());
 
-const economy = {
-  budget: CONFIG.STARTING_BUDGET,
-  lastHour: -1,
-  tick(c) {
-    if (c.simHour !== this.lastHour) {
-      this.lastHour = c.simHour;
-      // Placeholder hourly drift; real economy arrives with later modules.
-      this.budget += Math.round(50 + Math.sin(c.simHour) * 10);
-      console.log(
-        `[economy] day ${c.simDay} hour ${String(c.simHour).padStart(2, '0')} budget $${this.budget.toLocaleString()}`,
-      );
-    }
-  },
-};
+const economy = createEconomy(city, CONFIG);
 clock.subscribe((c) => {
   advanceSchedules(city, c);
-  economy.tick(c);
+  tickEconomy(city, economy, c);
 });
 
 // --- Canvas sizing -----------------------------------------------------------
