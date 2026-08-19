@@ -22,10 +22,13 @@ import {
   drawCitizens,
   registerDrawDynamic,
 } from './citizens/update.js';
+import { createFleet } from './vehicles/fleet.js';
+import { updateVehicles } from './vehicles/update.js';
 
 // --- World boot -------------------------------------------------------------
 const world = generateCity(CONFIG.SEED, CONFIG);
 const { city, citizens } = populateCitizens(world, CONFIG);
+city.vehicles = createFleet(city, CONFIG);
 registerDrawDynamic(drawCitizens);
 
 // --- DOM handles ------------------------------------------------------------
@@ -234,6 +237,7 @@ function loop(now) {
   last = now;
   clock.tick(now);
   updateCitizens(city, clock, dt);
+  updateVehicles(city, clock, dt);
   pan(dt);
   render();
   requestAnimationFrame(loop);
