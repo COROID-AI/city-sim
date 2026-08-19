@@ -5,8 +5,15 @@
  *   1. Generate the deterministic world (grid + roads + buildings).
  *   2. Create the fixed-timestep SimClock and subscribe the economy so it
  *      updates every sim-hour.
- *   3. Start the requestAnimationFrame render loop, drawing a debug
- *      placeholder scene: city grid, road network, and building footprints.
+ *   3. Build the render pipeline: a pan/zoom Camera, a pre-rendered
+ *      CityRenderer (static day layer + night glow layer), and a FrameRenderer
+ *      that applies the camera transform, draws the city, and tints the scene
+ *      by daylight.
+ *   4. Start the requestAnimationFrame loop.
+ *
+ * Dynamic entity sprites (citizens/vehicles) are drawn through the pluggable
+ * drawDynamic hook below; Phase 2 tasks fill that in without touching the
+ * render pipeline.
  *
  * Runs directly from a file:// double-click: no bundler, no server, no CDN.
  */
@@ -16,17 +23,15 @@ import { SimClock } from './core/clock.js';
 import { generateCity } from './world/generate.js';
 import { populateCitizens } from './citizens/populate.js';
 import { advanceSchedules } from './citizens/schedule.js';
-import {
-  updateCitizens,
-  drawDynamic,
-  drawCitizens,
-  registerDrawDynamic,
-} from './citizens/update.js';
+import { updateCitizens, drawCitizens } from './citizens/update.js';
+import { Camera } from './render/camera.js';
+import { CityRenderer } from './render/cityRenderer.js';
+import { FrameRenderer } from './render/frame.js';
 
 // --- World boot -------------------------------------------------------------
 const world = generateCity(CONFIG.SEED, CONFIG);
 const { city, citizens } = populateCitizens(world, CONFIG);
-registerDrawDynamic(drawCitizens);
+const worldPx = world.gridSize * world.tileSize;
 
 // --- DOM handles ------------------------------------------------------------
 const canvas = document.getElementById('main-canvas');
@@ -36,10 +41,17 @@ const mctx = minimapCanvas.getContext('2d');
 const hudBar = document.getElementById('hud-bar');
 const debugStats = document.getElementById('debug-stats');
 
-// --- Camera ---------------------------------------------------------------
-const camera = { x: 0, y: 0, zoom: 1 };
+// --- Camera (pan WASD/drag, zoom wheel) --------------------------------------
+const camera = new Camera({
+  x: worldPx / 2,
+  y: worldPx / 2,
+  zoom: 1,
+  minZoom: 0.25,
+  maxZoom: 4,
+});
+camera.bindInput();
 
-// --- Sim clock + economy (updates every sim-hour via the clock) ------------
+// --- Sim clock + economy (updates every sim-hour via the clock) --------------
 const clock = new SimClock(CONFIG);
 clock.start(performance.now());
 
@@ -62,6 +74,35 @@ clock.subscribe((c) => {
   economy.tick(c);
 });
 
+// --- Render pipeline ---------------------------------------------------------
+const cityRenderer = new CityRenderer(world, CONFIG);
+cityRenderer.prerender();
+
+const frame = new FrameRenderer({
+  camera,
+  world,
+  staticLayer: cityRenderer.getStaticLayer(),
+  nightLayer: cityRenderer.getNightLayer(),
+  config: CONFIG,
+});
+
+/**
+ * Pluggable entity sprite hook.
+ *
+ * Invoked every frame inside the camera transform so sprites live in world
+ * space. Draws the city's citizens (and, at night, vehicle headlights via the
+ * exposed rendering API from later Phase 2 tasks).
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {Camera} camera
+ * @param {object} world
+ * @param {{simHour:number,simDay:number,dayPhase:number}} simTime
+ */
+function drawDynamic(ctx, camera, world, simTime) {
+  drawCitizens(ctx, city, camera);
+}
+frame.setDynamicDraw(drawDynamic);
+
 // --- Canvas sizing -----------------------------------------------------------
 function dpr() {
   return window.devicePixelRatio || 1;
@@ -77,7 +118,7 @@ function resizeCanvases() {
   mctx.setTransform(scale, 0, 0, scale, 0, 0);
 }
 
-// --- Rendering ---------------------------------------------------------------
+// --- Minimap / HUD -----------------------------------------------------------
 function zoneColor(zone) {
   switch (zone) {
     case 'residential': return '#4a7fb5';
@@ -85,44 +126,6 @@ function zoneColor(zone) {
     case 'entertainment': return '#a54ab5';
     case 'service': return '#4ab57f';
     default: return '#888888';
-  }
-}
-
-function drawWorld() {
-  const ts = world.tileSize;
-  const size = world.gridSize * ts;
-
-  // City grid.
-  ctx.strokeStyle = 'rgba(200,200,220,0.08)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= world.gridSize; i++) {
-    ctx.beginPath();
-    ctx.moveTo(i * ts, 0);
-    ctx.lineTo(i * ts, size);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0, i * ts);
-    ctx.lineTo(size, i * ts);
-    ctx.stroke();
-  }
-
-  // Road network.
-  ctx.fillStyle = '#3a3f4d';
-  for (const r of world.roads) {
-    ctx.fillRect(r.x * ts, r.y * ts, ts, ts);
-  }
-
-  // Building footprints + doors.
-  for (const b of world.buildings) {
-    ctx.fillStyle = zoneColor(b.zone);
-    ctx.fillRect(
-      b.footprint.x * ts,
-      b.footprint.y * ts,
-      b.footprint.w * ts,
-      b.footprint.h * ts,
-    );
-    ctx.fillStyle = '#ffd54f';
-    ctx.fillRect(b.door.x * ts + ts * 0.3, b.door.y * ts + ts * 0.3, ts * 0.4, ts * 0.4);
   }
 }
 
@@ -135,7 +138,6 @@ function drawMinimap() {
   mctx.fillRect(0, 0, mw, mh);
 
   const ts = world.tileSize;
-  const worldPx = world.gridSize * ts;
   const mmScale = mw / worldPx;
 
   for (const b of world.buildings) {
@@ -148,7 +150,7 @@ function drawMinimap() {
     );
   }
 
-  // Viewport rectangle.
+  // Viewport rectangle (camera state drives the minimap).
   const vw = (canvas.width / scale) / camera.zoom;
   const vh = (canvas.height / scale) / camera.zoom;
   const vx = camera.x - vw / 2;
@@ -181,60 +183,29 @@ function updateHud() {
   debugStats.innerHTML =
     `buildings: ${world.buildings.length}<br>${lines}` +
     `<br>grid: ${world.gridSize}&times;${world.gridSize}` +
-    `<br>zoom: ${camera.zoom.toFixed(2)}`;
+    `<br>zoom: ${camera.zoom.toFixed(2)}` +
+    `<br>hour: ${hour}:00`;
 }
+
+// --- Main loop ---------------------------------------------------------------
+let last = performance.now();
 
 function render() {
   const scale = dpr();
   const w = canvas.width / scale;
   const h = canvas.height / scale;
-
-  ctx.fillStyle = '#14141f';
-  ctx.fillRect(0, 0, w, h);
-
-  ctx.save();
-  ctx.translate(w / 2, h / 2);
-  ctx.scale(camera.zoom, camera.zoom);
-  ctx.translate(-camera.x, -camera.y);
-  drawWorld();
-  drawDynamic(ctx, city, camera);
-  ctx.restore();
-
+  frame.render(ctx, w, h, clock.simTime);
   drawMinimap();
   updateHud();
 }
-
-// --- Input (pan/zoom so the large world is explorable) ----------------------
-const keys = {};
-window.addEventListener('keydown', (e) => {
-  keys[e.key] = true;
-});
-window.addEventListener('keyup', (e) => {
-  keys[e.key] = false;
-});
-window.addEventListener('wheel', (e) => {
-  camera.zoom *= e.deltaY < 0 ? 0.9 : 1.1;
-  camera.zoom = Math.min(4, Math.max(0.25, camera.zoom));
-});
-
-function pan(dt) {
-  const speed = 500 / camera.zoom;
-  const half = speed * dt;
-  if (keys['a'] || keys['ArrowLeft']) camera.x -= half;
-  if (keys['d'] || keys['ArrowRight']) camera.x += half;
-  if (keys['w'] || keys['ArrowUp']) camera.y -= half;
-  if (keys['s'] || keys['ArrowDown']) camera.y += half;
-}
-
-// --- Main loop ---------------------------------------------------------------
-let last = performance.now();
 
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   clock.tick(now);
   updateCitizens(city, clock, dt);
-  pan(dt);
+  camera.update(dt);
+  camera.clampToBounds(worldPx, worldPx);
   render();
   requestAnimationFrame(loop);
 }
