@@ -14,9 +14,19 @@
 import { CONFIG } from './core/config.js';
 import { SimClock } from './core/clock.js';
 import { generateCity } from './world/generate.js';
+import { populateCitizens } from './citizens/populate.js';
+import { advanceSchedules } from './citizens/schedule.js';
+import {
+  updateCitizens,
+  drawDynamic,
+  drawCitizens,
+  registerDrawDynamic,
+} from './citizens/update.js';
 
 // --- World boot -------------------------------------------------------------
 const world = generateCity(CONFIG.SEED, CONFIG);
+const { city, citizens } = populateCitizens(world, CONFIG);
+registerDrawDynamic(drawCitizens);
 
 // --- DOM handles ------------------------------------------------------------
 const canvas = document.getElementById('main-canvas');
@@ -47,7 +57,10 @@ const economy = {
     }
   },
 };
-clock.subscribe((c) => economy.tick(c));
+clock.subscribe((c) => {
+  advanceSchedules(city, c);
+  economy.tick(c);
+});
 
 // --- Canvas sizing -----------------------------------------------------------
 function dpr() {
@@ -157,9 +170,9 @@ function updateHud() {
   const hour = String(clock.simHour).padStart(2, '0');
   hudBar.innerHTML =
     `City: Day ${clock.simDay} &middot; ${hour}:00` +
-    ` &nbsp;|&nbsp; Population: 0` +
-    ` &nbsp;|&nbsp; Employment: 0%` +
-    ` &nbsp;|&nbsp; Budget: $${economy.budget.toLocaleString()}`;
+    ` &nbsp;|&nbsp; Population: ${city.economy.population}` +
+    ` &nbsp;|&nbsp; Employment: ${Math.round(city.economy.employmentRate * 100)}%` +
+    ` &nbsp;|&nbsp; Budget: ${economy.budget.toLocaleString()}`;
 
   const counts = zoneCounts();
   const lines = Object.entries(counts)
@@ -184,6 +197,7 @@ function render() {
   ctx.scale(camera.zoom, camera.zoom);
   ctx.translate(-camera.x, -camera.y);
   drawWorld();
+  drawDynamic(ctx, city, camera);
   ctx.restore();
 
   drawMinimap();
@@ -219,6 +233,7 @@ function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   clock.tick(now);
+  updateCitizens(city, clock, dt);
   pan(dt);
   render();
   requestAnimationFrame(loop);
