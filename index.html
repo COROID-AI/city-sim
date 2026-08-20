@@ -21,18 +21,33 @@
     border: 1px solid #3a3f4d; background: #101018; z-index: 10;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
   }
+  #inspector-toolbar {
+    position: fixed; top: 52px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px; z-index: 15;
+    background: rgba(10, 12, 20, 0.78);
+    border: 1px solid #2a2f3a; border-radius: 8px; padding: 6px 10px;
+    font: 600 13px/1 system-ui, sans-serif;
+  }
+  #inspector-toolbar .insp-label { color: #8b93a7; letter-spacing: 0.04em; }
+  #inspector-toolbar button {
+    border: 1px solid #39404f; background: #1b2130; color: #e8ecf5;
+    border-radius: 6px; padding: 7px 12px; cursor: pointer;
+    font: 600 13px/1 system-ui, sans-serif;
+  }
+  #inspector-toolbar button:hover { background: #263147; border-color: #55627a; }
   #inspector-panel {
-    position: fixed; right: 16px; top: 60px; width: 280px;
+    position: fixed; left: 16px; bottom: 16px; right: auto; top: auto;
+    width: 320px; max-height: calc(100vh - 88px); overflow-y: auto;
     background: rgba(10, 12, 20, 0.92); color: #d8dce4;
-    border: 1px solid #2a2f3a; border-radius: 8px; padding: 12px;
+    border: 1px solid #2a2f3a; border-radius: 8px; padding: 0;
     font: 13px system-ui, sans-serif; z-index: 10;
     display: none;
   }
   #debug-stats {
-    position: fixed; left: 16px; bottom: 16px;
+    position: fixed; left: 16px; top: 52px;
     background: rgba(10, 12, 20, 0.85); color: #9fe0a7;
     border: 1px solid #2a2f3a; border-radius: 6px; padding: 10px 12px;
-    font: 12px/1.5 ui-monospace, monospace; z-index: 10;
+    font: 12px/1.5 ui-monospace, monospace; z-index: 5;
     white-space: pre-line;
   }
 </style>
@@ -40,8 +55,15 @@
 <body>
   <canvas id="main-canvas"></canvas>
   <div id="hud-bar"></div>
+  <div id="inspector-toolbar" role="toolbar" aria-label="Inspect city">
+    <span class="insp-label">Inspect:</span>
+    <button type="button" data-inspect-kind="citizen" data-testid="inspect-citizen">Citizen</button>
+    <button type="button" data-inspect-kind="building" data-testid="inspect-building">Building</button>
+    <button type="button" data-inspect-kind="company" data-testid="inspect-company">Company</button>
+    <button type="button" data-inspect-kind="vehicle" data-testid="inspect-vehicle">Vehicle</button>
+  </div>
   <canvas id="minimap-canvas"></canvas>
-  <div id="inspector-panel"></div>
+  <div id="inspector-panel" role="region" aria-label="Entity inspector" data-testid="inspector-panel"></div>
   <div id="debug-stats"></div>
   <script type="module" src="src/main.js"></script>
 </body>

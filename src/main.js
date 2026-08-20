@@ -127,7 +127,8 @@ frame.setVehiclesDraw(drawVehicleLayer);
 
 // --- Minimap + inspector ------------------------------------------------------
 initMinimap(minimapCanvas, world, camera);
-initInspector(city, camera, getVehicles);
+const inspector = initInspector(city, camera, getVehicles);
+window.__inspector = inspector;
 
 // --- Canvas sizing -----------------------------------------------------------
 function dpr() {
@@ -142,6 +143,11 @@ function resizeCanvases() {
   minimapCanvas.width = Math.floor(220 * scale);
   minimapCanvas.height = Math.floor(220 * scale);
   mctx.setTransform(scale, 0, 0, scale, 0, 0);
+  // Keep the camera viewport in sync with the real window so the minimap
+  // viewport rectangle always matches the region the browser actually shows.
+  camera.viewportWidth = window.innerWidth;
+  camera.viewportHeight = window.innerHeight;
+  camera.clampToBounds(worldPx, worldPx);
 }
 
 // --- HUD ---------------------------------------------------------------------

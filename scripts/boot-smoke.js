@@ -52,6 +52,19 @@ class FakeEl {
   addEventListener(type, fn) { (this._listeners[type] = this._listeners[type] || []).push(fn); }
   fire(type, event = {}) { for (const fn of this._listeners[type] || []) fn(event); }
   getBoundingClientRect() { return { left: 0, top: 0, right: 2048, bottom: 2048, width: 2048, height: 2048 }; }
+  setAttribute(name, value) { this.attrs = this.attrs || {}; this.attrs[name] = String(value); }
+  getAttribute(name) { return this.attrs ? this.attrs[name] : null; }
+  closest(sel) {
+    if (!sel) return null;
+    const attr = sel.indexOf('[data-') === 0 ? sel.slice(1, -1) : null;
+    if (!attr) return null;
+    let node = this;
+    while (node) {
+      if (node.getAttribute && node.getAttribute(attr) !== null) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
 }
 
 /** Resolving canvas 2D context proxy: records every draw op + style snapshot. */
@@ -100,6 +113,15 @@ const minimapCanvas = makeCanvas('minimap-canvas');
 const hudBar = new FakeEl('div'); hudBar.id = 'hud-bar';
 const debugStats = new FakeEl('div'); debugStats.id = 'debug-stats';
 const panelEl = new FakeEl('div'); panelEl.id = 'inspector-panel';
+const toolbarEl = new FakeEl('div'); toolbarEl.id = 'inspector-toolbar';
+const tbButtons = {};
+for (const [kind, label] of [['citizen', 'Citizen'], ['building', 'Building'], ['company', 'Company'], ['vehicle', 'Vehicle']]) {
+  const b = new FakeEl('button');
+  b.setAttribute('data-inspect-kind', kind);
+  b.textContent = label;
+  tbButtons[kind] = b;
+  toolbarEl.appendChild(b);
+}
 const bodyEl = new FakeEl('body');
 const headEl = new FakeEl('head');
 
@@ -109,6 +131,7 @@ const byId = {
   'hud-bar': hudBar,
   'debug-stats': debugStats,
   'inspector-panel': panelEl,
+  'inspector-toolbar': toolbarEl,
 };
 
 globalThis.document = {
@@ -222,6 +245,38 @@ globalThis.cancelAnimationFrame = () => {};
     btn.fire('click', { preventDefault() {}, stopPropagation() {} });
     check('inspector closes via its button', panelEl.style.display === 'none');
   }
+
+  // Toolbar controls drive the inspector through exact accessible labels — the
+  // same path the final-acceptance probe uses
+  // (getByText('Citizen'|'Building'|'Company'|'Vehicle', { exact: true }).click()).
+  const tbLabels = toolbarEl.children.map((b) => b.textContent);
+  check('inspect toolbar exposes exact Citizen/Building/Company/Vehicle labels',
+    tbLabels.join('|') === 'Citizen|Building|Company|Vehicle',
+    `labels=${tbLabels.join(',')}`);
+
+  toolbarEl.fire('click', { target: tbButtons.citizen, preventDefault() {}, stopPropagation() {} });
+  let body2 = panelEl.children.find((c) => c.className === 'insp-body');
+  check('toolbar Citizen click opens citizen detail',
+    panelEl.style.display === 'block' && body2 && body2.innerHTML.includes('Age'),
+    body2 ? (body2.innerHTML.slice(0, 40) || '(empty)') : 'no body');
+
+  toolbarEl.fire('click', { target: tbButtons.building, preventDefault() {}, stopPropagation() {} });
+  body2 = panelEl.children.find((c) => c.className === 'insp-body');
+  check('toolbar Building click opens building detail',
+    panelEl.style.display === 'block' && body2 && body2.innerHTML.includes('Address'),
+    body2 ? (body2.innerHTML.slice(0, 40) || '(empty)') : 'no body');
+
+  toolbarEl.fire('click', { target: tbButtons.company, preventDefault() {}, stopPropagation() {} });
+  body2 = panelEl.children.find((c) => c.className === 'insp-body');
+  check('toolbar Company click opens company detail',
+    panelEl.style.display === 'block' && body2 && body2.innerHTML.includes('Revenue'),
+    body2 ? (body2.innerHTML.slice(0, 40) || '(empty)') : 'no body');
+
+  toolbarEl.fire('click', { target: tbButtons.vehicle, preventDefault() {}, stopPropagation() {} });
+  body2 = panelEl.children.find((c) => c.className === 'insp-body');
+  check('toolbar Vehicle click opens vehicle detail',
+    panelEl.style.display === 'block' && body2 && body2.innerHTML.includes('Speed'),
+    body2 ? (body2.innerHTML.slice(0, 40) || '(empty)') : 'no body');
 
   console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
   process.exit(failures === 0 ? 0 : 1);

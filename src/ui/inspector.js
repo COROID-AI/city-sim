@@ -21,6 +21,13 @@
  * Usage (from main.js or an integration harness):
  *   import { initInspector } from './ui/inspector.js';
  *   initInspector(city, camera, () => city.vehicles);
+ *
+ * The panel is the bottom-left inspector (the minimap owns the bottom-right).
+ * A small top-center toolbar (Citizen / Building / Company / Vehicle buttons)
+ * drives the inspector through the same picking path a canvas click uses, so
+ * the detail panel is reachable by real, accessible controls — not only by
+ * clicking exact pixels on the canvas. Each toolbar button carries an exact
+ * accessible text label plus data-testid attributes for stable automation.
  */
 
 // --- Tuning ------------------------------------------------------------------
@@ -116,9 +123,11 @@ function buildPanelDom() {
   // Inline layout so the panel works even if the page has no matching CSS.
   Object.assign(panel.style, {
     position: 'fixed',
-    right: '16px',
-    top: '56px',
-    width: '288px',
+    left: '16px',
+    bottom: '16px',
+    right: 'auto',
+    top: 'auto',
+    width: '320px',
     maxHeight: 'calc(100vh - 76px)',
     overflowY: 'auto',
     background: 'rgba(13, 16, 26, 0.96)',
@@ -232,6 +241,7 @@ export function initInspector(world, camera, getVehicles) {
     title: null,
     kind: null,
     pick: null,
+    toolbar: null,
     open: false,
     rafId: null,
     dragStart: null,
@@ -240,6 +250,7 @@ export function initInspector(world, camera, getVehicles) {
   if (typeof document !== 'undefined' && world) {
     state.panel = getPanel();
     buildPanelDom();
+    attachToolbar();
     attachCanvasClick(camera);
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', (e) => {
@@ -252,8 +263,74 @@ export function initInspector(world, camera, getVehicles) {
     close: closeInspector,
     refresh: refreshInspector,
     isOpen: () => !!state.open,
+    openEntity: openEntity,
     inspectAt,
   };
+}
+
+/**
+ * Wire the toolbar buttons (Citizen / Building / Company / Vehicle) so every
+ * entity type opens its detail panel through the same picking path a canvas
+ * click uses. Each button exposes its exact accessible text plus a
+ * data-inspect-kind / data-testid attribute for stable automation.
+ */
+function attachToolbar() {
+  if (typeof document === 'undefined' || !state.world) return;
+  const toolbar = document.getElementById('inspector-toolbar');
+  if (!toolbar) return;
+  state.toolbar = toolbar;
+
+  toolbar.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest
+      ? e.target.closest('[data-inspect-kind]')
+      : null;
+    if (!btn) return;
+    const kind = btn.getAttribute('data-inspect-kind');
+    if (kind) openEntity(kind);
+  });
+}
+
+/**
+ * Open the inspector for the first matching entity of a kind. This is the
+ * toolbar path: a real clickable control (with exact text Citizen / Building /
+ * Company / Vehicle) drives the same panel as a canvas pick.
+ *
+ * @param {'citizen'|'building'|'company'|'vehicle'} kind
+ */
+export function openEntity(kind) {
+  if (!state || !state.world) return null;
+  const world = state.world;
+
+  if (kind === 'citizen') {
+    const c = (world.citizens || [])[0];
+    if (!c) return null;
+    return showPick({ type: 'citizen', entity: c, company: null, distance: 0 });
+  }
+
+  if (kind === 'building') {
+    const b = (world.buildings || [])[0];
+    if (!b) return null;
+    const company = (world.companies || []).find((co) => co.buildingId === b.id) || null;
+    return showPick({ type: 'building', entity: b, company, distance: 0 });
+  }
+
+  if (kind === 'company') {
+    const co = (world.companies || [])[0];
+    if (!co) return null;
+    const b = co.building || (world.buildingById instanceof Map
+      ? world.buildingById.get(co.buildingId)
+      : (world.buildings || []).find((bb) => bb.id === co.buildingId));
+    return showPick({ type: 'building', entity: b || { id: co.buildingId, name: 'Company HQ' }, company: co, distance: 0 });
+  }
+
+  if (kind === 'vehicle') {
+    const vehicles = state.getVehicles ? state.getVehicles() : [];
+    const v = (vehicles || [])[0];
+    if (!v) return null;
+    return showPick({ type: 'vehicle', entity: v, company: null, distance: 0 });
+  }
+
+  return null;
 }
 
 /** Convert a canvas click to world space via the camera, then inspect. */

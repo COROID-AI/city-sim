@@ -16,7 +16,7 @@ import { CONFIG } from '../src/core/config.js';
 import { generateCity } from '../src/world/generate.js';
 import { populateCitizens } from '../src/citizens/populate.js';
 import { createEconomy } from '../src/economy/index.js';
-import { initInspector, inspectAt } from '../src/ui/inspector.js';
+import { initInspector, inspectAt, openEntity } from '../src/ui/inspector.js';
 
 // --- Minimal DOM shim --------------------------------------------------------
 
@@ -142,6 +142,7 @@ function bodyText() {
 const inspector = initInspector(city, camera, () => vehicles);
 check('initInspector returns handle', inspector && typeof inspector.close === 'function');
 check('inspectAt exported', typeof inspectAt === 'function');
+check('openEntity exported', typeof openEntity === 'function');
 check('panel exists as DOM overlay element', panelEl.tagName === 'div' && panelEl.id === 'inspector-panel');
 
 // --- 2. Building pick -----------------------------------------------------------
@@ -206,6 +207,24 @@ check('close button hides panel', panelEl.style.display === 'none' && !inspector
 inspectAt(bX, bY);
 inspector.close();
 check('close() hides panel and clears open flag', panelEl.style.display === 'none' && !inspector.isOpen());
+
+// --- 7b. openEntity toolbar path (exact labels trim the same way the probe clicks) ----------
+openEntity('citizen');
+let t = bodyText();
+check('openEntity(citizen) opens citizen detail', panelEl.style.display === 'block' && /(Age|Job)/.test(t),
+  t.slice(t.indexOf('Age'), t.indexOf('Age') + 30));
+
+openEntity('building');
+t = bodyText();
+check('openEntity(building) opens building detail', panelEl.style.display === 'block' && /(Address|Capacity)/.test(t));
+
+openEntity('company');
+t = bodyText();
+check('openEntity(company) opens company detail', panelEl.style.display === 'block' && /(Revenue|Employees|Profit)/.test(t));
+
+openEntity('vehicle');
+t = bodyText();
+check('openEntity(vehicle) opens vehicle detail', panelEl.style.display === 'block' && /(Speed|Route|Occupant)/.test(t));
 
 // --- 8. Canvas click -> camera.screenToWorld -> inspectAt --------------------------------
 const sp = camera.worldToScreen(bX, bY);

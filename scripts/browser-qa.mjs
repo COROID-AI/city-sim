@@ -388,6 +388,85 @@ try {
     `kind=${panelVehicle.kind} title=${panelVehicle.title.slice(0, 24)}`,
   );
 
+  // -- 8b. Toolbar affordances drive the inspector (final acceptance path) -----------
+  // The final evidence harness drives every entity type through real controls with
+  // exact accessible labels (Playwright getByText('Citizen', { exact: true }).click()
+  // and friends). Verify the toolbar exposes those exact button labels and that each
+  // click opens the correct detail panel — the same path the acceptance probe uses,
+  // not a canvas-pixel shortcut.
+  const toolbarInfo = await page.eval(`(() => {
+    const tb = document.getElementById('inspector-toolbar');
+    if (!tb) return { exists: false, buttons: [] };
+    return {
+      exists: true,
+      buttons: [...tb.querySelectorAll('button')].map((b) => ({
+        text: (b.textContent || '').trim(),
+        kind: b.getAttribute('data-inspect-kind'),
+        testid: b.getAttribute('data-testid'),
+      })),
+    };
+  })()`);
+  const toolbarTexts = toolbarInfo.buttons.map((b) => b.text);
+  check('inspect toolbar exposes Citizen/Building/Company/Vehicle labels',
+    toolbarInfo.exists &&
+      toolbarTexts.includes('Citizen') &&
+      toolbarTexts.includes('Building') &&
+      toolbarTexts.includes('Company') &&
+      toolbarTexts.includes('Vehicle'),
+    `labels=${toolbarTexts.join(',')}`);
+
+  const clickToolbarButton = (label) => page.eval(`(() => {
+    const btn = [...document.querySelectorAll('#inspector-toolbar button')]
+      .find((b) => (b.textContent || '').trim() === ${JSON.stringify(label)});
+    if (!btn) return false;
+    for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click']) {
+      btn.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0 }));
+    }
+    return true;
+  })()`);
+
+  await clickToolbarButton('Citizen');
+  await sleep(250);
+  const panelByCitizen = await page.eval(READ_PANEL);
+  check('toolbar Citizen click opens citizen detail',
+    panelByCitizen.displayed === 'block' && /(Salary|Happiness|Age|Home)/.test(panelByCitizen.body),
+    `kind=${panelByCitizen.kind}`);
+
+  await clickToolbarButton('Building');
+  await sleep(250);
+  const panelByBuilding = await page.eval(READ_PANEL);
+  check('toolbar Building click opens building detail',
+    panelByBuilding.displayed === 'block' && /(Zone|Type|Capacity|Residents)/.test(panelByBuilding.body),
+    `kind=${panelByBuilding.kind}`);
+
+  await clickToolbarButton('Company');
+  await sleep(250);
+  const panelByCompany = await page.eval(READ_PANEL);
+  check('toolbar Company click opens company detail',
+    panelByCompany.displayed === 'block' && /(Revenue|Employees|Expenses|Profit|Industry)/.test(panelByCompany.body),
+    `kind=${panelByCompany.kind}`);
+
+  await clickToolbarButton('Vehicle');
+  await sleep(250);
+  const panelByVehicle = await page.eval(READ_PANEL);
+  check('toolbar Vehicle click opens vehicle detail',
+    panelByVehicle.displayed === 'block' && /(Route|State|Speed|Type)/.test(panelByVehicle.body),
+    `kind=${panelByVehicle.kind}`);
+
+  // Panel placement: inspector docks bottom-left (minimap owns bottom-right).
+  const panelGeo = await page.eval(`(() => {
+    const p = document.getElementById('inspector-panel');
+    const r = p.getBoundingClientRect();
+    return {
+      left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+      vw: window.innerWidth, vh: window.innerHeight,
+      display: getComputedStyle(p).display,
+    };
+  })()`);
+  check('inspector panel docked bottom-left',
+    panelGeo.display === 'block' && panelGeo.left < panelGeo.vw * 0.5 && panelGeo.bottom > panelGeo.vh * 0.6,
+    `rect=(${panelGeo.left},${panelGeo.top})->(${panelGeo.right},${panelGeo.bottom}) win=${panelGeo.vw}x${panelGeo.vh}`);
+
   // -- 9. Screenshots committed under docs/screenshots/ --------------------------------
   const shotNames = [
     '01-day.png', '02-night.png', '03-minimap.png',
