@@ -155,6 +155,16 @@ export function Building({
     [layout],
   );
 
+  const prevFrame = useRef({
+    facadeColor: facadeMat.color.clone(),
+    emissive: facadeMat.emissive.clone(),
+    windowIntensity: windowMat.emissiveIntensity,
+  });
+  const scratch = useRef({
+    facade: new THREE.Color(),
+    emissiveTarget: new THREE.Color(),
+  });
+
   // Place window instances once after the mesh is mounted.
   useEffect(() => {
     const win = windowRef.current;
@@ -178,15 +188,36 @@ export function Building({
       groupRef.current.scale.y = Math.max(0.12, grow);
     }
 
-    facadeMat.color.set(current.palette.facade);
-    facadeMat.emissive
+    // Uniform-only updates (color/emissive) propagate through versioned
+    // uniforms, so needsUpdate is only set when a value actually changed
+    // versus the previous frame (avoids per-frame shader-compile churn).
+    const last = prevFrame.current;
+    const s = scratch.current;
+
+    s.facade.set(current.palette.facade);
+    if (!last.facadeColor.equals(s.facade)) {
+      facadeMat.color.copy(s.facade);
+      facadeMat.needsUpdate = true;
+      last.facadeColor.copy(s.facade);
+    }
+
+    s.emissiveTarget
       .set(current.palette.roof)
       .multiplyScalar(0.02 + night * 0.12);
-    facadeMat.needsUpdate = true;
+    if (!last.emissive.equals(s.emissiveTarget)) {
+      facadeMat.emissive.copy(s.emissiveTarget);
+      facadeMat.needsUpdate = true;
+      last.emissive.copy(s.emissiveTarget);
+    }
 
-    windowMat.emissiveIntensity = 0.06 + night * current.windowGlow * 1.5;
-    windowMat.emissive.set('#ffce8f');
-    windowMat.needsUpdate = true;
+    // Emissive color is fixed on the shared window material; only the
+    // intensity ramps with night, and only when it actually moved.
+    const windowIntensity = 0.06 + night * current.windowGlow * 1.5;
+    if (windowIntensity !== last.windowIntensity) {
+      windowMat.emissiveIntensity = windowIntensity;
+      windowMat.needsUpdate = true;
+      last.windowIntensity = windowIntensity;
+    }
 
     if (towerRef.current && layout.waterTower) {
       const show = 1 - smoothstep(0.08, 0.42, eraN);

@@ -5,6 +5,10 @@ import { useSceneStore } from '../state/useSceneStore';
 import { useBuildingLayouts } from './layout';
 import { Building } from './Building';
 
+const ROOFCAP_TINT = new THREE.Color('#7a5a3c');
+const ANTENNA_TINT = new THREE.Color('#2a2a30');
+const DETAIL_TINT = new THREE.Color('#b08a5a');
+
 /**
  * Buildings container: owns the shared materials handed to every Building and
  * keeps era-tint updates in one place. Each Building owns its own facade
@@ -44,21 +48,65 @@ export function Buildings() {
     [],
   );
 
+  const prev = useRef({
+    roof: sharedMats.roof.color.clone(),
+    roofCap: sharedMats.roofCap.color.clone(),
+    antenna: sharedMats.antenna.color.clone(),
+    detail: sharedMats.detail.color.clone(),
+    windowIntensity: sharedMats.window.emissiveIntensity,
+  });
+  const scratch = useRef({
+    roof: new THREE.Color(),
+    roofCap: new THREE.Color(),
+    antenna: new THREE.Color(),
+    detail: new THREE.Color(),
+  });
+
   useFrame(() => {
     const { current, dayTime } = useSceneStore.getState();
     const night = 1 - Math.max(0, Math.sin((dayTime - 0.5) * Math.PI * 2));
-    sharedMats.roof.color.set(current.palette.roof);
-    sharedMats.roofCap.color.set(current.palette.roof).lerp(new THREE.Color('#7a5a3c'), 0.2);
-    sharedMats.antenna.color.set(current.palette.roof).lerp(new THREE.Color('#2a2a30'), 0.55);
-    sharedMats.detail.color.set(current.palette.facade).lerp(new THREE.Color('#b08a5a'), 0.35);
-    sharedMats.roof.needsUpdate = true;
-    sharedMats.roofCap.needsUpdate = true;
-    sharedMats.antenna.needsUpdate = true;
-    sharedMats.detail.needsUpdate = true;
+    const last = prev.current;
+    const s = scratch.current;
+
+    // Uniform-only color updates propagate through versioned uniform uploads,
+    // so needsUpdate is only flagged when a value actually changed versus the
+    // previous frame (avoids per-frame shader-recompilation churn).
+    s.roof.set(current.palette.roof);
+    if (!last.roof.equals(s.roof)) {
+      sharedMats.roof.color.copy(s.roof);
+      sharedMats.roof.needsUpdate = true;
+      last.roof.copy(s.roof);
+    }
+
+    s.roofCap.set(current.palette.roof).lerp(ROOFCAP_TINT, 0.2);
+    if (!last.roofCap.equals(s.roofCap)) {
+      sharedMats.roofCap.color.copy(s.roofCap);
+      sharedMats.roofCap.needsUpdate = true;
+      last.roofCap.copy(s.roofCap);
+    }
+
+    s.antenna.set(current.palette.roof).lerp(ANTENNA_TINT, 0.55);
+    if (!last.antenna.equals(s.antenna)) {
+      sharedMats.antenna.color.copy(s.antenna);
+      sharedMats.antenna.needsUpdate = true;
+      last.antenna.copy(s.antenna);
+    }
+
+    s.detail.set(current.palette.facade).lerp(DETAIL_TINT, 0.35);
+    if (!last.detail.equals(s.detail)) {
+      sharedMats.detail.color.copy(s.detail);
+      sharedMats.detail.needsUpdate = true;
+      last.detail.copy(s.detail);
+    }
+
     // Window shared material is driven per-Building (needs the facade) but we
     // nudge the emissive here for night response too.
-    sharedMats.window.emissiveIntensity = 0.06 + night * 0.8;
-    sharedMats.window.needsUpdate = true;
+    const windowIntensity = 0.06 + night * 0.8;
+    if (windowIntensity !== last.windowIntensity) {
+      sharedMats.window.emissiveIntensity = windowIntensity;
+      sharedMats.window.needsUpdate = true;
+      last.windowIntensity = windowIntensity;
+    }
   });
 
   return (

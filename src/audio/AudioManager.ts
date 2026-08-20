@@ -23,6 +23,11 @@ export class AudioManager {
   private disposed = false;
   private volume = 0.8;
 
+  /** Nodes currently producing sound for the active soundscape layer. */
+  private activeSources = new Set<AudioScheduledSourceNode>();
+  /** Cleanup timers for scheduled layer source stops (dropped on scene swap). */
+  private sourceTimers = new Set<ReturnType<typeof setTimeout>>();
+
   /** Callback fired when the audio system is ready (after first gesture). */
   onReady: (() => void) | null = null;
 
@@ -135,6 +140,7 @@ export class AudioManager {
   dispose(): void {
     this.disposed = true;
     this.clearBirdTimers();
+    this.stopAllSources();
     if (this.ctx) {
       this.ctx.close().catch(() => {});
       this.ctx = null;
@@ -155,6 +161,11 @@ export class AudioManager {
     // Stop any existing scene layers gracefully.
     this.master?.gain.setTargetAtTime(0, t, 0.1);
 
+    // Halt every source node from the previous scene layer before spawning
+    // new ones. Rapid era scrubbing would otherwise accumulate long-running
+    // oscillators / buffer sources.
+    this.stopAllSources();
+
     // Clear any previous bird timers.
     this.clearBirdTimers();
 
@@ -173,7 +184,8 @@ export class AudioManager {
       g.gain.setTargetAtTime(0.05 + era.wind * 0.12, t + 0.4, 0.6);
       src.connect(filt).connect(g).connect(this.subMaster);
       src.start(t);
-      setTimeout(() => src.stop(t + 9), 9000);
+      this.trackSource(src);
+      this.scheduleStop(src, 9000);
     }
 
     // 2. Tonal pad: two detuned sines through a lowpass.
@@ -192,7 +204,8 @@ export class AudioManager {
       o.detune.value = det;
       o.connect(padGain);
       o.start(t);
-      setTimeout(() => o.stop(t + 9), 9000);
+      this.trackSource(o);
+      this.scheduleStop(o, 9000);
     }
 
     // 3. Traffic / crowd noise texture.
@@ -211,6 +224,7 @@ export class AudioManager {
     lp.frequency.value = 600 + era.traffic * 900;
     trafficSrc.connect(lp).connect(trafficG).connect(this.subMaster);
     trafficSrc.start(t);
+    this.trackSource(trafficSrc);
 
     // Birds / insects sparkling.
     const birdG = ctx.createGain();
@@ -229,6 +243,7 @@ export class AudioManager {
       );
       bg.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
       b.connect(bg).connect(this.subMaster);
+      this.trackSource(b);
       b.start(ctx.currentTime);
       b.stop(ctx.currentTime + 0.2);
     }, 1200 + Math.random() * 900);
@@ -243,6 +258,7 @@ export class AudioManager {
     hum.frequency.value = 60;
     hum.connect(humG).connect(this.subMaster);
     hum.start(t);
+    this.trackSource(hum);
 
     // 5. Ethereal sweeps for later eras.
     const sweepG = ctx.createGain();
@@ -266,6 +282,8 @@ export class AudioManager {
     lfo.connect(lfoGain).connect(sweepF.frequency);
     lfo.start(t);
     noise2.start(t);
+    this.trackSource(noise2);
+    this.trackSource(lfo);
 
     // 6. Rain/storm when weather>0.
     if (era.weather > 0.01) {
@@ -280,6 +298,7 @@ export class AudioManager {
       hp.frequency.value = 3000;
       rainSrc.connect(hp).connect(rainG).connect(this.subMaster);
       rainSrc.start(t);
+      this.trackSource(rainSrc);
     }
   }
 
@@ -299,6 +318,45 @@ export class AudioManager {
     if (!this.ctx) return null;
     if (!this.noiseBuffer) this.noiseBuffer = this.makeNoise();
     return this.noiseBuffer;
+  }
+
+  /**
+   * Register a running source node so it is stopped when the soundscape layer
+   * is swapped or the manager is disposed. Rapid era scrubbing otherwise
+   * accumulates long-running oscillators / buffer sources.
+   */
+  private trackSource(node: AudioScheduledSourceNode): void {
+    this.activeSources.add(node);
+    node.onended = () => {
+      this.activeSources.delete(node);
+    };
+  }
+
+  /** Stop every node from the previous scene layer before spawning new ones. */
+  private stopAllSources(): void {
+    for (const node of this.activeSources) {
+      try {
+        node.stop();
+      } catch {
+        // Already stopped or never started — nothing to clean up.
+      }
+    }
+    this.activeSources.clear();
+    for (const timer of this.sourceTimers) clearTimeout(timer);
+    this.sourceTimers.clear();
+  }
+
+  /** Stop a source after a fixed lifetime, tolerating double-stops. */
+  private scheduleStop(node: AudioScheduledSourceNode, ms: number): void {
+    const timer = setTimeout(() => {
+      this.sourceTimers.delete(timer);
+      try {
+        node.stop();
+      } catch {
+        // Already stopped by a scene swap / dispose.
+      }
+    }, ms);
+    this.sourceTimers.add(timer);
   }
 
   private birdTimers = new Set<ReturnType<typeof setInterval>>();
