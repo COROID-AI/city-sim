@@ -345,13 +345,19 @@ export function inspectAt(worldX, worldY) {
   return null;
 }
 
-/** World-space (px) position of a vehicle, tolerant of tile or raw coords. */
+/** World-space (px) position of a vehicle, tolerant of tile or raw coords.
+ * The live fleet (createVehicle) stores position under `position.{x,y}`; older
+ * shapes may store tileX/tileY (tiles), tile.{x,y} (tiles), or top-level x/y
+ * (world px). All three are resolved so the inspector can pick any vehicle. */
 function vehiclePos(v, ts) {
   if (v && Number.isFinite(v.tileX) && Number.isFinite(v.tileY)) {
     return { x: v.tileX * ts, y: v.tileY * ts };
   }
   if (v && v.tile && Number.isFinite(v.tile.x)) {
     return { x: v.tile.x * ts, y: v.tile.y * ts };
+  }
+  if (v && v.position && Number.isFinite(v.position.x) && Number.isFinite(v.position.y)) {
+    return { x: v.position.x, y: v.position.y };
   }
   if (v && Number.isFinite(v.x) && Number.isFinite(v.y)) {
     return { x: v.x, y: v.y };

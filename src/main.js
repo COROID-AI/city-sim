@@ -18,7 +18,11 @@
  * picks entities on canvas click and refreshes live, and the HUD reads the
  * engine state every frame.
  *
- * Runs directly from a file:// double-click: no bundler, no server, no CDN.
+ * Loads directly from index.html and starts on load: no build step, no user
+ * action. Serve the folder with any static file server (e.g. python3 -m
+ * http.server) and open index.html — no bundler, no CDN. Opening index.html
+ * via file:// works in browsers that permit file:// module scripts, e.g.
+ * Chromium launched with --allow-file-access-from-files.
  */
 
 import { CONFIG } from './core/config.js';
@@ -73,6 +77,18 @@ clock.subscribe((c) => {
 
 // --- Vehicles (fleet lives on the CityState for the renderer + inspector) ----
 console.log(`[vehicles] ${vehicles.length} vehicles active`);
+
+// --- Read-only QA/browser-automation handle -----------------------------------
+// Exposes live engine state for the smoke/inspection harness. The handle is
+// passive: mutations through it are at the caller's own risk.
+window.__sim = {
+  world, city, citizens, vehicles, economy, clock, camera,
+  _qa: {
+    updateCitizens,
+    updateVehicles,
+    advanceSchedules,
+  },
+};
 
 // --- Render pipeline ---------------------------------------------------------
 const cityRenderer = new CityRenderer(world, CONFIG);
