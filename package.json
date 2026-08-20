@@ -1,0 +1,7 @@
+{
+  "name": "city-sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone browser-based 2D city simulation."
+}
