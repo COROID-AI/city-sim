@@ -4,8 +4,9 @@
  * Each frame: clear to the ambient background, apply the camera transform,
  * draw the pre-rendered static day layer (crop to the visible world region),
  * draw the night glow layer at dusk/night, invoke the pluggable dynamic sprite
- * hook (citizens/vehicles from later Phase 2 tasks), then restore and apply the
- * ambient lighting tint across the whole screen.
+ * hook (citizens), then the dedicated vehicle layer (after buildings/citizens
+ * so traffic is never hidden), then restore and apply the ambient lighting
+ * tint across the whole screen (the final composite).
  */
 
 import { CONFIG } from '../core/config.js';
@@ -21,6 +22,7 @@ export class FrameRenderer {
     this.worldPx = world.gridSize * world.tileSize;
     this.lighting = new Lighting({ simHour: 6, simDay: 1, dayPhase: 0.25 });
     this._dynamic = null;
+    this._vehiclesDraw = null;
   }
 
   /**
@@ -31,6 +33,17 @@ export class FrameRenderer {
    */
   setDynamicDraw(fn) {
     this._dynamic = fn || null;
+  }
+
+  /**
+   * Set the dedicated vehicle layer callback, invoked inside the world
+   * transform after citizens so vehicles are never hidden behind buildings.
+   * Signature: (ctx, simTime).
+   * @param {(ctx: CanvasRenderingContext2D,
+   *            simTime: object) => void} fn
+   */
+  setVehiclesDraw(fn) {
+    this._vehiclesDraw = fn || null;
   }
 
   /**
@@ -69,9 +82,15 @@ export class FrameRenderer {
       this._drawLayer(ctx, this.nightLayer, vx, vy, vw, vh);
     }
 
-    // Pluggable dynamic sprites (citizens / vehicles).
+    // Pluggable dynamic sprites (citizens).
     if (this._dynamic) {
       this._dynamic(ctx, this.camera, this.world, simTime);
+    }
+
+    // Dedicated vehicle layer after buildings + citizens (culling handled by
+    // the entity draw implementation via the camera viewport).
+    if (this._vehiclesDraw) {
+      this._vehiclesDraw(ctx, simTime);
     }
 
     ctx.restore();

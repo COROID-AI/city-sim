@@ -1,10 +1,11 @@
 /**
- * Headless smoke test for the citizens layer.
+ * Headless smoke test for the integrated simulation layers.
  * Verifies the acceptance criteria without a browser:
  *   - 50+ citizens with complete detail fields
  *   - A* pathfinding between two building doors
  *   - Daily schedule drives observable movement between buildings
  *   - Employment status is queryable
+ *   - 10+ vehicles active and every vehicle stays on road tiles across N ticks
  */
 import { CONFIG } from '../src/core/config.js';
 import { generateCity } from '../src/world/generate.js';
@@ -12,6 +13,8 @@ import { populateCitizens } from '../src/citizens/populate.js';
 import { advanceSchedules, phaseForHour } from '../src/citizens/schedule.js';
 import { updateCitizens } from '../src/citizens/update.js';
 import { findPath } from '../src/citizens/pathfinding.js';
+import { initVehicles, updateVehicles, getVehicles } from '../src/vehicles/index.js';
+import { vehicleTile } from '../src/vehicles/update.js';
 
 const world = generateCity(CONFIG.SEED, CONFIG);
 const { city, citizens } = populateCitizens(world, CONFIG);
@@ -95,6 +98,38 @@ check('phaseForHour(6)=sleep', phaseForHour(6) === 'sleep');
 check('phaseForHour(9)=work', phaseForHour(9) === 'work');
 check('phaseForHour(20)=entertain', phaseForHour(20) === 'entertain');
 check('phaseForHour(23)=to-home', phaseForHour(23) === 'to-home');
+
+// 6. Vehicle fleet: >=10 active vehicles, all on road tiles across N ticks.
+const N_TICKS = 600;
+const vehicles = initVehicles(world, CONFIG);
+check('>=10 vehicles active', vehicles.length >= 10, `count=${vehicles.length}`);
+check(
+  'all vehicles travel at boot',
+  vehicles.every((v) => v.state === 'travel'),
+  `states=${[...new Set(vehicles.map((v) => v.state))].join(',')}`,
+);
+
+const ts = world.tileSize;
+const roadSet = new Set(world.roads.map((r) => `${r.x},${r.y}`));
+let roadViolations = 0;
+for (let tick = 0; tick < N_TICKS; tick++) {
+  updateVehicles(1 / 60, world, { zoom: 1 });
+  for (const v of vehicles) {
+    const t = vehicleTile(v, ts);
+    if (!roadSet.has(`${t.x},${t.y}`)) roadViolations++;
+  }
+}
+check(
+  'every vehicle stays on road tiles across N ticks',
+  roadViolations === 0,
+  `violations=${roadViolations}/${N_TICKS * vehicles.length}`,
+);
+check('fleet still active after N ticks', getVehicles().length === vehicles.length);
+check(
+  'vehicles still moving/driving after N ticks',
+  vehicles.every((v) => v.state === 'travel'),
+  `states=${[...new Set(vehicles.map((v) => v.state))].join(',')}`,
+);
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

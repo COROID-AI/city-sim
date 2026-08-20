@@ -151,17 +151,32 @@ export function vehicleTile(v, ts) {
  * renderer invokes this inside the camera transform (same contract as
  * drawCitizens); uses city.vehicles + city.tileSize.
  * @param {CanvasRenderingContext2D} ctx
- * @param {object} city CityState ({ vehicles, tileSize }).
+ * @param {object[]} vehicles Fleet array ({ position, heading, laneOffset,
+ *   size, color, state }).
  * @param {object} camera Camera ({ zoom }, for future scale-aware effects).
  */
-export function drawVehicles(ctx, city, camera) {
-  void camera;
-  const ts = city.tileSize || CONFIG.TILE_SIZE;
-  for (const v of city.vehicles || []) {
+export function drawVehicles(ctx, vehicles, camera, simTime) {
+  const ts = CONFIG.TILE_SIZE;
+  const viewport = (camera && typeof camera.viewport === 'function')
+    ? camera.viewport()
+    : (camera ? {
+        x: camera.x - (camera.viewportWidth || 800) / camera.zoom / 2,
+        y: camera.y - (camera.viewportHeight || 600) / camera.zoom / 2,
+        width: (camera.viewportWidth || 800) / camera.zoom,
+        height: (camera.viewportHeight || 600) / camera.zoom,
+      } : null);
+  const pad = 8; // px safety margin so partially visible vehicles draw fully.
+  const cull = (px, py) =>
+    viewport &&
+    (px + pad < viewport.x || px - pad > viewport.x + viewport.width ||
+     py + pad < viewport.y || py - pad > viewport.y + viewport.height);
+
+  for (const v of vehicles || []) {
     if (v.state !== 'travel' && v.state !== 'arrived') continue;
     const off = v.laneOffset && v.state === 'travel' ? v.laneOffset : { x: 0, y: 0 };
     const px = v.position.x + off.x;
     const py = v.position.y + off.y;
+    if (cull(px, py)) continue;
 
     const angle = Math.atan2(v.heading.y, v.heading.x);
     const s = v.size || { w: 0.5, l: 0.55 };

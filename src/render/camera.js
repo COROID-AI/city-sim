@@ -51,6 +51,16 @@ export class Camera {
     return this.viewportHeight / this.zoom;
   }
 
+  /** World-space rectangle currently visible (for minimap + entity culling). */
+  viewport() {
+    return {
+      x: this.x - this.viewWorldW / 2,
+      y: this.y - this.viewWorldH / 2,
+      width: this.viewWorldW,
+      height: this.viewWorldH,
+    };
+  }
+
   /** Map a world-space point to screen (CSS px) coordinates. */
   worldToScreen(wx, wy) {
     return {

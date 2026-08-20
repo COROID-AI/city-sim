@@ -11,9 +11,12 @@
  *      by daylight.
  *   4. Start the requestAnimationFrame loop.
  *
- * Dynamic entity sprites (citizens/vehicles) are drawn through the pluggable
- * drawDynamic hook below; Phase 2 tasks fill that in without touching the
- * render pipeline.
+ * Dynamic entity sprites are layered through the frame pipeline: citizens via
+ * the pluggable drawDynamic hook, then vehicles in a dedicated layer after
+ * buildings/citizens (so traffic is never hidden behind buildings).
+ * The minimap renders each frame from the camera viewport, the inspector
+ * picks entities on canvas click and refreshes live, and the HUD reads the
+ * engine state every frame.
  *
  * Runs directly from a file:// double-click: no bundler, no server, no CDN.
  */
@@ -25,13 +28,19 @@ import { populateCitizens } from './citizens/populate.js';
 import { advanceSchedules } from './citizens/schedule.js';
 import { updateCitizens, drawCitizens } from './citizens/update.js';
 import { createEconomy, tickEconomy } from './economy/index.js';
+import { initVehicles, updateVehicles, getVehicles } from './vehicles/index.js';
+import { drawVehicles } from './vehicles/update.js';
 import { Camera } from './render/camera.js';
 import { CityRenderer } from './render/cityRenderer.js';
 import { FrameRenderer } from './render/frame.js';
+import { initMinimap, renderMinimap } from './render/minimap.js';
+import { initInspector } from './ui/inspector.js';
 
 // --- World boot -------------------------------------------------------------
 const world = generateCity(CONFIG.SEED, CONFIG);
 const { city, citizens } = populateCitizens(world, CONFIG);
+const vehicles = initVehicles(world, CONFIG);
+city.vehicles = vehicles;
 const worldPx = world.gridSize * world.tileSize;
 
 // --- DOM handles ------------------------------------------------------------
@@ -62,6 +71,9 @@ clock.subscribe((c) => {
   tickEconomy(city, economy, c);
 });
 
+// --- Vehicles (fleet lives on the CityState for the renderer + inspector) ----
+console.log(`[vehicles] ${vehicles.length} vehicles active`);
+
 // --- Render pipeline ---------------------------------------------------------
 const cityRenderer = new CityRenderer(world, CONFIG);
 cityRenderer.prerender();
@@ -78,8 +90,8 @@ const frame = new FrameRenderer({
  * Pluggable entity sprite hook.
  *
  * Invoked every frame inside the camera transform so sprites live in world
- * space. Draws the city's citizens (and, at night, vehicle headlights via the
- * exposed rendering API from later Phase 2 tasks).
+ * space. Draws the city's citizens; vehicles render in the dedicated vehicle
+ * layer that follows (see setVehiclesDraw).
  *
  * @param {CanvasRenderingContext2D} ctx
  * @param {Camera} camera
@@ -90,6 +102,16 @@ function drawDynamic(ctx, camera, world, simTime) {
   drawCitizens(ctx, city, camera);
 }
 frame.setDynamicDraw(drawDynamic);
+
+/** Dedicated vehicle layer (drawn after citizens so traffic is never hidden). */
+function drawVehicleLayer(ctx, simTime) {
+  drawVehicles(ctx, vehicles, camera, simTime);
+}
+frame.setVehiclesDraw(drawVehicleLayer);
+
+// --- Minimap + inspector ------------------------------------------------------
+initMinimap(minimapCanvas, world, camera);
+initInspector(city, camera, getVehicles);
 
 // --- Canvas sizing -----------------------------------------------------------
 function dpr() {
@@ -106,47 +128,7 @@ function resizeCanvases() {
   mctx.setTransform(scale, 0, 0, scale, 0, 0);
 }
 
-// --- Minimap / HUD -----------------------------------------------------------
-function zoneColor(zone) {
-  switch (zone) {
-    case 'residential': return '#4a7fb5';
-    case 'workplace': return '#b08f4a';
-    case 'entertainment': return '#a54ab5';
-    case 'service': return '#4ab57f';
-    default: return '#888888';
-  }
-}
-
-function drawMinimap() {
-  const scale = dpr();
-  const mw = minimapCanvas.width / scale;
-  const mh = minimapCanvas.height / scale;
-  mctx.clearRect(0, 0, mw, mh);
-  mctx.fillStyle = '#101018';
-  mctx.fillRect(0, 0, mw, mh);
-
-  const ts = world.tileSize;
-  const mmScale = mw / worldPx;
-
-  for (const b of world.buildings) {
-    mctx.fillStyle = zoneColor(b.zone);
-    mctx.fillRect(
-      b.footprint.x * ts * mmScale,
-      b.footprint.y * ts * mmScale,
-      b.footprint.w * ts * mmScale,
-      Math.max(1, b.footprint.h * ts * mmScale),
-    );
-  }
-
-  // Viewport rectangle (camera state drives the minimap).
-  const vw = (canvas.width / scale) / camera.zoom;
-  const vh = (canvas.height / scale) / camera.zoom;
-  const vx = camera.x - vw / 2;
-  const vy = camera.y - vh / 2;
-  mctx.strokeStyle = '#ffd54f';
-  mctx.lineWidth = 1;
-  mctx.strokeRect(vx * mmScale, vy * mmScale, vw * mmScale, vh * mmScale);
-}
+// --- HUD ---------------------------------------------------------------------
 
 function zoneCounts() {
   const counts = {};
@@ -183,7 +165,7 @@ function render() {
   const w = canvas.width / scale;
   const h = canvas.height / scale;
   frame.render(ctx, w, h, clock.simTime);
-  drawMinimap();
+  renderMinimap(camera, world);
   updateHud();
 }
 
@@ -192,6 +174,7 @@ function loop(now) {
   last = now;
   clock.tick(now);
   updateCitizens(city, clock, dt);
+  updateVehicles(dt, world, camera);
   camera.update(dt);
   camera.clampToBounds(worldPx, worldPx);
   render();
