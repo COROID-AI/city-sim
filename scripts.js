@@ -3,7 +3,6 @@
  * Emits 'yearSelected' event when a year button is clicked 
  * Integrates with Three.js overlay 
  */
-
 /* 
  * 1985 Era Post-Processing Configuration: 
  * - Heavy neon bloom 
@@ -12,10 +11,11 @@
  * - 1980s aesthetic color grading 
  */
 
-const yearButtons = document.querySelectorAll('.year-btn');
+// Asset catalog integration for era-specific building materials
 
 // Store the currently selected year
-let selectedYear = 2025;
+let selectedYear = Era.Era2025;
+let selectedEra = Era.Era2025;
 
 // Audio context for synth-wave sounds
 let audioContext = null;
@@ -25,6 +25,8 @@ let isSynthPlaying = false;
 // Initialize: set the currently selected year
 function init() {
   setActiveYear(selectedYear);
+  // Swap to initial era assets
+  swapEraAssets(selectedYear);
 }
 
 // Initialize synth-wave era audio sounds
@@ -80,30 +82,30 @@ function initStreetAmbience() {
 
   // Create filtered noise for ambient texture
   const noiseNode = audioContext.createJavaScriptNode(22050, 2, 2);
-  noiseNode.connect(audioContext.destination);
-  
+  noiseNode.connect(audioContext.destination); 
+
   // Generate ambient noise buffer
   const sampleRate = audioContext.sampleRate;
   const bufferSize = 22050; // 1 second of noise
   const noiseBuffer = audioContext.createBuffer(2, bufferSize, sampleRate);
-  const outputChannels = noiseBuffer.getChannelData(0);
-  
+  const outputChannels = noiseBuffer.getChannelData(0); 
+
   for (let i = 0; i < bufferSize; i++) {
     outputChannels[i] = Math.random() * 2 - 1; // Random noise
-  }
-  
+  } 
+
   // Filter the noise to create ambient texture
   const filter = audioContext.createBiquadFilter();
   filter.type = "lowpass";
   filter.frequency.value = 800; // Low-pass filter for muffled ambience
-  noiseBuffer.getChannelData(1).set(outputChannels);
-  
+  noiseBuffer.getChannelData(1).set(outputChannels); 
+
   const filterNode = audioContext.createFilterNode ? audioContext.createFilterNode() : null;
   if (filterNode) {
     filterNode.connect ? filterNode.connect(filter) : filterNode.connect(filter);
   }
-  filter.connect(audioContext.destination);
-  
+  filter.connect(audioContext.destination); 
+
   noiseNode.onaudioprocess = () => {
     // Continue ambient synth texture
   };
@@ -122,7 +124,7 @@ function applyEraPostProcessing(era) {
 
   if (era === Era.Era1985) {
     // 1985 era: heavy neon bloom + high contrast color grading + synth-wave sounds
-    
+
     // Add heavy bloom pass for neon glow effect
     const bloomPass = new THREE.UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
@@ -178,12 +180,12 @@ function applyEraPostProcessing(era) {
       0.05,   // saturation (reduce for warm sepia)
       0.001,  // contrast
       0.0005  // grain (light vintage film grain)
-    );
-    
+    ); 
+
     // Set sepia color transformation matrix
     filmPass.sepia = 0.8;  // Strong sepia tint
     filmPass.vignette = 0.3;  // Light vignette
-    
+
     composer.addPass(filmPass);
   } else {
     // Default: no post-processing
@@ -208,6 +210,20 @@ function emitYearSelected(year) {
   document.dispatchEvent(event);
 }
 
+// Swap era assets when year changes
+async function swapEraAssets(year) {
+  const eraMap = {
+    1945: Era.Era1945,
+    1965: Era.Era1965,
+    1985: Era.Era1985,
+    2005: Era.Era2005,
+    2025: Era.Era2025,
+  };
+  const targetEra = eraMap[year] || Era.Era2025;
+  const assets = await AssetCatalog.swapAssets(selectedEra, targetEra);
+  selectedEra = targetEra;
+}
+
 // Click handler for year buttons
 function handleYearClick(event) {
   const btn = event.currentTarget;
@@ -220,6 +236,7 @@ function handleYearClick(event) {
 
   selectedYear = year;
   setActiveYear(year);
+  swapEraAssets(year);
   emitYearSelected(year);
 
   // Apply era-appropriate post-processing when year changes
@@ -227,6 +244,7 @@ function handleYearClick(event) {
 }
 
 // Add click listeners to all year buttons
+const yearButtons = document.querySelectorAll('.year-btn');
 yearButtons.forEach(btn => {
   btn.addEventListener('click', handleYearClick);
 });
@@ -243,6 +261,7 @@ window.timelineSlider = {
   setSelectedYear: (year) => {
     selectedYear = year;
     setActiveYear(year);
+    swapEraAssets(year);
     emitYearSelected(year);
   }
 };
