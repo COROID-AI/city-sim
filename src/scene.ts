@@ -4,6 +4,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { BloomPass } from 'three/examples/jsm/postprocessing/BloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { AssetCatalog, Era } from './asset-catalog';
 import { AudioLoader } from 'three/examples/jsm/loaders/AudioLoader.js';
 import { Audio } from 'three/src/audio/Audio.js';
 
@@ -24,7 +25,7 @@ composer.addPass(renderPass);
 
 // --- Era-specific post-processing configuration ---
 // Currently active era setting
-let currentEra = '2025';
+let currentEra: Era = Era.Era2005;
 
 // 2025 era: clean digital color grading, minimal bloom
 const bloomPass2025 = new BloomPass({
@@ -45,6 +46,26 @@ const bloomPass2005 = new BloomPass({
   kernelSize: BloomPass.KernelSize.Fourteen,
 });
 composer.addPass(bloomPass2005);
+
+// 1965 era: mid-century modern with subtle neon accents, warm amber tint
+// Subtle bloom for gentle neon glow, warm color grading
+const bloomPass1965 = new BloomPass({
+  strength: 0.3,      // subtle bloom for gentle neon glow
+  threshold: 0.7,     // higher threshold for selective bloom
+  radius: 0.4,        // moderate radius
+  kernelSize: BloomPass.KernelSize.Fourteen,
+});
+composer.addPass(bloomPass1965);
+
+// 1945 era: warm sepia tone + light film grain
+// Light bloom for warm glow, sepia color grading for film aesthetic
+const bloomPass1945 = new BloomPass({
+  strength: 0.15,      // light bloom for warm glow
+  threshold: 0.8,     // high threshold for selective bloom
+  radius: 0.2,        // soft radius
+  kernelSize: BloomPass.KernelSize.Fourteen,
+});
+composer.addPass(bloomPass1945);
 
 // --- Color grading shaders ---
 // 2025 color grading: clean digital, slightly cool highlights, warm shadows
@@ -115,24 +136,12 @@ const colorCorrectionShader2005 = {
 const colorPass2005 = new ShaderPass(colorCorrectionShader2005);
 composer.addPass(colorPass2005);
 
-// 1965 era: mid-century modern with subtle neon accents, warm amber tint
-// Subtle bloom for gentle neon glow, warm color grading
-const bloomPass1965 = new BloomPass({
-  strength: 0.3,      // subtle bloom for gentle neon glow
-  threshold: 0.7,     // higher threshold for selective bloom
-  radius: 0.4,        // moderate radius
-  kernelSize: BloomPass.KernelSize.Fourteen,
-});
-composer.addPass(bloomPass1965);
-
 // 1965 color grading: warm amber tint, mid-century modern aesthetic
 const colorCorrectionUniforms1965 = {
   tDiffuse: { value: null },
   exposure: { value: 1.0 },
-  bias: { value: 0.0 },
-  gain: { value: 1.0 },
-  offset: { value: 0.05 },  // warm amber offset
-  power: { value: 1.05 },   // slight power boost for warmth
+  bias: { value: 0.05 },  // warm amber offset
+  gain: { value: 1.05 },   // slight power boost for warmth
 };
 
 const colorPass1965 = {
@@ -170,17 +179,9 @@ const colorPass1965 = {
     }
   `,
 };
-composer.addPass(colorPass1965);
 
-// 1945 era: warm sepia tone + light film grain
-// Light bloom for warm glow, sepia color grading for film aesthetic
-const bloomPass1945 = new BloomPass({
-  strength: 0.15,      // light bloom for warm glow
-  threshold: 0.8,     // high threshold for selective bloom
-  radius: 0.2,        // soft radius
-  kernelSize: BloomPass.KernelSize.Fourteen,
-});
-composer.addPass(bloomPass1945);
+const colorPass1965 = new ShaderPass(colorCorrectionShader1965);
+composer.addPass(colorPass1965);
 
 // 1945 color grading: warm sepia tone, film aesthetic
 const colorCorrectionUniforms1945 = {
@@ -220,103 +221,12 @@ const colorPass1945 = {
     }
   `,
 };
+
+const colorPass1945 = new ShaderPass(colorCorrectionShader1945);
 composer.addPass(colorPass1945);
 
-// --- Audio: 2000s pop/ambient sounds ---
-const audioListener = new THREE.AudioListener();
-camera.add(audioListener);
-
-// Create 2000s pop/ambient sound
-const retroSound = new THREE.Audio(audioListener);
-
-// Load and set early 2000s pop ambience sound
-const audioLoader = new AudioLoader();
-audioLoader.load('/sounds/2005-pop-ambient.mp3', (buffer) => {
-  retroSound.setBuffer(buffer);
-  retroSound.setLoop(true);
-  retroSound.setVolume(0.3); // Low volume to mix with scene ambience
-  retroSound.play();
-});
-
-// --- Ambient Light ---
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-scene.add(ambientLight);
-
-// --- Directional Light (subtle, matches 2005 clean digital aesthetic) ---
-const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
-directionalLight.position.set(50, 50, 70);
-scene.add(directionalLight);
-
-// --- Resize Handler ---
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
-});
-
-// --- Animation Loop ---
-function animate() {
-  requestAnimationFrame(animate);
-  controls.update();
-  composer.render();
-}
-
-animate();
-
-// --- Era post-processing applier ---
-/**
- * Apply era-specific post-processing to the composer
- * @param {string} era - Era identifier ('2025', '2005', '1985', '1965', '1945')
- */
-function applyEraPostProcessing(era) {
-  currentEra = era;
-
-  // Remove all post-processing passes except render pass
-  composer.passes = [renderPass];
-
-  if (era === '2005') {
-    // Swap to 2005 bloom pass
-    composer.addPass(bloomPass2005);
-
-    // Swap to 2005 color grading
-    composer.addPass(colorPass2005);
-    // Update color pass uniforms for 2005 aesthetic
-    colorPass2005.uniforms.power.value = 0.95;
-    colorPass2005.uniforms.exposure.value = 1.0;
-  } else if (era === '1965') {
-    // 1965 era: mid-century modern with subtle neon accents, warm amber tint
-    // Subtle bloom for gentle neon glow, warm color grading
-    // Already added above during init
-
-    // 1965 color grading: warm amber tint, mid-century modern aesthetic
-    // Already added above during init
-  } else if (era === '1945') {
-    // 1945 era: warm sepia tone + light film grain
-    // Light bloom for warm glow, sepia color grading for film aesthetic
-    // Already added above during init
-
-    // Ensure 1945 bloom and color pass are active
-    // Remove any existing bloom/color passes that might be from another era
-    const existingBloomPasses = composer.passes.filter(p => p.isBloomPass || (p.fragmentShader && p.fragmentShader.includes('sepia')));
-    composer.passes = [renderPass];
-
-    // Add 1945 bloom pass
-    composer.addPass(bloomPass1945);
-
-    // Add 1945 color grading
-    composer.addPass(colorPass1945);
-  } else if (era === '2025') {
-    // Swap to 2025 bloom pass
-    composer.addPass(bloomPass2025);
-
-    // Swap to 2025 color grading
-    composer.addPass(colorPass2005);
-    // Update color pass uniforms for 2025 aesthetic
-    colorPass2005.uniforms.power.value = 1.0;
-    colorPass2005.uniforms.exposure.value = 1.0;
-  }
-}
+// --- Scene ---
+const scene = new THREE.Scene();
 
 // --- Camera ---
 const camera = new THREE.PerspectiveCamera(
@@ -334,6 +244,12 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.maxPolarAngle = Math.PI / 2.1; // Limit downward tilt
 
+// --- Asset catalog ---
+const assetCatalog = new AssetCatalog();
+
+// --- Loaded entities per era ---
+const loadedEntities: Map<Era, THREE.Object3D[]> = new Map();
+
 // --- Audio: 2000s pop/ambient sounds ---
 const audioListener = new THREE.AudioListener();
 camera.add(audioListener);
@@ -358,6 +274,86 @@ scene.add(ambientLight);
 const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
 directionalLight.position.set(50, 50, 70);
 scene.add(directionalLight);
+
+// --- Era swap function ---
+/**
+ * Swap all assets from one era to another
+ * @param {Era} fromEra - Era identifier
+ * @param {Era} toEra - Era identifier
+ */
+async function swapEra(fromEra: Era, toEra: Era): Promise<void> {
+  // Return early if eras are the same
+  if (fromEra === toEra) {
+    return;
+  }
+
+  // Remove all previously loaded entities
+  const previousEntities = loadedEntities.get(fromEra);
+  if (previousEntities) {
+    previousEntities.forEach(entity => {
+      scene.remove(entity);
+    });
+    loadedEntities.delete(fromEra);
+  }
+
+  // Swap assets using the asset catalog
+  await assetCatalog.swapAssets(fromEra, toEra);
+
+  // Add newly loaded entities to scene and tracking
+  const newEntities = assetCatalog.loadedAssets.get(toEra);
+  if (newEntities) {
+    const entityArray: THREE.Object3D[] = Array.from(newEntities.values());
+    loadedEntities.set(toEra, entityArray);
+    entityArray.forEach(entity => {
+      scene.add(entity);
+    });
+  }
+
+  // Apply era-specific post-processing
+  applyEraPostProcessing(toEra);
+}
+
+// --- Era post-processing applier ---
+/**
+ * Apply era-specific post-processing to the composer
+ * @param {Era} era - Era identifier
+ */
+function applyEraPostProcessing(era: Era) {
+  currentEra = era;
+
+  // Remove all post-processing passes except render pass
+  composer.passes = [renderPass];
+
+  if (era === Era.Era2005) {
+    // Swap to 2005 bloom pass
+    composer.addPass(bloomPass2005);
+
+    // Swap to 2005 color grading
+    composer.addPass(colorPass2005);
+    // Update color pass uniforms for 2005 aesthetic
+    colorPass2005.uniforms.power.value = 0.95;
+    colorPass2005.uniforms.exposure.value = 1.0;
+  } else if (era === Era.Era1965) {
+    // 1965 era: mid-century modern with subtle neon accents, warm amber tint
+    // Subtle bloom for gentle neon glow, warm color grading
+    composer.addPass(bloomPass1965);
+    composer.addPass(colorPass1965);
+  } else if (era === Era.Era1945) {
+    // 1945 era: warm sepia tone + light film grain
+    // Light bloom for warm glow, sepia color grading for film aesthetic
+    composer.addPass(bloomPass1945);
+    composer.addPass(colorPass1945);
+  } else if (era === Era.Era2025) {
+    // Swap to 2025 bloom pass
+    composer.addPass(bloomPass2025);
+
+    // Swap to 2025 color grading
+    composer.addPass(colorPass2025);
+    // Update color pass uniforms for 2025 aesthetic
+    colorPass2005.uniforms.power.value = 1.0;
+    colorPass2005.uniforms.exposure.value = 1.0;
+  }
+}
 
 // --- Resize Handler ---
 window.addEventListener('resize', () => {
@@ -377,9 +373,12 @@ function animate() {
 animate();
 
 // Apply 2005-era post-processing on load
-applyEraPostProcessing('2005');
+applyEraPostProcessing(Era.Era2005);
 
 // Export for integration with Three.js overlay
 window.renderer = renderer;
 window.composer = composer;
 window.camera = camera;
+window.scene = scene;
+window.assetCatalog = assetCatalog;
+window.swapEra = swapEra;

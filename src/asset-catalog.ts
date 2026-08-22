@@ -113,11 +113,18 @@ export class AssetCatalog {
       // Store signage (LED/LCD look)
       { type: 'advertisement', name: 'signage2005', modelUrl: '/models/2005/sign.glb', textureUrls: ['/textures/2005/sign.jpg'], materialParams: { color: 0xB0C4DE, roughness: 0.7, metalness: 0.3 } },
 
-      // Vehicles
+      // 2005-era vehicles: early 2000s cars, SUVs, hybrid vehicles, transit
       { type: 'vehicle', name: 'car2005', modelUrl: '/models/2005/car.glb', textureUrls: ['/textures/2005/car.jpg'] },
+      { type: 'vehicle', name: 'suv2005', modelUrl: '/models/2005/suv.glb', textureUrls: ['/textures/2005/suv.jpg'], materialParams: { color: 0x8B4513, roughness: 0.4, metalness: 0.5 } },
+      { type: 'vehicle', name: 'hybrid2005', modelUrl: '/models/2005/hybrid.glb', textureUrls: ['/textures/2005/hybrid.jpg'], materialParams: { color: 0xADD8E6, roughness: 0.3, metalness: 0.2 } },
+      { type: 'vehicle', name: 'transit2005', modelUrl: '/models/2005/bus.glb', textureUrls: ['/textures/2005/bus.jpg'], materialParams: { color: 0xFFFFFF, roughness: 0.5, metalness: 0.3 } },
 
       // Pedestrians
       { type: 'pedestrian', name: 'walker2005', modelUrl: '/models/2005/pedestrian.glb', textureUrls: ['/textures/2005/people.jpg'] },
+      // 2000s fashion styles: casual contemporary, early 2000s trends
+      { type: 'pedestrian', name: 'pedestrian2005a', modelUrl: '/models/2005/pedestrian.glb', textureUrls: ['/textures/2005/people2.jpg'] },
+      { type: 'pedestrian', name: 'pedestrian2005b', modelUrl: '/models/2005/pedestrian.glb', textureUrls: ['/textures/2005/people3.jpg'] },
+      { type: 'pedestrian', name: 'pedestrian2005c', modelUrl: '/models/2005/pedestrian.glb', textureUrls: ['/textures/2005/people4.jpg'] },
     ]);
 
     this.defineEraAssets(Era.Era2025, [
