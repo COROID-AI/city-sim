@@ -3,7 +3,6 @@
  * Emits 'yearSelected' event when a year button is clicked 
  * Integrates with Three.js overlay 
  */
-
 /* 
  * Era Post-Processing Configuration: 
  * - 1985 Era: Heavy neon bloom, high contrast, synth-wave sounds 
@@ -11,10 +10,11 @@
  * - 1945 Era: Warm sepia tone + light film grain 
  */
 
-const yearButtons = document.querySelectorAll('.year-btn');
+// Asset catalog integration for era-specific building materials
 
 // Store the currently selected year
-let selectedYear = 2025;
+let selectedYear = Era.Era2025;
+let selectedEra = Era.Era2025;
 
 // Audio context for synth-wave sounds
 let audioContext = null;
@@ -24,6 +24,8 @@ let isSynthPlaying = false;
 // Initialize: set the currently selected year
 function init() {
   setActiveYear(selectedYear);
+  // Swap to initial era assets
+  swapEraAssets(selectedYear);
 }
 
 // Initialize synth-wave era audio sounds
@@ -85,22 +87,27 @@ function initStreetAmbience() {
   const sampleRate = audioContext.sampleRate;
   const bufferSize = 22050; // 1 second of noise
   const noiseBuffer = audioContext.createBuffer(2, bufferSize, sampleRate);
+
   const outputChannels = noiseBuffer.getChannelData(0);
 
   for (let i = 0; i < bufferSize; i++) {
     outputChannels[i] = Math.random() * 2 - 1; // Random noise
   }
 
+  // Merge: add stereo channel support from feature branch
+  noiseBuffer.getChannelData(1).set(outputChannels);
+
   // Filter the noise to create ambient texture
   const filter = audioContext.createBiquadFilter();
   filter.type = "lowpass";
   filter.frequency.value = 800; // Low-pass filter for muffled ambience
 
+  filter.connect(audioContext.destination);
+
   const filterNode = audioContext.createFilterNode ? audioContext.createFilterNode() : null;
   if (filterNode) {
     filterNode.connect ? filterNode.connect(filter) : filterNode.connect(filter);
   }
-  filter.connect(audioContext.destination);
 
   noiseNode.onaudioprocess = () => {
     // Continue ambient synth texture
@@ -251,6 +258,20 @@ function emitYearSelected(year) {
   document.dispatchEvent(event);
 }
 
+// Swap era assets when year changes
+async function swapEraAssets(year) {
+  const eraMap = {
+    1945: Era.Era1945,
+    1965: Era.Era1965,
+    1985: Era.Era1985,
+    2005: Era.Era2005,
+    2025: Era.Era2025,
+  };
+  const targetEra = eraMap[year] || Era.Era2025;
+  const assets = await AssetCatalog.swapAssets(selectedEra, targetEra);
+  selectedEra = targetEra;
+}
+
 // Click handler for year buttons
 function handleYearClick(event) {
   const btn = event.currentTarget;
@@ -263,6 +284,7 @@ function handleYearClick(event) {
 
   selectedYear = year;
   setActiveYear(year);
+  swapEraAssets(year);
   emitYearSelected(year);
 
   // Apply era-appropriate post-processing when year changes
@@ -270,6 +292,7 @@ function handleYearClick(event) {
 }
 
 // Add click listeners to all year buttons
+const yearButtons = document.querySelectorAll('.year-btn');
 yearButtons.forEach(btn => {
   btn.addEventListener('click', handleYearClick);
 });
@@ -286,6 +309,7 @@ window.timelineSlider = {
   setSelectedYear: (year) => {
     selectedYear = year;
     setActiveYear(year);
+    swapEraAssets(year);
     emitYearSelected(year);
   }
 };
