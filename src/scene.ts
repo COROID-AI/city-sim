@@ -46,6 +46,25 @@ const bloomPass2005 = new BloomPass({
 });
 composer.addPass(bloomPass2005);
 
+// 1965 era: mid-century modern with subtle neon accents, warm amber tint
+const bloomPass1965 = new BloomPass({
+  strength: 0.3,      // subtle bloom for gentle neon glow
+  threshold: 0.7,     // higher threshold for selective bloom
+  radius: 0.4,        // moderate radius
+  kernelSize: BloomPass.KernelSize.Fourteen,
+});
+composer.addPass(bloomPass1965);
+
+// 1945 era: vintage film bloom, warm sepia tone
+// 1945 vintage aesthetic: warm film bloom, sepia tone, light grain
+const bloomPass1945 = new BloomPass({
+  strength: 0.15,     // light bloom for vintage film effect
+  threshold: 0.8,     // high threshold for selective bloom
+  radius: 0.2,        // soft radius for gentle glow
+  kernelSize: BloomPass.KernelSize.Fourteen,
+});
+composer.addPass(bloomPass1945);
+
 // --- Color grading shaders ---
 // 2025 color grading: clean digital, slightly cool highlights, warm shadows
 const colorCorrectionUniforms2025 = {
@@ -69,8 +88,29 @@ const colorCorrectionUniforms2005 = {
   power: { value: 0.95 },
 };
 
-const colorCorrectionShader2005 = {
-  uniforms: { ...colorCorrectionUniforms2005 },
+// 1965 color grading: warm amber tint, mid-century modern aesthetic
+const colorCorrectionUniforms1965 = {
+  tDiffuse: { value: null },
+  exposure: { value: 1.0 },
+  bias: { value: 0.0 },
+  gain: { value: 1.0 },
+  offset: { value: 0.05 },  // warm amber offset
+  power: { value: 1.05 },   // slight power boost for warmth
+};
+
+// 1945 color grading: vintage film sepia tone
+// 1940s vintage aesthetic: warm sepia tone, light film grain
+const colorCorrectionUniforms1945 = {
+  tDiffuse: { value: null },
+  exposure: { value: 1.0 },
+  bias: { value: 0.0 },
+  gain: { value: 1.0 },
+  offset: { value: 0.0 },
+  power: { value: 1.0 },
+};
+
+const colorCorrectionShader1945 = {
+  uniforms: { ...colorCorrectionUniforms1945 },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
     void main() {
@@ -88,22 +128,15 @@ const colorCorrectionShader2005 = {
     varying vec2 vUv;
     void main() {
       vec4 color = texture2D(tDiffuse, vUv);
-      // Early 2000s digital color grading
-      // Warm shadow lift, slightly cool highlights
-      color.rgb = mix(
-        vec3(color.r * 0.93, color.g * 0.96, color.b * 0.98),  // cool highlight shift
-        color.rgb,
-        0.7
-      );
-      // Warm shadow lift - subtle
-      color.rgb = mix(
-        vec3(color.r * 0.95, color.g * 0.98, color.b * 1.02),
-        color.rgb,
-        0.2
-      );
-      // Slight desaturation for early digital look
+      // 1945 vintage film color grading
+      // Warm sepia tone
+      const float r = color.r;
+      const float g = color.g * 0.8 + color.r * 0.1;
+      const float b = color.b * 0.7 + color.r * 0.15;
+      color.rgb = vec3(r, g, b);
+      // Slight desaturation for vintage look
       const gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
-      color.rgb = mix(gray, color.rgb, 0.15);
+      color.rgb = mix(gray, color.rgb, 0.2);
       // Exposure and gamma
       color.rgb = pow(color.rgb * exposure, vec3(power)) + offset;
       color.rgb = color.rgb * gain + bias;
@@ -112,8 +145,10 @@ const colorCorrectionShader2005 = {
   `,
 };
 
-const colorPass2005 = new ShaderPass(colorCorrectionShader2005);
-composer.addPass(colorPass2005);
+const colorPass1945 = new ShaderPass(colorCorrectionShader1945);
+composer.addPass(colorPass1945);
+
+// --- Audio: 2000s pop/ambient sounds ---
 
 // 1965 era: mid-century modern with subtle neon accents, warm amber tint
 // Subtle bloom for gentle neon glow, warm color grading
@@ -288,9 +323,9 @@ function applyEraPostProcessing(era) {
     // 1965 era: mid-century modern with subtle neon accents, warm amber tint
     // Subtle bloom for gentle neon glow, warm color grading
     // Already added above during init
-
     // 1965 color grading: warm amber tint, mid-century modern aesthetic
-    // Already added above during init
+    composer.addPass(bloomPass1965);
+    composer.addPass(colorPass1965);
   } else if (era === '1945') {
     // 1945 era: warm sepia tone + light film grain
     // Light bloom for warm glow, sepia color grading for film aesthetic
@@ -306,6 +341,9 @@ function applyEraPostProcessing(era) {
 
     // Add 1945 color grading
     composer.addPass(colorPass1945);
+  } else if (era === '1985') {
+    // 1985 era: heavy neon bloom, high contrast, synth-wave sounds
+    composer.addPass(bloomPass1965); // reuse or configure differently
   } else if (era === '2025') {
     // Swap to 2025 bloom pass
     composer.addPass(bloomPass2025);
