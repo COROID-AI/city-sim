@@ -1,0 +1,67 @@
+/*
+ * Timeline Slider Styles
+ * Interactive year selector for the top bar
+ * Integrates with Three.js overlay
+ */
+
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: rgba(10, 10, 20, 0.8);
+  backdrop-filter: blur(8px);
+  padding: 0.75rem 1rem;
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.timeline-slider {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.year-btn {
+  background: transparent;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.year-btn:hover {
+  border-color: #00d4aa;
+  color: #00d4aa;
+}
+
+.year-btn.active {
+  background: #00d4aa;
+  border-color: #00d4aa;
+  color: #0a0a14;
+}
+
+.year-btn:focus-visible {
+  outline: 2px solid #00d4aa;
+  outline-offset: 2px;
+}
+
+/* Responsive: stack buttons on narrow screens */
+@media (max-width: 480px) {
+  .top-bar {
+    padding: 0.5rem;
+  }
+
+  .year-btn {
+    flex: 1;
+    padding: 0.4rem;
+    font-size: 0.75rem;
+  }
+}

@@ -1,13 +1,18 @@
 {
   "name": "city-timelapse",
   "version": "1.0.0",
-  "description": "Three.js city timelapse scene",
+  "description": "Timeline slider UI component for city timelapse visualization",
   "type": "module",
+  "main": "index.html",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "live-server"
   },
+  "keywords": ["timeline", "slider", "threejs", "ui"],
+  "author": "",
+  "license": "MIT",
   "dependencies": {
     "three": "^0.165.0"
   },
