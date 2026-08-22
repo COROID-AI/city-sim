@@ -14,7 +14,7 @@ renderer.setPixelRatio(window.devicePixelRatio);
 renderer.shadowMap.enabled = true;
 document.body.appendChild(renderer.domElement);
 
-// --- Post-processing (EffectComposer) for clean digital color grading & minimal bloom ---
+// --- Post-processing (EffectComposer) ---
 const composer = new EffectComposer(renderer);
 composer.setSize(window.innerWidth, window.innerHeight);
 
@@ -22,18 +22,33 @@ composer.setSize(window.innerWidth, window.innerHeight);
 const renderPass = new RenderPass(scene, camera);
 composer.addPass(renderPass);
 
-// Bloom pass - minimal intensity for 2025 clean digital look
-const bloomPass = new BloomPass({
+// --- Era-specific post-processing configuration ---
+// Currently active era setting
+let currentEra = '2025';
+
+// 2025 era: clean digital color grading, minimal bloom
+const bloomPass2025 = new BloomPass({
   strength: 0.2,      // minimal bloom
   threshold: 0.6,     // moderate threshold
   radius: 0.3,      // soft radius
   kernelSize: BloomPass.KernelSize.Fourteen,
 });
-composer.addPass(bloomPass);
+composer.addPass(bloomPass2025);
 
-// --- Color grading for 2020s aesthetic ---
+// 2005 era: early digital color grading, subtle LCD bloom
+// Early 2000s digital aesthetic: warm but not film-like, slight desaturation,
+// LCD display characteristics, early digital color grading
+const bloomPass2005 = new BloomPass({
+  strength: 0.4,      // subtle LCD bloom for early digital display effect
+  threshold: 0.5,     // lower threshold for more bloom
+  radius: 0.5,      // slightly softer radius for LCD look
+  kernelSize: BloomPass.KernelSize.Fourteen,
+});
+composer.addPass(bloomPass2005);
+
+// --- Color grading shaders ---
 // 2025 color grading: clean digital, slightly cool highlights, warm shadows
-const colorCorrectionUniforms = {
+const colorCorrectionUniforms2025 = {
   tDiffuse: { value: null },
   exposure: { value: 1.0 },
   bias: { value: 0.0 },
@@ -42,8 +57,20 @@ const colorCorrectionUniforms = {
   power: { value: 1.0 },
 };
 
-const colorCorrectionShader = {
-  uniforms: colorCorrectionUniforms,
+// 2005 color grading: early digital color grading, warm but desaturated
+// Early 2000s aesthetic: warm shadows, slightly cool highlights,
+// slightly desaturated, teal-orange contrast common in early digital
+const colorCorrectionUniforms2005 = {
+  tDiffuse: { value: null },
+  exposure: { value: 1.0 },
+  bias: { value: 0.0 },
+  gain: { value: 1.0 },
+  offset: { value: 0.0 },
+  power: { value: 0.95 },
+};
+
+const colorCorrectionShader2005 = {
+  uniforms: { ...colorCorrectionUniforms2005 },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
     void main() {
@@ -61,19 +88,22 @@ const colorCorrectionShader = {
     varying vec2 vUv;
     void main() {
       vec4 color = texture2D(tDiffuse, vUv);
-      // Clean digital color grading - 2020s aesthetic
-      // Slightly cool highlights, warm shadows for cinematic look
+      // Early 2000s digital color grading
+      // Warm shadow lift, slightly cool highlights
       color.rgb = mix(
-        vec3(color.r * 0.95, color.g * 0.98, color.b),  // cool highlight shift
+        vec3(color.r * 0.93, color.g * 0.96, color.b * 0.98),  // cool highlight shift
         color.rgb,
-        0.8
+        0.7
       );
-      // Warm shadow lift
+      // Warm shadow lift - subtle
       color.rgb = mix(
-        vec3(color.r * 0.9, color.g * 0.95, color.b * 1.05),
+        vec3(color.r * 0.95, color.g * 0.98, color.b * 1.02),
         color.rgb,
-        0.3
+        0.2
       );
+      // Slight desaturation for early digital look
+      const gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+      color.rgb = mix(gray, color.rgb, 0.15);
       // Exposure and gamma
       color.rgb = pow(color.rgb * exposure, vec3(power)) + offset;
       color.rgb = color.rgb * gain + bias;
@@ -82,46 +112,30 @@ const colorCorrectionShader = {
   `,
 };
 
-const colorPass = new ShaderPass(colorCorrectionShader);
-composer.addPass(colorPass);
+const colorPass2005 = new ShaderPass(colorCorrectionShader2005);
+composer.addPass(colorPass2005);
 
-// --- Camera ---
-const camera = new THREE.PerspectiveCamera(
-  60,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  1000
-);
-camera.position.set(50, 50, 70);
-camera.lookAt(0, 0, 0);
-
-// --- Orbit Controls ---
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.05;
-controls.maxPolarAngle = Math.PI / 2.1; // Limit downward tilt
-
-// --- Audio: Contemporary electronic sounds ---
+// --- Audio: 2000s pop/ambient sounds ---
 const audioListener = new THREE.AudioListener();
 camera.add(audioListener);
 
-// Create a 2025-era electronic ambient sound
-const electronicSound = new THREE.Audio(audioListener);
+// Create 2000s pop/ambient sound
+const retroSound = new THREE.Audio(audioListener);
 
-// Load and set contemporary electronic ambient sound
+// Load and set early 2000s pop ambience sound
 const audioLoader = new AudioLoader();
-audioLoader.load('/sounds/2025-electronic-ambient.mp3', (buffer) => {
-  electronicSound.setBuffer(buffer);
-  electronicSound.setLoop(true);
-  electronicSound.setVolume(0.5);
-  electronicSound.play();
+audioLoader.load('/sounds/2005-pop-ambient.mp3', (buffer) => {
+  retroSound.setBuffer(buffer);
+  retroSound.setLoop(true);
+  retroSound.setVolume(0.3); // Low volume to mix with scene ambience
+  retroSound.play();
 });
 
 // --- Ambient Light ---
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
 scene.add(ambientLight);
 
-// --- Directional Light (subtle, matches 2025 clean digital aesthetic) ---
+// --- Directional Light (subtle, matches 2005 clean digital aesthetic) ---
 const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
 directionalLight.position.set(50, 50, 70);
 scene.add(directionalLight);
@@ -142,3 +156,101 @@ function animate() {
 }
 
 animate();
+
+// --- Era post-processing applier ---
+/**
+ * Apply era-specific post-processing to the composer
+ * @param {string} era - Era identifier ('2025', '2005', '1985', '1965', '1945')
+ */
+function applyEraPostProcessing(era) {
+  currentEra = era;
+
+  // Remove all post-processing passes except render pass
+  composer.passes = [renderPass];
+
+  if (era === '2005') {
+    // Swap to 2005 bloom pass
+    composer.addPass(bloomPass2005);
+
+    // Swap to 2005 color grading
+    composer.addPass(colorPass2005);
+    // Update color pass uniforms for 2005 aesthetic
+    colorPass2005.uniforms.power.value = 0.95;
+    colorPass2005.uniforms.exposure.value = 1.0;
+  } else if (era === '2025') {
+    // Swap to 2025 bloom pass
+    composer.addPass(bloomPass2025);
+
+    // Swap to 2025 color grading
+    composer.addPass(colorPass2005);
+    // Update color pass uniforms for 2025 aesthetic
+    colorPass2005.uniforms.power.value = 1.0;
+    colorPass2005.uniforms.exposure.value = 1.0;
+  }
+}
+
+// --- Camera ---
+const camera = new THREE.PerspectiveCamera(
+  60,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000
+);
+camera.position.set(50, 50, 70);
+camera.lookAt(0, 0, 0);
+
+// --- Orbit Controls ---
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.maxPolarAngle = Math.PI / 2.1; // Limit downward tilt
+
+// --- Audio: 2000s pop/ambient sounds ---
+const audioListener = new THREE.AudioListener();
+camera.add(audioListener);
+
+// Create 2000s pop/ambient sound
+const retroSound = new THREE.Audio(audioListener);
+
+// Load and set early 2000s pop ambience sound
+const audioLoader = new AudioLoader();
+audioLoader.load('/sounds/2005-pop-ambient.mp3', (buffer) => {
+  retroSound.setBuffer(buffer);
+  retroSound.setLoop(true);
+  retroSound.setVolume(0.3); // Low volume to mix with scene ambience
+  retroSound.play();
+});
+
+// --- Ambient Light ---
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambientLight);
+
+// --- Directional Light (subtle, matches 2005 clean digital aesthetic) ---
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
+directionalLight.position.set(50, 50, 70);
+scene.add(directionalLight);
+
+// --- Resize Handler ---
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// --- Animation Loop ---
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  composer.render();
+}
+
+animate();
+
+// Apply 2005-era post-processing on load
+applyEraPostProcessing('2005');
+
+// Export for integration with Three.js overlay
+window.renderer = renderer;
+window.composer = composer;
+window.camera = camera;

@@ -14,6 +14,15 @@
 
 // Asset catalog integration for era-specific building materials
 
+// Era constants for post-processing and audio
+const Era = {
+  Era1945: '1945',
+  Era1965: '1965',
+  Era1985: '1985',
+  Era2005: '2005',
+  Era2025: '2025',
+};
+
 // Store the currently selected year
 let selectedYear = Era.Era2025;
 let selectedEra = Era.Era2025;
@@ -285,6 +294,75 @@ function applyEraPostProcessing(era) {
     );
     contrastPass.uniforms['contrast'].value = 1.2;
     composer.addPass(contrastPass);
+  } else if (era === Era.Era2005) {
+    // 2005 era: early digital color grading, subtle LCD bloom, period ambient sounds
+    // Add subtle LCD bloom pass for early digital display effect
+    const bloomPass = new THREE.UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.4,    // subtle strength for early digital bloom
+      0.5,    // radius
+      0.5     // lower threshold for more bloom
+    );
+    composer.addPass(bloomPass);
+
+    // Add early 2000s digital color grading
+    const colorCorrectionUniforms = {
+      tDiffuse: { value: null },
+      exposure: { value: 1.0 },
+      bias: { value: 0.0 },
+      gain: { value: 1.0 },
+      offset: { value: 0.0 },
+      power: { value: 0.95 },
+    };
+
+    const colorCorrectionShader = {
+      uniforms: colorCorrectionUniforms,
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse;
+        uniform float exposure;
+        uniform float bias;
+        uniform float gain;
+        uniform float offset;
+        uniform float power;
+        varying vec2 vUv;
+        void main() {
+          vec4 color = texture2D(tDiffuse, vUv);
+          // Early 2000s digital color grading
+          // Warm shadow lift, slightly cool highlights
+          color.rgb = mix(
+            vec3(color.r * 0.93, color.g * 0.96, color.b * 0.98),
+            color.rgb,
+            0.7
+          );
+          // Warm shadow lift - subtle
+          color.rgb = mix(
+            vec3(color.r * 0.95, color.g * 0.98, color.b * 1.02),
+            color.rgb,
+            0.2
+          );
+          // Slight desaturation for early digital look
+          const gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+          color.rgb = mix(gray, color.rgb, 0.15);
+          // Exposure and gamma
+          color.rgb = pow(color.rgb * exposure, vec3(power)) + offset;
+          color.rgb = color.rgb * gain + bias;
+          gl_FragColor = color;
+        }
+      `,
+    };
+
+    const colorPass = new THREE.ShaderPass(colorCorrectionShader);
+    composer.addPass(colorPass);
+
+    // Play 2000s pop/ambient sounds
+    initEraAudio();
   } else if (era === Era.Era1945) {
     // 1945 era: warm sepia tone + light film grain
     const filmPass = new THREE.FilmPass(
@@ -382,3 +460,131 @@ window.timelineSlider = {
     emitYearSelected(year);
   }
 };
+function init1965Audio() {
+  if (audioContext) return;
+  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Create rock and roll beat
+  createRockAndRollBeat();
+
+  // Create early TV broadcast subcarrier
+  createTVSubcarrier();
+
+  // Mix audio sources
+  mixAudioSources();
+}
+
+function createRockAndRollBeat() {
+  const sampleRate = audioContext.sampleRate;
+  const duration = 8;
+  const length = sampleRate * duration;
+  const buffer = audioContext.createBuffer(1, length, sampleRate);
+  const channels = buffer.getChannelData(0);
+
+  for (let i = 0; i < length; i++) {
+    const t = i / sampleRate;
+    const bass = Math.floor(t * 120) % 2 === 0 ? 0.5 : 0;
+    const snare = Math.floor(t * 120) % 2 === 1 ? 0.7 : 0;
+    const hiHat = (Math.floor(t * 120 / 30) % 2 === 0) ? 0.3 : 0;
+    channels[i] = bass + snare * 0.7 + hiHat;
+  }
+
+  window.rockBeat = audioContext.createBufferSource();
+  window.rockBeat.buffer = buffer;
+  window.rockBeat.loop = true;
+  window.rockBeat.connect(audioContext.destination);
+  window.rockBeat.start(0);
+}
+
+function createTVSubcarrier() {
+  const sampleRate = audioContext.sampleRate;
+  const duration = 8;
+  const length = sampleRate * duration;
+  const buffer = audioContext.createBuffer(1, length, sampleRate);
+  const channels = buffer.getChannelData(0);
+
+  const carrierFreq = 3580000;
+  const carrierRad = 2 * Math.PI * carrierFreq / sampleRate;
+
+  for (let i = 0; i < length; i++) {
+    const t = i / sampleRate;
+    const value = Math.sin(carrierRad * t) * 0.1 + (Math.random() - 0.5) * 0.05;
+    channels[i] = value;
+  }
+
+  window.tvSubcarrier = audioContext.createBufferSource();
+  window.tvSubcarrier.buffer = buffer;
+  window.tvSubcarrier.loop = true;
+  window.tvSubcarrier.connect(audioContext.destination);
+  window.tvSubcarrier.start(0);
+}
+
+function mixAudioSources() {
+  if (window.rockBeat) window.rockBeat.volume.setValueAtTime(0.6, audioContext.currentTime);
+  if (window.tvSubcarrier) window.tvSubcarrier.volume.setValueAtTime(0.3, audioContext.currentTime);
+}
+
+// Update audio handling in year selection
+function handleYearClick(event) {
+  const btn = event.currentTarget;
+  const year = parseInt(btn.dataset.year);
+
+  swapEraAssets(year);
+  emitYearSelected(year);
+  applyEraPostProcessing(year);
+  if (year === Era.Era1965) init1965Audio();
+}
+
+// Initialize 1965 audio on load
+if (selectedYear === Era.Era1965) {
+  init1965Audio();
+}
+function createRockAndRollBeat() {
+  const sampleRate = audioContext.sampleRate;
+  const duration = 8;
+  const length = sampleRate * duration;
+  const buffer = audioContext.createBuffer(1, length, sampleRate);
+  const channels = buffer.getChannelData(0);
+
+  for (let i = 0; i < length; i++) {
+    const t = i / sampleRate;
+    const bass = Math.floor(t * 120) % 2 === 0 ? 0.5 : 0;
+    const snare = Math.floor(t * 120) % 2 === 1 ? 0.7 : 0;
+    const hiHat = (Math.floor(t * 120 / 30) % 2 === 0) ? 0.3 : 0;
+    channels[i] = bass + snare * 0.7 + hiHat;
+  }
+
+  window.rockBeat = audioContext.createBufferSource();
+  window.rockBeat.buffer = buffer;
+  window.rockBeat.loop = true;
+  window.rockBeat.connect(audioContext.destination);
+  window.rockBeat.start(0);
+}
+
+function createTVSubcarrier() {
+  const sampleRate = audioContext.sampleRate;
+  const duration = 8;
+  const length = sampleRate * duration;
+  const buffer = audioContext.createBuffer(1, length, sampleRate);
+  const channels = buffer.getChannelData(0);
+
+  const carrierFreq = 3580000;
+  const carrierRad = 2 * Math.PI * carrierFreq / sampleRate;
+
+  for (let i = 0; i < length; i++) {
+    const t = i / sampleRate;
+    const value = Math.sin(carrierRad * t) * 0.1 + (Math.random() - 0.5) * 0.05;
+    channels[i] = value;
+  }
+
+  window.tvSubcarrier = audioContext.createBufferSource();
+  window.tvSubcarrier.buffer = buffer;
+  window.tvSubcarrier.loop = true;
+  window.tvSubcarrier.connect(audioContext.destination);
+  window.tvSubcarrier.start(0);
+}
+
+function mixAudioSources() {
+  if (window.rockBeat) window.rockBeat.volume.setValueAtTime(0.6, audioContext.currentTime);
+  if (window.tvSubcarrier) window.tvSubcarrier.volume.setValueAtTime(0.3, audioContext.currentTime);
+}
