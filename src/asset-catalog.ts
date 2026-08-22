@@ -125,4 +125,49 @@ export class AssetCatalog {
   private static defineEraAssets(era: Era, assets: AssetDefinition[]): void {
     this.definitions.set(era, assets);
   }
+
+  // Swap all assets from one era to another
+  static async swapAssets(fromEra: Era, toEra: Era): Promise<void> {
+    // Return early if eras are the same
+    if (fromEra === toEra) {
+      return;
+    }
+
+    // Get the asset definitions for the target era
+    const toAssets = this.definitions.get(toEra);
+    if (!toAssets) {
+      console.warn(`No asset definitions found for era ${toEra}`);
+      return;
+    }
+
+    // Load all assets for the target era
+    const loadedMap: Map<string, THREE.Object3D> = new Map();
+
+    for (const asset of toAssets) {
+      try {
+        // Load the model using Three.js GLTF loader
+        const loader = new THREE.GLTFLoader();
+        const url = asset.modelUrl;
+        
+        // Add base path prefix if needed
+        const fullUrl = url.startsWith('/') ? url : `/${url}`;
+        
+        const gltf = await loader.loadAsync(fullUrl);
+        
+        // Add loaded asset to the map
+        const name = asset.name;
+        loadedMap.set(name, gltf.scene);
+      } catch (error) {
+        console.error(`Failed to load asset ${asset.name} from ${asset.modelUrl}:`, error);
+      }
+    }
+
+    // Store the loaded assets
+    this.loadedAssets.set(toEra, loadedMap);
+
+    // Clear loaded assets from the source era (if different)
+    if (fromEra !== toEra) {
+      this.loadedAssets.delete(fromEra);
+    }
+  }
 }
