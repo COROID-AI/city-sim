@@ -2,13 +2,15 @@
  * Timeline Slider Interactivity 
  * Emits 'yearSelected' event when a year button is clicked 
  * Integrates with Three.js overlay 
- */
+*/
+
 /* 
  * Era Post-Processing Configuration: 
+ * - 2025 Era: Clean digital color grading, minimal bloom, cool highlights warm shadows 
  * - 1985 Era: Heavy neon bloom, high contrast, synth-wave sounds 
  * - 1965 Era: Mid-century modern with subtle neon accents, warm amber tint 
  * - 1945 Era: Warm sepia tone + light film grain 
- */
+*/
 
 // Asset catalog integration for era-specific building materials
 
@@ -84,7 +86,7 @@ function createSynthBuffer() {
   return buffer;
 }
 
-// Initialize street synth-wave ambience
+// Initialize street ambience
 function initStreetAmbience() {
   if (!audioContext) return;
 
@@ -111,8 +113,6 @@ function initStreetAmbience() {
   filter.type = "lowpass";
   filter.frequency.value = 800; // Low-pass filter for muffled ambience
 
-  filter.connect(audioContext.destination);
-
   const filterNode = audioContext.createFilterNode ? audioContext.createFilterNode() : null;
   if (filterNode) {
     filterNode.connect ? filterNode.connect(filter) : filterNode.connect(filter);
@@ -132,7 +132,71 @@ function applyEraPostProcessing(era) {
   const composer = new THREE.EffectComposer(renderer);
   composer.addPass(new THREE.RenderPass(scene, camera));
 
-  if (era === Era.Era1985) {
+  if (era === Era.Era2025) {
+    // 2025 era: clean digital color grading, minimal bloom for contemporary aesthetic
+
+    // Add minimal bloom pass for subtle digital glow
+    const bloomPass = new THREE.UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.2,    // minimal strength for clean digital look
+      0.3,    // soft radius
+      0.6     // moderate threshold
+    );
+    composer.addPass(bloomPass);
+
+    // Add color grading for 2020s aesthetic - clean digital, slightly cool highlights, warm shadows
+    const colorCorrectionUniforms = {
+      tDiffuse: { value: null },
+      exposure: { value: 1.0 },
+      bias: { value: 0.0 },
+      gain: { value: 1.0 },
+      offset: { value: 0.0 },
+      power: { value: 1.0 },
+    };
+
+    const colorCorrectionShader = {
+      uniforms: colorCorrectionUniforms,
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse;
+        uniform float exposure;
+        uniform float bias;
+        uniform float gain;
+        uniform float offset;
+        uniform float power;
+        varying vec2 vUv;
+        void main() {
+          vec4 color = texture2D(tDiffuse, vUv);
+          // Clean digital color grading - 2020s aesthetic
+          // Slightly cool highlights, warm shadows for cinematic look
+          color.rgb = mix(
+            vec3(color.r * 0.95, color.g * 0.98, color.b),  // cool highlight shift
+            color.rgb,
+            0.8
+          );
+          // Warm shadow lift
+          color.rgb = mix(
+            vec3(color.r * 0.9, color.g * 0.95, color.b * 1.05),
+            color.rgb,
+            0.3
+          );
+          // Exposure and gamma
+          color.rgb = pow(color.rgb * exposure, vec3(power)) + offset;
+          color.rgb = color.rgb * gain + bias;
+          gl_FragColor = color;
+        }
+      `,
+    };
+
+    const colorPass = new THREE.ShaderPass(colorCorrectionShader);
+    composer.addPass(colorPass);
+  } else if (era === Era.Era1985) {
     // 1985 era: heavy neon bloom + high contrast color grading + synth-wave sounds
 
     // Add heavy bloom pass for neon glow effect
@@ -146,8 +210,8 @@ function applyEraPostProcessing(era) {
 
     // Add contrast adjustment for high contrast 1980s aesthetic
     const contrastPass = new THREE.ShaderPass(
-      THREE.ShaderPasss.MergeShaders(
-        THREE.ShaderPasss.VertexShaders['screen'],
+      THREE.ShaderPass.MergeShaders(
+        THREE.ShaderPass.VertexShaders['screen'],
         `
           uniform float contrast;
           void main() {
@@ -164,8 +228,8 @@ function applyEraPostProcessing(era) {
 
     // Apply neon color grading tint
     const colorPass = new THREE.ShaderPass(
-      THREE.ShaderPasss.MergeShaders(
-        THREE.ShaderPasss.VertexShaders['screen'],
+      THREE.ShaderPass.MergeShaders(
+        THREE.ShaderPass.VertexShaders['screen'],
         `
           uniform vec3 neonTint;
           void main() {
@@ -197,8 +261,8 @@ function applyEraPostProcessing(era) {
 
     // Add warm color grading for mid-century modern feel
     const colorPass = new THREE.ShaderPass(
-      THREE.ShaderPasss.MergeShaders(
-        THREE.ShaderPasss.VertexShaders['screen'],
+      THREE.ShaderPass.MergeShaders(
+        THREE.ShaderPass.VertexShaders['screen'],
         `
           uniform vec3 colorTint;
           void main() {
@@ -215,8 +279,8 @@ function applyEraPostProcessing(era) {
 
     // Add subtle contrast enhancement
     const contrastPass = new THREE.ShaderPass(
-      THREE.ShaderPasss.MergeShaders(
-        THREE.ShaderPasss.VertexShaders['screen'],
+      THREE.ShaderPass.MergeShaders(
+        THREE.ShaderPass.VertexShaders['screen'],
         `
           uniform float contrast;
           void main() {
@@ -279,6 +343,11 @@ async function swapEraAssets(year) {
   const targetEra = eraMap[year] || Era.Era2025;
   const assets = await AssetCatalog.swapAssets(selectedEra, targetEra);
   selectedEra = targetEra;
+  
+  // Apply 2025-era post-processing after asset swap
+  if (targetEra === Era.Era2025) {
+    applyEraPostProcessing(Era.Era2025);
+  }
 }
 
 // Click handler for year buttons
@@ -309,8 +378,8 @@ yearButtons.forEach(btn => {
 // Initialize the slider
 init();
 
-// Apply 1985 era post-processing on load (matching 1985 aesthetic)
-applyEraPostProcessing(Era.Era1985);
+// Apply 2025 era post-processing on load (matching 2025 aesthetic)
+applyEraPostProcessing(Era.Era2025);
 
 // Export for integration with Three.js overlay
 window.timelineSlider = {
