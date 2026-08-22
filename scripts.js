@@ -12,6 +12,15 @@
 
 // Asset catalog integration for era-specific building materials
 
+// Era constants for post-processing and audio
+const Era = {
+  Era1945: '1945',
+  Era1965: '1965',
+  Era1985: '1985',
+  Era2005: '2005',
+  Era2025: '2025',
+};
+
 // Store the currently selected year
 let selectedYear = Era.Era2025;
 let selectedEra = Era.Era2025;
@@ -313,3 +322,131 @@ window.timelineSlider = {
     emitYearSelected(year);
   }
 };
+function init1965Audio() {
+  if (audioContext) return;
+  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Create rock and roll beat
+  createRockAndRollBeat();
+
+  // Create early TV broadcast subcarrier
+  createTVSubcarrier();
+
+  // Mix audio sources
+  mixAudioSources();
+}
+
+function createRockAndRollBeat() {
+  const sampleRate = audioContext.sampleRate;
+  const duration = 8;
+  const length = sampleRate * duration;
+  const buffer = audioContext.createBuffer(1, length, sampleRate);
+  const channels = buffer.getChannelData(0);
+
+  for (let i = 0; i < length; i++) {
+    const t = i / sampleRate;
+    const bass = Math.floor(t * 120) % 2 === 0 ? 0.5 : 0;
+    const snare = Math.floor(t * 120) % 2 === 1 ? 0.7 : 0;
+    const hiHat = (Math.floor(t * 120 / 30) % 2 === 0) ? 0.3 : 0;
+    channels[i] = bass + snare * 0.7 + hiHat;
+  }
+
+  window.rockBeat = audioContext.createBufferSource();
+  window.rockBeat.buffer = buffer;
+  window.rockBeat.loop = true;
+  window.rockBeat.connect(audioContext.destination);
+  window.rockBeat.start(0);
+}
+
+function createTVSubcarrier() {
+  const sampleRate = audioContext.sampleRate;
+  const duration = 8;
+  const length = sampleRate * duration;
+  const buffer = audioContext.createBuffer(1, length, sampleRate);
+  const channels = buffer.getChannelData(0);
+
+  const carrierFreq = 3580000;
+  const carrierRad = 2 * Math.PI * carrierFreq / sampleRate;
+
+  for (let i = 0; i < length; i++) {
+    const t = i / sampleRate;
+    const value = Math.sin(carrierRad * t) * 0.1 + (Math.random() - 0.5) * 0.05;
+    channels[i] = value;
+  }
+
+  window.tvSubcarrier = audioContext.createBufferSource();
+  window.tvSubcarrier.buffer = buffer;
+  window.tvSubcarrier.loop = true;
+  window.tvSubcarrier.connect(audioContext.destination);
+  window.tvSubcarrier.start(0);
+}
+
+function mixAudioSources() {
+  if (window.rockBeat) window.rockBeat.volume.setValueAtTime(0.6, audioContext.currentTime);
+  if (window.tvSubcarrier) window.tvSubcarrier.volume.setValueAtTime(0.3, audioContext.currentTime);
+}
+
+// Update audio handling in year selection
+function handleYearClick(event) {
+  const btn = event.currentTarget;
+  const year = parseInt(btn.dataset.year);
+
+  swapEraAssets(year);
+  emitYearSelected(year);
+  applyEraPostProcessing(year);
+  if (year === Era.Era1965) init1965Audio();
+}
+
+// Initialize 1965 audio on load
+if (selectedYear === Era.Era1965) {
+  init1965Audio();
+}
+function createRockAndRollBeat() {
+  const sampleRate = audioContext.sampleRate;
+  const duration = 8;
+  const length = sampleRate * duration;
+  const buffer = audioContext.createBuffer(1, length, sampleRate);
+  const channels = buffer.getChannelData(0);
+
+  for (let i = 0; i < length; i++) {
+    const t = i / sampleRate;
+    const bass = Math.floor(t * 120) % 2 === 0 ? 0.5 : 0;
+    const snare = Math.floor(t * 120) % 2 === 1 ? 0.7 : 0;
+    const hiHat = (Math.floor(t * 120 / 30) % 2 === 0) ? 0.3 : 0;
+    channels[i] = bass + snare * 0.7 + hiHat;
+  }
+
+  window.rockBeat = audioContext.createBufferSource();
+  window.rockBeat.buffer = buffer;
+  window.rockBeat.loop = true;
+  window.rockBeat.connect(audioContext.destination);
+  window.rockBeat.start(0);
+}
+
+function createTVSubcarrier() {
+  const sampleRate = audioContext.sampleRate;
+  const duration = 8;
+  const length = sampleRate * duration;
+  const buffer = audioContext.createBuffer(1, length, sampleRate);
+  const channels = buffer.getChannelData(0);
+
+  const carrierFreq = 3580000;
+  const carrierRad = 2 * Math.PI * carrierFreq / sampleRate;
+
+  for (let i = 0; i < length; i++) {
+    const t = i / sampleRate;
+    const value = Math.sin(carrierRad * t) * 0.1 + (Math.random() - 0.5) * 0.05;
+    channels[i] = value;
+  }
+
+  window.tvSubcarrier = audioContext.createBufferSource();
+  window.tvSubcarrier.buffer = buffer;
+  window.tvSubcarrier.loop = true;
+  window.tvSubcarrier.connect(audioContext.destination);
+  window.tvSubcarrier.start(0);
+}
+
+function mixAudioSources() {
+  if (window.rockBeat) window.rockBeat.volume.setValueAtTime(0.6, audioContext.currentTime);
+  if (window.tvSubcarrier) window.tvSubcarrier.volume.setValueAtTime(0.3, audioContext.currentTime);
+}
