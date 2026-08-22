@@ -285,6 +285,75 @@ function applyEraPostProcessing(era) {
     );
     contrastPass.uniforms['contrast'].value = 1.2;
     composer.addPass(contrastPass);
+  } else if (era === Era.Era2005) {
+    // 2005 era: early digital color grading, subtle LCD bloom, period ambient sounds
+    // Add subtle LCD bloom pass for early digital display effect
+    const bloomPass = new THREE.UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.4,    // subtle strength for early digital bloom
+      0.5,    // radius
+      0.5     // lower threshold for more bloom
+    );
+    composer.addPass(bloomPass);
+
+    // Add early 2000s digital color grading
+    const colorCorrectionUniforms = {
+      tDiffuse: { value: null },
+      exposure: { value: 1.0 },
+      bias: { value: 0.0 },
+      gain: { value: 1.0 },
+      offset: { value: 0.0 },
+      power: { value: 0.95 },
+    };
+
+    const colorCorrectionShader = {
+      uniforms: colorCorrectionUniforms,
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse;
+        uniform float exposure;
+        uniform float bias;
+        uniform float gain;
+        uniform float offset;
+        uniform float power;
+        varying vec2 vUv;
+        void main() {
+          vec4 color = texture2D(tDiffuse, vUv);
+          // Early 2000s digital color grading
+          // Warm shadow lift, slightly cool highlights
+          color.rgb = mix(
+            vec3(color.r * 0.93, color.g * 0.96, color.b * 0.98),
+            color.rgb,
+            0.7
+          );
+          // Warm shadow lift - subtle
+          color.rgb = mix(
+            vec3(color.r * 0.95, color.g * 0.98, color.b * 1.02),
+            color.rgb,
+            0.2
+          );
+          // Slight desaturation for early digital look
+          const gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+          color.rgb = mix(gray, color.rgb, 0.15);
+          // Exposure and gamma
+          color.rgb = pow(color.rgb * exposure, vec3(power)) + offset;
+          color.rgb = color.rgb * gain + bias;
+          gl_FragColor = color;
+        }
+      `,
+    };
+
+    const colorPass = new THREE.ShaderPass(colorCorrectionShader);
+    composer.addPass(colorPass);
+
+    // Play 2000s pop/ambient sounds
+    initEraAudio();
   } else if (era === Era.Era1945) {
     // 1945 era: warm sepia tone + light film grain
     const filmPass = new THREE.FilmPass(
