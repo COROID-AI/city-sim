@@ -56,10 +56,22 @@ export class AssetCatalog {
 
     this.defineEraAssets(Era.Era1965, [
       { type: 'building', name: 'skyscraper1965', modelUrl: '/models/1965/skyscraper.glb', textureUrls: ['/textures/1965/glass.jpg'], materialParams: { color: 0xFFFFFF, roughness: 0.4, metalness: 0.6 } },
-      { type: 'building', name: 'apartment1965', modelUrl: '/models/1965/apartment.glb', textureUrls: ['/textures/1965/concrete.jpg'], materialParams: { color: 0xA0A0A0, roughness: 0.7, metalness: 0.3 } },
+      { type: 'building', name: 'apartment1965', modelUrl: '/models/1965/apartment.glb', textureUrls: ['/textures/1965/concrete.jpg'], materialParams: { color: 0x8B0000, roughness: 0.7, metalness: 0.2 } },
+      { type: 'building', name: 'brownstone1965', modelUrl: '/models/1965/brownstone.glb', textureUrls: ['/textures/1965/brick.jpg'], materialParams: { color: 0xA0522D, roughness: 0.8, metalness: 0.1 } },
+      { type: 'building', name: 'commercial1965', modelUrl: '/models/1965/commercial.glb', textureUrls: ['/textures/1965/steel.jpg'], materialParams: { color: 0xE0E0E0, roughness: 0.5, metalness: 0.7 } },
+      // Vehicles
       { type: 'vehicle', name: 'car1965', modelUrl: '/models/1965/car.glb', textureUrls: ['/textures/1965/car-chrome.jpg'] },
+      { type: 'vehicle', name: 'truck1965', modelUrl: '/models/1965/truck.glb', textureUrls: ['/textures/1965/truck-metal.jpg'] },
+      // Storefronts with 1960s aesthetic
+      { type: 'storefront', name: 'diner1965', modelUrl: '/models/1965/diner.glb', textureUrls: ['/textures/1965/diner.jpg'], materialParams: { color: 0xFF6B6B, roughness: 0.5, metalness: 0.3 } },
+      { type: 'storefront', name: 'shop1965', modelUrl: '/models/1965/shop.glb', textureUrls: ['/textures/1965/shop-front.jpg'], materialParams: { color: 0x4ECDC4, roughness: 0.6, metalness: 0.2 } },
       { type: 'storefront', name: 'mall1965', modelUrl: '/models/1965/mall.glb', textureUrls: ['/textures/1965/mall.jpg'] },
+      { type: 'storefront', name: 'sign1965', modelUrl: '/models/1965/sign.glb', textureUrls: ['/textures/1965/sign.jpg'], materialParams: { color: 0xFFD93D, roughness: 0.9, metalness: 0.1 } },
+      // Ads with neon elements
       { type: 'advertisement', name: 'billboard1965', modelUrl: '/models/1965/billboard.glb', textureUrls: ['/textures/1965/billboard.jpg'] },
+      { type: 'advertisement', name: 'poster1965', modelUrl: '/models/1965/poster.glb', textureUrls: ['/textures/1965/poster.jpg'] },
+      { type: 'advertisement', name: 'neon1965', modelUrl: '/models/1965/neon.glb', textureUrls: ['/textures/1965/neon-tube.jpg'], materialParams: { color: 0xFF00FF, roughness: 0.3, metalness: 0.8 } },
+      // Pedestrians
       { type: 'pedestrian', name: 'walker1965', modelUrl: '/models/1965/pedestrian.glb', textureUrls: ['/textures/1965/people.jpg'] },
     ]);
 

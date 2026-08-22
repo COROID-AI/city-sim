@@ -5,11 +5,10 @@
  */
 
 /* 
- * 1985 Era Post-Processing Configuration: 
- * - Heavy neon bloom 
- * - High contrast color grading 
- * - Synth-wave ambient sounds 
- * - 1980s aesthetic color grading 
+ * Era Post-Processing Configuration: 
+ * - 1985 Era: Heavy neon bloom, high contrast, synth-wave sounds 
+ * - 1965 Era: Mid-century modern with subtle neon accents, warm amber tint 
+ * - 1945 Era: Warm sepia tone + light film grain 
  */
 
 const yearButtons = document.querySelectorAll('.year-btn');
@@ -81,29 +80,28 @@ function initStreetAmbience() {
   // Create filtered noise for ambient texture
   const noiseNode = audioContext.createJavaScriptNode(22050, 2, 2);
   noiseNode.connect(audioContext.destination);
-  
+
   // Generate ambient noise buffer
   const sampleRate = audioContext.sampleRate;
   const bufferSize = 22050; // 1 second of noise
   const noiseBuffer = audioContext.createBuffer(2, bufferSize, sampleRate);
   const outputChannels = noiseBuffer.getChannelData(0);
-  
+
   for (let i = 0; i < bufferSize; i++) {
     outputChannels[i] = Math.random() * 2 - 1; // Random noise
   }
-  
+
   // Filter the noise to create ambient texture
   const filter = audioContext.createBiquadFilter();
   filter.type = "lowpass";
   filter.frequency.value = 800; // Low-pass filter for muffled ambience
-  noiseBuffer.getChannelData(1).set(outputChannels);
-  
+
   const filterNode = audioContext.createFilterNode ? audioContext.createFilterNode() : null;
   if (filterNode) {
     filterNode.connect ? filterNode.connect(filter) : filterNode.connect(filter);
   }
   filter.connect(audioContext.destination);
-  
+
   noiseNode.onaudioprocess = () => {
     // Continue ambient synth texture
   };
@@ -111,18 +109,16 @@ function initStreetAmbience() {
 
 // Apply era-specific post-processing (color grading, bloom, synth sounds)
 function applyEraPostProcessing(era) {
-  // Access the existing renderer from scene.ts
   const renderer = window.renderer;
 
   if (!renderer) return;
 
-  // Create post-processing composer
   const composer = new THREE.EffectComposer(renderer);
   composer.addPass(new THREE.RenderPass(scene, camera));
 
   if (era === Era.Era1985) {
     // 1985 era: heavy neon bloom + high contrast color grading + synth-wave sounds
-    
+
     // Add heavy bloom pass for neon glow effect
     const bloomPass = new THREE.UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
@@ -171,6 +167,53 @@ function applyEraPostProcessing(era) {
     // Play synth-wave ambient sounds
     initEraAudio();
     initStreetAmbience();
+  } else if (era === Era.Era1965) {
+    // 1965 era: mid-century modern with subtle neon accents
+
+    // Add moderate bloom pass for gentle neon glow
+    const bloomPass = new THREE.UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.5,    // strength (moderate bloom for subtle neon)
+      0.5,    // radius
+      0.7     // threshold
+    );
+    composer.addPass(bloomPass);
+
+    // Add warm color grading for mid-century modern feel
+    const colorPass = new THREE.ShaderPass(
+      THREE.ShaderPasss.MergeShaders(
+        THREE.ShaderPasss.VertexShaders['screen'],
+        `
+          uniform vec3 colorTint;
+          void main() {
+            vec4 color = texture2D( map, vUv );
+            // Add warm amber tint for 1960s mid-century modern aesthetic
+            color.rgb += colorTint * 0.15;
+            gl_FragColor = color;
+          }
+        `
+      )
+    );
+    colorPass.uniforms['colorTint'].value = new THREE.Color(0xFFB74D); // Warm amber
+    composer.addPass(colorPass);
+
+    // Add subtle contrast enhancement
+    const contrastPass = new THREE.ShaderPass(
+      THREE.ShaderPasss.MergeShaders(
+        THREE.ShaderPasss.VertexShaders['screen'],
+        `
+          uniform float contrast;
+          void main() {
+            vec4 color = texture2D( map, vUv );
+            color.rgb = pow(color.rgb, vec3(0.95)); // Slight gamma correction
+            color.rgb = (color.rgb - 0.5) * contrast + 0.5;
+            gl_FragColor = color;
+          }
+        `
+      )
+    );
+    contrastPass.uniforms['contrast'].value = 1.2;
+    composer.addPass(contrastPass);
   } else if (era === Era.Era1945) {
     // 1945 era: warm sepia tone + light film grain
     const filmPass = new THREE.FilmPass(
@@ -179,11 +222,11 @@ function applyEraPostProcessing(era) {
       0.001,  // contrast
       0.0005  // grain (light vintage film grain)
     );
-    
+
     // Set sepia color transformation matrix
     filmPass.sepia = 0.8;  // Strong sepia tint
     filmPass.vignette = 0.3;  // Light vignette
-    
+
     composer.addPass(filmPass);
   } else {
     // Default: no post-processing

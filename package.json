@@ -4,7 +4,7 @@
   "description": "Timeline slider UI component for city timelapse visualization",
   "type": "module",
   "main": "index.html",
-  "era": "1985",
+  "era": "1965",
   "keywords": ["timeline", "slider", "threejs", "ui"],
   "author": "",
   "license": "MIT",
