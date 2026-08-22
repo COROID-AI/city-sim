@@ -73,11 +73,21 @@ export class AssetCatalog {
     ]);
 
     this.defineEraAssets(Era.Era2005, [
+      // Buildings
       { type: 'building', name: 'skyscraper2005', modelUrl: '/models/2005/skyscraper.glb', textureUrls: ['/textures/2005/glass-trim.jpg'], materialParams: { color: 0xE5E5E5, roughness: 0.3, metalness: 0.9 } },
       { type: 'building', name: 'office2005', modelUrl: '/models/2005/office.glb', textureUrls: ['/textures/2005/concrete.jpg'], materialParams: { color: 0xD0D0D0, roughness: 0.4, metalness: 0.6 } },
-      { type: 'vehicle', name: 'car2005', modelUrl: '/models/2005/car.glb', textureUrls: ['/textures/2005/car.jpg'] },
+      // Storefronts with 2000s aesthetic
       { type: 'storefront', name: 'store2005', modelUrl: '/models/2005/store.glb', textureUrls: ['/textures/2005/store.jpg'] },
+      { type: 'storefront', name: 'shop2005a', modelUrl: '/models/2005/shop_a.glb', textureUrls: ['/textures/2005/shop_front.jpg'], materialParams: { color: 0xFFE4B5, roughness: 0.5, metalness: 0.2 } },
+      { type: 'storefront', name: 'shop2005b', modelUrl: '/models/2005/shop_b.glb', textureUrls: ['/textures/2005/shop_front2.jpg'], materialParams: { color: 0xFFDAB9, roughness: 0.6, metalness: 0.1 } },
+      // Digital display elements (early 2000s)
       { type: 'advertisement', name: 'digital2005', modelUrl: '/models/2005/digital.glb', textureUrls: ['/textures/2005/digital.jpg'] },
+      { type: 'advertisement', name: 'digitalDisplay2005', modelUrl: '/models/2005/digital_display.glb', textureUrls: ['/textures/2005/digital_screen.jpg'], materialParams: { color: 0x1E90FF, roughness: 0.1, metalness: 0.0 } },
+      // Signage
+      { type: 'advertisement', name: 'signage2005', modelUrl: '/models/2005/sign.glb', textureUrls: ['/textures/2005/sign.jpg'], materialParams: { color: 0xB0C4DE, roughness: 0.7, metalness: 0.3 } },
+      // Vehicles
+      { type: 'vehicle', name: 'car2005', modelUrl: '/models/2005/car.glb', textureUrls: ['/textures/2005/car.jpg'] },
+      // Pedestrians
       { type: 'pedestrian', name: 'walker2005', modelUrl: '/models/2005/pedestrian.glb', textureUrls: ['/textures/2005/people.jpg'] },
     ]);
 
