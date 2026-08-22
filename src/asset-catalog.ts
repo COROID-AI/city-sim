@@ -110,6 +110,14 @@ export class AssetCatalog {
       { type: 'storefront', name: 'store2025', modelUrl: '/models/2025/store.glb', textureUrls: ['/textures/2025/storefront.jpg'] },
       { type: 'advertisement', name: 'digital2025', modelUrl: '/models/2025/digital.glb', textureUrls: ['/textures/2025/digital.jpg'] },
       { type: 'pedestrian', name: 'walker2025', modelUrl: '/models/2025/pedestrian.glb', textureUrls: ['/textures/2025/people.jpg'] },
+      // Additional 2025-era storefronts with digital displays
+      { type: 'storefront', name: 'shop2025a', modelUrl: '/models/2025/shop_a.glb', textureUrls: ['/textures/2025/shop-front.jpg'], materialParams: { color: 0xF0F0F0, roughness: 0.4, metalness: 0.5 } },
+      { type: 'storefront', name: 'shop2025b', modelUrl: '/models/2025/shop_b.glb', textureUrls: ['/textures/2025/shop-front2.jpg'], materialParams: { color: 0xE8E8E8, roughness: 0.3, metalness: 0.6 } },
+      { type: 'advertisement', name: 'digitalDisplay2025', modelUrl: '/models/2025/digital_display.glb', textureUrls: ['/textures/2025/digital_screen.jpg'], materialParams: { color: 0x1E90FF, roughness: 0.1, metalness: 0.0 } },
+      { type: 'advertisement', name: 'signage2025', modelUrl: '/models/2025/sign.glb', textureUrls: ['/textures/2025/sign.jpg'], materialParams: { color: 0xB0C4DE, roughness: 0.7, metalness: 0.3 } },
+      // 2025-era pedestrian variations
+      { type: 'pedestrian', name: 'walker2025a', modelUrl: '/models/2025/pedestrian.glb', textureUrls: ['/textures/2025/people.jpg'] },
+      { type: 'pedestrian', name: 'walker2025b', modelUrl: '/models/2025/pedestrian.glb', textureUrls: ['/textures/2025/people2.jpg'] },
     ]);
   }
 
@@ -117,110 +125,4 @@ export class AssetCatalog {
   private static defineEraAssets(era: Era, assets: AssetDefinition[]): void {
     this.definitions.set(era, assets);
   }
-
-  // Get all asset definitions for an era
-  static getAssetsForEra(era: Era): AssetDefinition[] {
-    return this.definitions.get(era) || [];
-  }
-
-  // Load assets for a target era (async lazy loading)
-  static async loadAssets(era: Era): Promise<Map<string, THREE.Object3D>> {
-    // If assets already loaded for this era, return cached map
-    if (this.loadedAssets.has(era)) {
-      return this.loadedAssets.get(era)!;
-    }
-
-    const definitions = this.getAssetsForEra(era);
-    const loadedMap = new Map<string, THREE.Object3D>();
-
-    for (const def of definitions) {
-      try {
-        // Load GLTF model
-        const loader = new THREE.GLTFLoader();
-        const model = await new Promise<THREE.GLTF>((resolve, reject) => {
-          loader.load(
-            def.modelUrl,
-            resolve,
-            undefined,
-            reject
-          );
-        });
-
-        // Create a group for each asset, named by definition name
-        const group = new THREE.Group();
-        group.name = def.name;
-
-        // Add loaded meshes to group
-        model.scene.traverse((child) => {
-          if (child.isMesh) {
-            // Apply material parameters if defined
-            if (def.materialParams) {
-              child.material = child.material.clone();
-              const params = def.materialParams;
-              child.material.color = new THREE.Color(params.color / 0xFFFFFF);
-              child.material.roughness = params.roughness;
-              child.material.metalness = params.metalness;
-            }
-            // Apply texture if URLs provided
-            if (def.textureUrls && def.textureUrls.length > 0) {
-              const texLoader = new THREE.TextureLoader();
-              const texture = texLoader.load(def.textureUrls[0]);
-              child.material.map = texture;
-            }
-            group.add(child);
-          }
-        });
-
-        loadedMap.set(def.name, group);
-        this.loadedAssets.set(era, loadedMap);
-      } catch (error) {
-        console.error(`Failed to load asset ${def.name} for era ${era}:`, error);
-      }
-    }
-
-    return loadedMap;
-  }
-
-  // Unload assets from a previous era (disposal to prevent memory leaks)
-  static unloadAssets(era: Era): void {
-    const previouslyLoaded = this.loadedAssets.get(era);
-    if (previouslyLoaded) {
-      for (const [name, object] of previouslyLoaded) {
-        // Dispose geometries and materials to prevent leaks
-        if (object.isGroup) {
-          object.traverse((child) => {
-            if (child.isMesh) {
-              if (child.geometry) {
-                child.geometry.dispose();
-              }
-              if (child.material) {
-                if (Array.isArray(child.material)) {
-                  child.material.forEach((m) => m.dispose());
-                } else {
-                  child.material.dispose();
-                }
-              }
-            }
-          });
-        }
-        previouslyLoaded.delete(name);
-      }
-      this.loadedAssets.delete(era);
-    }
-  }
-
-  // Swap assets from current era to target era
-  static async swapAssets(currentEra: Era, targetEra: Era): Promise<Map<string, THREE.Object3D>> {
-    // Unload assets from current era (if different from target)
-    if (currentEra && currentEra !== targetEra) {
-      await this.unloadAssets(currentEra);
-    }
-
-    // Load assets for target era
-    const targetAssets = await this.loadAssets(targetEra);
-    return targetAssets;
-  }
 }
-
-// Initialize asset catalog on module import
-AssetCatalog.init();
