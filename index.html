@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Café Timelapse - Timeline Slider</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Top-placed timeline slider -->
+    <div class="timeline-slider" aria-label="Café timelapse year selector">
+      <button class="year-btn" data-year="1945" aria-pressed="false">1945</button>
+      <button class="year-btn" data-year="1965" aria-pressed="false">1965</button>
+      <button class="year-btn" data-year="1985" aria-pressed="false">1985</button>
+      <button class="year-btn" data-year="2005" aria-pressed="false">2005</button>
+      <button class="year-btn" data-year="2025" aria-pressed="false">2025</button>
+    </div>
+
+    <!-- Scene area where transformation happens -->
+    <div class="scene" aria-label="Café scene transformation area">
+      <h2>Café Timelapse Scene</h2>
+      <p>Select a year from the slider to see the café transform over time.</p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

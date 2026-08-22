@@ -1,0 +1,14 @@
+{
+  "name": "cafe-timelapse",
+  "version": "1.0.0",
+  "description": "Café timelapse simulation with timeline slider",
+  "main": "index.html",
+  "scripts": {
+    "start": "live-server",
+    "build": "echo 'No build step needed for vanilla JS'",
+    "test": "echo 'No test framework configured'"
+  },
+  "keywords": ["timeline", "slider", "accessible", "responsive"],
+  "author": "",
+  "license": "MIT"
+}
