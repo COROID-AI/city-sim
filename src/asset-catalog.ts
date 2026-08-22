@@ -1,7 +1,7 @@
 /// <reference types="three" />
 
 // Asset types for era-specific city elements
-export type AssetType = 
+export type AssetType =
   | 'building'
   | 'vehicle'
   | 'storefront'
@@ -84,23 +84,38 @@ export class AssetCatalog {
       { type: 'storefront', name: 'shop1985', modelUrl: '/models/1985/shop.glb', textureUrls: ['/textures/1985/shop.jpg'] },
       { type: 'advertisement', name: 'poster1985', modelUrl: '/models/1985/poster.glb', textureUrls: ['/textures/1985/poster.jpg'] },
       { type: 'pedestrian', name: 'walker1985', modelUrl: '/models/1985/pedestrian.glb', textureUrls: ['/textures/1985/people.jpg'] },
+      // Additional 1980s storefront ads
+      { type: 'storefront', name: 'shop1985a', modelUrl: '/models/1985/shop_alt.glb', textureUrls: ['/textures/1985/shop-alt.jpg'] },
     ]);
 
     this.defineEraAssets(Era.Era2005, [
       // Buildings
       { type: 'building', name: 'skyscraper2005', modelUrl: '/models/2005/skyscraper.glb', textureUrls: ['/textures/2005/glass-trim.jpg'], materialParams: { color: 0xE5E5E5, roughness: 0.3, metalness: 0.9 } },
       { type: 'building', name: 'office2005', modelUrl: '/models/2005/office.glb', textureUrls: ['/textures/2005/concrete.jpg'], materialParams: { color: 0xD0D0D0, roughness: 0.4, metalness: 0.6 } },
+
       // Storefronts with 2000s aesthetic
       { type: 'storefront', name: 'store2005', modelUrl: '/models/2005/store.glb', textureUrls: ['/textures/2005/store.jpg'] },
       { type: 'storefront', name: 'shop2005a', modelUrl: '/models/2005/shop_a.glb', textureUrls: ['/textures/2005/shop_front.jpg'], materialParams: { color: 0xFFE4B5, roughness: 0.5, metalness: 0.2 } },
       { type: 'storefront', name: 'shop2005b', modelUrl: '/models/2005/shop_b.glb', textureUrls: ['/textures/2005/shop_front2.jpg'], materialParams: { color: 0xFFDAB9, roughness: 0.6, metalness: 0.1 } },
-      // Digital display elements (early 2000s)
+
+      // 2005-era billboards / digital displays / poster panels
+      // (Textures/model paths are placeholders aligned with the existing catalog conventions.)
       { type: 'advertisement', name: 'digital2005', modelUrl: '/models/2005/digital.glb', textureUrls: ['/textures/2005/digital.jpg'] },
       { type: 'advertisement', name: 'digitalDisplay2005', modelUrl: '/models/2005/digital_display.glb', textureUrls: ['/textures/2005/digital_screen.jpg'], materialParams: { color: 0x1E90FF, roughness: 0.1, metalness: 0.0 } },
-      // Signage
+      // Explicit billboard + LED signage variants for building-mounted placement
+      { type: 'advertisement', name: 'billboard2005', modelUrl: '/models/2005/billboard.glb', textureUrls: ['/textures/2005/billboard.jpg'] },
+      { type: 'advertisement', name: 'ledSign2005', modelUrl: '/models/2005/led_sign.glb', textureUrls: ['/textures/2005/led_sign.jpg'], materialParams: { color: 0x00E5FF, roughness: 0.2, metalness: 0.2 } },
+
+      // Poster panels / street-level commercial advertising
+      { type: 'advertisement', name: 'poster2005', modelUrl: '/models/2005/poster.glb', textureUrls: ['/textures/2005/poster.jpg'] },
+      { type: 'advertisement', name: 'posterPanel2005', modelUrl: '/models/2005/poster_panel.glb', textureUrls: ['/textures/2005/poster_panel.jpg'] },
+
+      // Store signage (LED/LCD look)
       { type: 'advertisement', name: 'signage2005', modelUrl: '/models/2005/sign.glb', textureUrls: ['/textures/2005/sign.jpg'], materialParams: { color: 0xB0C4DE, roughness: 0.7, metalness: 0.3 } },
+
       // Vehicles
       { type: 'vehicle', name: 'car2005', modelUrl: '/models/2005/car.glb', textureUrls: ['/textures/2005/car.jpg'] },
+
       // Pedestrians
       { type: 'pedestrian', name: 'walker2005', modelUrl: '/models/2005/pedestrian.glb', textureUrls: ['/textures/2005/people.jpg'] },
     ]);
@@ -150,12 +165,12 @@ export class AssetCatalog {
         // Load the model using Three.js GLTF loader
         const loader = new THREE.GLTFLoader();
         const url = asset.modelUrl;
-        
+
         // Add base path prefix if needed
         const fullUrl = url.startsWith('/') ? url : `/${url}`;
-        
+
         const gltf = await loader.loadAsync(fullUrl);
-        
+
         // Add loaded asset to the map
         const name = asset.name;
         loadedMap.set(name, gltf.scene);
