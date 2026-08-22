@@ -177,6 +177,62 @@ function applyEraPostProcessing(era) {
     // Update color pass uniforms for 2005 aesthetic
     colorPass2005.uniforms.power.value = 0.95;
     colorPass2005.uniforms.exposure.value = 1.0;
+  } else if (era === '1965') {
+    // 1965 era: mid-century modern with subtle neon accents, warm amber tint
+    // Subtle bloom for gentle neon glow, warm color grading
+    const bloomPass1965 = new BloomPass({
+      strength: 0.3,      // subtle bloom for gentle neon glow
+      threshold: 0.7,     // higher threshold for selective bloom
+      radius: 0.4,        // moderate radius
+      kernelSize: BloomPass.KernelSize.Fourteen,
+    });
+    composer.addPass(bloomPass1965);
+
+    // 1965 color grading: warm amber tint, mid-century modern aesthetic
+    const colorCorrectionUniforms1965 = {
+      tDiffuse: { value: null },
+      exposure: { value: 1.0 },
+      bias: { value: 0.0 },
+      gain: { value: 1.0 },
+      offset: { value: 0.05 },  // warm amber offset
+      power: { value: 1.05 },   // slight power boost for warmth
+    };
+    const colorPass1965 = {
+      uniforms: { ...colorCorrectionUniforms1965 },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse;
+        uniform float exposure;
+        uniform float bias;
+        uniform float gain;
+        uniform float offset;
+        uniform float power;
+        varying vec2 vUv;
+        void main() {
+          vec4 color = texture2D(tDiffuse, vUv);
+          // 1965 mid-century modern color grading
+          // Warm amber tint with subtle desaturation
+          color.rgb = mix(
+            vec3(0.8, 0.7, 0.6),  // warm neutral base
+            color.rgb,
+            0.3
+          );
+          // Enhance warm channels
+          color.r = color.r * 1.1 + 0.02;
+          color.g = color.g * 1.05;
+          color.b = color.b * 0.95;
+          // Final output
+          gl_FragColor = color;
+        }
+      `,
+    };
+    composer.addPass(colorPass1965);
   } else if (era === '2025') {
     // Swap to 2025 bloom pass
     composer.addPass(bloomPass2025);
