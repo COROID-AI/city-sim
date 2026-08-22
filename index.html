@@ -1,22 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>City Timelapse - Timeline Slider</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <div class="top-bar">
-    <div class="timeline-slider" aria-label="Timeline year selector">
-      <button class="year-btn" data-year="1945" aria-selected="false">1945</button>
-      <button class="year-btn" data-year="1965" aria-selected="false">1965</button>
-      <button class="year-btn" data-year="1985" aria-selected="false">1985</button>
-      <button class="year-btn" data-year="2005" aria-selected="false">2005</button>
-      <button class="year-btn" data-year="2025" aria-selected="false">2025</button>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="era" content="1945">
+    <title>City Timelapse - Timeline Slider</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+      .body { background: #1a0a05; }
+      .year-btn.sepia { border-color: #8B4513; color: #8B4513; }
+    </style>
+  </head>
+  <body>
+    <div class="top-bar">
+      <div class="timeline-slider" aria-label="Timeline year selector">
+        <button class="year-btn" data-year="1945" aria-selected="false">1945</button>
+        <button class="year-btn" data-year="1965" aria-selected="false">1965</button>
+        <button class="year-btn" data-year="1985" aria-selected="false">1985</button>
+        <button class="year-btn" data-year="2005" aria-selected="false">2005</button>
+        <button class="year-btn" data-year="2025" aria-selected="false">2025</button>
+      </div>
     </div>
-  </div>
 
-  <script src="scripts.js"></script>
-</body>
+    <script src="scripts.js"></script>
+  </body>
 </html>

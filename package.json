@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "start": "live-server"
   },
+  "era": "1945",
   "keywords": ["timeline", "slider", "threejs", "ui"],
   "author": "",
   "license": "MIT",

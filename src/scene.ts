@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer, FilmPass, RenderPass } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 
 // --- Renderer ---
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -39,11 +40,18 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// Initialize era post-processing
+applyEraPostProcessing(Era.Era1945);
+
 // --- Animation Loop ---
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
 }
+
+// Start era audio when scene initializes
+initEraAudio();
+initStreetAmbience();
 
 animate();
