@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { EffectComposer, FilmPass, RenderPass } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { EffectComposer, FilmPass, RenderPass, UnrealBloomPass } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 
 // --- Renderer ---
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -33,25 +33,25 @@ controls.maxPolarAngle = Math.PI / 2.1; // Limit downward tilt
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambientLight);
 
-// --- Resize Handler ---
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+// --- Post-Composer & Era Post-Processing ---
+const composer = new THREE.EffectComposer(renderer);
+composer.addPass(new THREE.RenderPass(scene, camera));
 
-// Initialize era post-processing
-applyEraPostProcessing(Era.Era1945);
+// Add bloom pass for heavy neon effect (will be configured per-era in scripts.js)
+// We set up a default bloom with moderate settings; applyEraPostProcessing in scripts.js will adjust
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.5,    // strength (will be overridden per-era)
+  0.4,    // radius
+  0.85    // threshold
+);
+composer.addPass(bloomPass);
 
 // --- Animation Loop ---
 function animate() {
   requestAnimationFrame(animate);
   controls.update();
-  renderer.render(scene, camera);
+  composer.render();
 }
-
-// Start era audio when scene initializes
-initEraAudio();
-initStreetAmbience();
 
 animate();

@@ -4,16 +4,16 @@
   "description": "Timeline slider UI component for city timelapse visualization",
   "type": "module",
   "main": "index.html",
+  "era": "1985",
+  "keywords": ["timeline", "slider", "threejs", "ui"],
+  "author": "",
+  "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "start": "live-server"
   },
-  "era": "1945",
-  "keywords": ["timeline", "slider", "threejs", "ui"],
-  "author": "",
-  "license": "MIT",
   "dependencies": {
     "three": "^0.165.0"
   },
