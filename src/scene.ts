@@ -310,11 +310,62 @@ function applyEraPostProcessing(era) {
     // Swap to 2025 bloom pass
     composer.addPass(bloomPass2025);
 
-    // Swap to 2025 color grading
-    composer.addPass(colorPass2005);
-    // Update color pass uniforms for 2025 aesthetic
-    colorPass2005.uniforms.power.value = 1.0;
-    colorPass2005.uniforms.exposure.value = 1.0;
+    // 2025 color grading: clean digital, slightly cool highlights, warm shadows
+    // Remove any existing color pass that might be from another era
+    composer.passes = composer.passes.filter(p => !p.fragmentShader || !p.fragmentShader.includes('sepia') && !p.fragmentShader.includes('Warm shadow lift') && !p.fragmentShader.includes('desaturation'));
+
+    // Create and add 2025 color grading shader pass
+    const colorCorrectionUniforms2025 = {
+      tDiffuse: { value: null },
+      exposure: { value: 1.0 },
+      bias: { value: 0.0 },
+      gain: { value: 1.0 },
+      offset: { value: 0.0 },
+      power: { value: 1.0 },
+    };
+
+    const colorPass2025 = {
+      uniforms: { ...colorCorrectionUniforms2025 },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse;
+        uniform float exposure;
+        uniform float bias;
+        uniform float gain;
+        uniform float offset;
+        uniform float power;
+        varying vec2 vUv;
+        void main() {
+          vec4 color = texture2D(tDiffuse, vUv);
+          // 2025 clean digital color grading: slightly cool highlights, warm shadows
+          color.rgb = mix(
+            vec3(color.r * 0.95, color.g * 0.97, color.b * 1.02),
+            color.rgb,
+            0.3
+          );
+          // Warm shadow lift - subtle
+          color.rgb = mix(
+            vec3(color.r * 0.98, color.g * 1.01, color.b * 1.03),
+            color.rgb,
+            0.15
+          );
+          // Minimal desaturation preserved for clean look
+          const gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+          color.rgb = mix(gray, color.rgb, 0.05);
+          // Exposure and gamma
+          color.rgb = pow(color.rgb * exposure, vec3(power)) + offset;
+          color.rgb = color.rgb * gain + bias;
+          gl_FragColor = color;
+        }
+      `,
+    };
+    composer.addPass(colorPass2025);
   }
 }
 
