@@ -48,7 +48,10 @@ export class AssetCatalog {
       { type: 'vehicle', name: 'car1945', modelUrl: '/models/1945/car.glb', textureUrls: ['/textures/1945/car-metal.jpg'] },
       // Storefronts
       { type: 'storefront', name: 'diner1945', modelUrl: '/models/1945/diner.glb', textureUrls: ['/textures/1945/diner.jpg'] },
-      // Ads
+      // 1945-era advertisements - period-appropriate styles: hand-painted signs, metal billboards, neon signs
+      { type: 'advertisement', name: 'billboard1945', modelUrl: '/models/1945/billboard.glb', textureUrls: ['/textures/1945/billboard.jpg'], materialParams: { color: 0xCD853F, roughness: 0.6, metalness: 0.3 } },
+      { type: 'advertisement', name: 'neonSign1945', modelUrl: '/models/1945/neon_sign.glb', textureUrls: ['/textures/1945/neon-tube.jpg'], materialParams: { color: 0xFF00FF, roughness: 0.4, metalness: 0.7 } },
+      { type: 'advertisement', name: 'posterPanel1945', modelUrl: '/models/1945/poster_panel.glb', textureUrls: ['/textures/1945/poster-panel.jpg'] },
       { type: 'advertisement', name: 'poster1945', modelUrl: '/models/1945/poster.glb', textureUrls: ['/textures/1945/poster.jpg'] },
       // Pedestrians
       { type: 'pedestrian', name: 'walker1945', modelUrl: '/models/1945/pedestrian.glb', textureUrls: ['/textures/1945/people.jpg'] },
