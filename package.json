@@ -1,0 +1,17 @@
+{
+  "name": "city-timelapse",
+  "version": "1.0.0",
+  "description": "Three.js city timelapse scene",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.165.0"
+  },
+  "devDependencies": {
+    "vite": "^5.2.0"
+  }
+}
