@@ -46,6 +46,8 @@ export class AssetCatalog {
       { type: 'building', name: 'house1945', modelUrl: '/models/1945/house.glb', textureUrls: ['/textures/1945/wood.jpg'], materialParams: { color: 0xDEB887, roughness: 0.8, metalness: 0.1 } },
       // Vehicles
       { type: 'vehicle', name: 'car1945', modelUrl: '/models/1945/car.glb', textureUrls: ['/textures/1945/car-metal.jpg'] },
+      // Trucks
+      { type: 'vehicle', name: 'truck1945', modelUrl: '/models/1945/truck.glb', textureUrls: ['/textures/1945/truck-metal.jpg'] },
       // Storefronts
       { type: 'storefront', name: 'diner1945', modelUrl: '/models/1945/diner.glb', textureUrls: ['/textures/1945/diner.jpg'] },
       // Ads
