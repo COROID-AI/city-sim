@@ -16,6 +16,7 @@
  *   { scene, renderer, camera, controls, clock, HUD, THREE }
  */
 import era1945 from './1945/index.js';
+import era1985 from './1985/index.js';
 
 import { era1965 } from './1965/index.js';
 import era2005 from './2005/index.js';
@@ -34,6 +35,7 @@ let activeCtx = null;
 
 // Load the completed 1945 interior before the scaffold supplies fallbacks.
 registerEra('postwar-1945', era1945);
+registerEra('neon-1985', era1985);
 
 export function registerEra(id, module) {
   if (!id || typeof id !== 'string') {
