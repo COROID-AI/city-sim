@@ -15,15 +15,22 @@
  * ctx is the shared scene context provided by the app bootstrap:
  *   { scene, renderer, camera, controls, clock, HUD, THREE }
  */
+import era1945 from './1945/index.js';
 
 export const ERA_YEARS = Object.freeze([1945, 1965, 1985, 2005, 2025]);
 
 const BY_ID = new Map();   // id -> EraModule
 const BY_YEAR = new Map(); // year -> EraModule
 
+// Era modules self-register here so the application scaffold remains era-agnostic.
+// The other years are still supplied by their placeholder until their modules land.
+
 let activeId = null;
 let activeYear = null;
 let activeCtx = null;
+
+// Load the completed 1945 interior before the scaffold supplies fallbacks.
+registerEra('postwar-1945', era1945);
 
 export function registerEra(id, module) {
   if (!id || typeof id !== 'string') {
@@ -38,6 +45,9 @@ export function registerEra(id, module) {
   BY_ID.set(id, module);
   const year = module.year ?? Number.parseInt(id.replace(/^\D+/g, ''), 10);
   if (Number.isFinite(year) && ERA_YEARS.includes(year)) {
+    // A completed era imported above must not be replaced by the scaffold's
+    // all-years placeholder registration.
+    if (BY_YEAR.has(year) && String(id).startsWith('placeholder-')) return module;
     BY_YEAR.set(year, module);
   }
   return module;
