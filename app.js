@@ -14,15 +14,15 @@ const yearLayers = {
 function addLayerContent() {
   const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
   const materials = {
-    1945: new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.8, metalness: 0.2 }),
-    1965: new THREE.MeshStandardMaterial({ color: 0x00FFFF, roughness: 0.6, metalness: 0.3 }),
-    1985: new THREE.MeshStandardMaterial({ color: 0xFF00FF, roughness: 0.6, metalness: 0.3 }),
-    2005: new THREE.MeshStandardMaterial({ color: 0x00FF00, roughness: 0.6, metalness: 0.3 }),
-    2025: new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.5, metalness: 0.4 })
+    1945: new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.8, metalness: 0.2, transparent: true }),
+    1965: new THREE.MeshStandardMaterial({ color: 0x00FFFF, roughness: 0.6, metalness: 0.3, transparent: true }),
+    1985: new THREE.MeshStandardMaterial({ color: 0xFF00FF, roughness: 0.6, metalness: 0.3, transparent: true }),
+    2005: new THREE.MeshStandardMaterial({ color: 0x00FF00, roughness: 0.6, metalness: 0.3, transparent: true }),
+    2025: new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.5, metalness: 0.4, transparent: true })
   };
 
   Object.entries(yearLayers).forEach(([year, layer]) => {
-    const mesh = new THREE.Mesh(boxGeometry, materials[parseInt(year, 10)]);
+    const mesh = new THREE.Mesh(boxGeometry, new THREE.MeshStandardMaterial({ color: materials[parseInt(year, 10)].color, roughness: 0.8, metalness: 0.2, transparent: true }));
     mesh.position.set((parseInt(year, 10) - 1945) * 1.5 - 1.5, 0, 0);
     layer.add(mesh);
 
@@ -175,6 +175,7 @@ function handleYearSelect(year) {
   // Accessibility / state
   document.querySelectorAll('.year-btn').forEach(btn => {
     btn.setAttribute('aria-pressed', String(parseInt(btn.dataset.year, 10) === year));
+    btn.classList.toggle('selected', parseInt(btn.dataset.year, 10) === year);
   });
 
   // Audio (if initialized)
