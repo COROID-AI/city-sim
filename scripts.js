@@ -132,7 +132,10 @@ function applyEraPostProcessing(era) {
   const composer = new THREE.EffectComposer(renderer);
   composer.addPass(new THREE.RenderPass(scene, camera));
 
-  if (era === Era.Era2025) {
+  // Convert Era enum to year number for comparison, since click handler passes numeric year
+  const year = typeof era === 'number' ? era : parseInt(era);
+  
+  if (year === Era.Era2025) {
     // 2025 era: clean digital color grading, minimal bloom for contemporary aesthetic
 
     // Add minimal bloom pass for subtle digital glow
@@ -247,7 +250,7 @@ function applyEraPostProcessing(era) {
     // Play synth-wave ambient sounds
     initEraAudio();
     initStreetAmbience();
-  } else if (era === Era.Era1965) {
+  } else if (year === Era.Era1965) {
     // 1965 era: mid-century modern with subtle neon accents
 
     // Add moderate bloom pass for gentle neon glow
