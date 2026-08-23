@@ -1,33 +1,16 @@
-/** 
- * Three.js Café Timelapse Scene 
- * 
- * Creates a 3D café interior scene with basic geometry, lighting, and 
- * year-layer containers for period-specific asset swapping. 
- * Integrates with the timeline slider for year selection. 
- */
- 
-/** 
- * Period-appropriate audio system 
- * Plays era-specific music and ambient SFX based on selected year. 
- * Must include: period-appropriate music tracks, ambient conversation murmur, 
- * coffee machine hissing and clattering sounds, audio that responds to year changes, 
- * and user controls for audio mixing/muting. 
- */
- 
-// Three.js scene setup
+/** Three.js Café Timelapse Scene (single-file, global THREE build) */
+
+// ---------- Scene / rendering ----------
 const scene = new THREE.Scene();
 
-// Year-layer containers for asset swapping
-// Each container will hold assets for a specific year period
 const yearLayers = {
-  1945: new THREE.Group(), // Post-War Era
-  1965: new THREE.Group(), // Swinging Sixties
-  1985: new THREE.Group(), // Retro Eighties
-  2005: new THREE.Group(), // Digital Age
-  2025: new THREE.Group() // Modern Times
+  1945: new THREE.Group(),
+  1965: new THREE.Group(),
+  1985: new THREE.Group(),
+  2005: new THREE.Group(),
+  2025: new THREE.Group()
 };
 
-// Add period-appropriate geometry to each year layer so they are not empty
 function addLayerContent() {
   const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
   const materials = {
@@ -37,33 +20,47 @@ function addLayerContent() {
     2005: new THREE.MeshStandardMaterial({ color: 0x00FF00, roughness: 0.6, metalness: 0.3 }),
     2025: new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.5, metalness: 0.4 })
   };
+
   Object.entries(yearLayers).forEach(([year, layer]) => {
     const mesh = new THREE.Mesh(boxGeometry, materials[parseInt(year, 10)]);
-    mesh.position.set(
-      (parseInt(year, 10) - 1945) * 1.5 - 1.5,
-      0,
-      0
-    );
+    mesh.position.set((parseInt(year, 10) - 1945) * 1.5 - 1.5, 0, 0);
     layer.add(mesh);
+
+    // Light decor so the layer isn't “empty” visually.
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 0.6),
+      new THREE.MeshStandardMaterial({
+        color: materials[parseInt(year, 10)].color,
+        roughness: 0.9,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0
+      })
+    );
+    plane.position.set((parseInt(year, 10) - 1945) * 1.5 - 1.5, -0.9, -1.2);
+    layer.add(plane);
   });
 }
 addLayerContent();
 
-// Add all year layers to the scene
+// Basic lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+dir.position.set(2, 5, 3);
+scene.add(dir);
+
 Object.values(yearLayers).forEach(layer => {
   layer.visible = false;
   scene.add(layer);
 });
 
-// Camera - perspective camera
+// Camera
 const camera = new THREE.PerspectiveCamera(
-  60, // field of view
-  window.innerWidth / window.innerHeight, // aspect ratio
-  0.1, // near plane
-  1000 // far plane
+  60,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000
 );
-
-// Camera position - view the café interior
 camera.position.set(0, 1.5, 3);
 camera.lookAt(0, 0, 0);
 
@@ -73,372 +70,424 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 document.querySelector('.scene').appendChild(renderer.domElement);
 
-// Orbit controls for camera navigation (orbit + zoom)
-// Enable for desktop (mouse) and touch (mobile) interaction
+// Orbit controls
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
-
-// Smooth damping for natural movement
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-
-// Zoom limits - adjusted for close-up inspection
-// Allow closer zoom for detailed inspection of period-specific elements
-// minDistance reduced to enable closer inspection while preventing
-// camera from getting too close and clipping geometry
 controls.minDistance = 0.5;
 controls.maxDistance = 10;
-
-// Disable auto-rotate to avoid motion discomfort
 controls.autoRotate = false;
-
-// Mouse wheel zoom sensitivity
 controls.enableZoom = true;
-
-// Tilt limits to keep the scene in a comfortable viewing range
-// Expanded polar angle range for better orbit flexibility around café interior
-// Allows viewing from above and below the café tables/equipment
 controls.maxPolarAngle = Math.PI / 2;
-// Lower minimum polar angle to allow viewing the café floor and lower details
 controls.minPolarAngle = Math.PI / 6;
 
-// Animation loop
 function animate() {
   requestAnimationFrame(animate);
 
-  // Rotate year layers slowly to show they're separate containers
   Object.values(yearLayers).forEach((layer, i) => {
     layer.rotation.y = i * 0.2 + Date.now() / 1000 / (5 + i);
   });
 
-  // Update controls (required when damping is enabled)
   controls.update();
-
   renderer.render(scene, camera);
 }
+animate();
 
-// Resize handling
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Close-up inspection: adjust controls for mobile/touch devices
-// Ensure smooth interaction on both desktop (mouse) and mobile (touch)
-function handleTouchControls() {
-  // Detect if we're on a touch device
-  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  
-  if (isTouchDevice) {
-    // Touch-specific: enable pinch zoom and prevent default touch behaviors
-    controls.enablePan = true;
-    controls.enableZoom = true;
-    // Add subtle damping for natural feel on touch
-    controls.dampingFactor = 0.1;
+// ---------- Year selection ----------
+const yearLabels = {
+  1945: 'Post-War Era',
+  1965: 'Swinging Sixties',
+  1985: 'Retro Eighties',
+  2005: 'Digital Age',
+  2025: 'Modern Times'
+};
+
+let currentYear = 1945;
+
+function fadeLayer(layer, visible) {
+  const fades = [];
+  layer.children.forEach(child => {
+    if (child.material && typeof child.material.opacity === 'number') {
+      fades.push(child.material);
+    }
+  });
+
+  if (visible) {
+    layer.visible = true;
+    fades.forEach(m => (m.opacity = 0));
+
+    let opacity = 0;
+    const fadeIn = setInterval(() => {
+      opacity += 0.1;
+      fades.forEach(m => (m.opacity = Math.min(opacity, 1)));
+      if (opacity >= 1) clearInterval(fadeIn);
+    }, 50);
   } else {
-    // Desktop: maintain current settings
-    controls.enablePan = false;
-    controls.dampingFactor = 0.05;
+    fades.forEach(m => {
+      if (typeof m.opacity === 'number') m.opacity = 0;
+    });
+    layer.visible = false;
   }
 }
 
-// Initialize touch controls on load
-handleTouchControls();
+function handleYearSelect(year) {
+  currentYear = year;
 
-// Re-evaluate on window resize in case device orientation changes
-window.addEventListener('orientationchange', handleTouchControls);
-window.addEventListener('resize', handleTouchControls);
+  // Visual: hide all, then show selected.
+  Object.entries(yearLayers).forEach(([y, layer]) => {
+    const vy = parseInt(y, 10) === year;
+    fadeLayer(layer, vy);
+  });
 
-// Initialize audio on load
+  const sceneElement = document.querySelector('.scene');
+  if (sceneElement) {
+    const h2 = sceneElement.querySelector('h2');
+    const p = sceneElement.querySelector('p');
+    if (h2) h2.textContent = `Café ${yearLabels[year] || year}`;
+    if (p) p.textContent = `Year: ${year} - Café timelapse transformation active`;
+  }
+
+  const indicator = document.querySelector('.year-indicator');
+  if (indicator) {
+    indicator.textContent = `${year} - ${yearLabels[year] || ''}`.trim();
+  }
+
+  // Accessibility / state
+  document.querySelectorAll('.year-btn').forEach(btn => {
+    btn.setAttribute('aria-pressed', String(parseInt(btn.dataset.year, 10) === year));
+  });
+
+  // Audio (if initialized)
+  if (typeof window.setEraMusic === 'function') {
+    window.setEraMusic(year);
+  }
+
+  // Coffee SFX should fire on year change when audio is active.
+  if (typeof window.playCoffeeMachineSFX === 'function') {
+    window.playCoffeeMachineSFX();
+  }
+}
+
+// ---------- Audio (lazy, user-gesture gated) ----------
+let audioContext = null;
+let audioInitialized = false;
+
+let musicGain;
+let ambienceGain;
+let coffeeGain;
+
+let isAudioMuted = false;
+
+let currentEraOscillators = null; // { osc1, osc2, gainNode }
+let ambienceNodes = null; // { source, gain }
+let coffeeNodes = null; // not persistent
+
+function ensureAudioContext() {
+  if (!audioContext) {
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    audioContext = new Ctor();
+  }
+  return audioContext;
+}
+
+async function resumeAudioContextIfNeeded() {
+  if (!audioContext) return;
+  if (audioContext.state === 'suspended') {
+    try {
+      await audioContext.resume();
+    } catch (e) {
+      // ignore
+    }
+  }
+}
+
+function createNoiseBuffer(context, seconds = 1) {
+  const frameCount = context.sampleRate * seconds;
+  const buffer = context.createBuffer(1, frameCount, context.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < frameCount; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  return buffer;
+}
+
+function createWhiteNoiseSource(context, loop = true) {
+  const source = context.createBufferSource();
+  source.buffer = createNoiseBuffer(context, 1);
+  source.loop = loop;
+  return source;
+}
+
 function initAudioSystem() {
-  // Audio context and state
-  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioInitialized) return;
+  audioInitialized = true;
 
-  // Period-appropriate music configurations for each era
-  const eraMusic = {
-    1945: { name: 'Post-War Era', style: 'big-band swing' },
-    1965: { name: 'Swinging Sixties', style: 'rock & pop' },
-    1985: { name: 'Retro Eighties', style: 'synthpop & new wave' },
-    2005: { name: 'Digital Age', style: 'electronic & hip-hop' },
-    2025: { name: 'Modern Times', style: 'ambient & contemporary' }
-  };
+  const context = ensureAudioContext();
 
-  // Audio gain nodes for mixing control
-  const musicGain = audioContext.createGain();
-  const ambienceGain = audioContext.createGain();
-  const coffeeGain = audioContext.createGain();
+  musicGain = context.createGain();
+  ambienceGain = context.createGain();
+  coffeeGain = context.createGain();
 
-  musicGain.connect(audioContext.destination);
-  ambienceGain.connect(audioContext.destination);
-  coffeeGain.connect(audioContext.destination);
+  musicGain.connect(context.destination);
+  ambienceGain.connect(context.destination);
+  coffeeGain.connect(context.destination);
 
-  // Default volume levels (balanced so nothing overwhelms)
   musicGain.gain.value = 0.4;
   ambienceGain.gain.value = 0.3;
   coffeeGain.gain.value = 0.2;
 
-  // Muting state
-  let isAudioMuted = false;
+  // Ambience: murmur via filtered noise
+  const ambienceFilter = context.createBiquadFilter();
+  ambienceFilter.type = 'bandpass';
+  ambienceFilter.frequency.value = 500;
+  ambienceFilter.Q.value = 0.8;
 
-  // Period-appropriate music oscillator setup
-  function createEraMusicOscillator(year) {
-    // Stop any currently playing music
-    stopEraMusic();
+  const ambienceLow = context.createBiquadFilter();
+  ambienceLow.type = 'lowpass';
+  ambienceLow.frequency.value = 1500;
 
-    const config = eraMusic[year];
-    if (!config) return;
+  const ambienceSource = createWhiteNoiseSource(context, true);
+  const ambienceLevel = context.createGain();
+  ambienceLevel.gain.value = 0.0;
 
-    const osc1 = audioContext.createOscillator();
-    const osc2 = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
+  ambienceSource.connect(ambienceLow);
+  ambienceLow.connect(ambienceFilter);
+  ambienceFilter.connect(ambienceLevel);
+  ambienceLevel.connect(isAudioMuted ? context.destination : ambienceGain);
 
-    // Era-specific oscillator types and frequencies
+  // Fade in
+  ambienceLevel.gain.setTargetAtTime(0.35, context.currentTime + 0.05, 0.3);
+
+  ambienceSource.start();
+
+  ambienceNodes = { ambienceSource, ambienceLevel, ambienceFilter, ambienceLow };
+
+  // Expose controls
+  window.setAudioMute = (muted) => {
+    isAudioMuted = !!muted;
+    if (!context) return;
+
+    const m = isAudioMuted ? 0 : 0.4;
+    const a = isAudioMuted ? 0 : 0.3;
+    const c = isAudioMuted ? 0 : 0.2;
+
+    if (musicGain) musicGain.gain.value = m;
+    if (ambienceGain) ambienceGain.gain.value = a;
+    if (coffeeGain) coffeeGain.gain.value = c;
+  };
+
+  window.setMusicVolume = (v) => {
+    if (!musicGain) return;
+    musicGain.gain.value = Math.max(0, Math.min(1, v));
+  };
+
+  window.setAmbienceVolume = (v) => {
+    if (!ambienceGain) return;
+    ambienceGain.gain.value = Math.max(0, Math.min(1, v));
+  };
+
+  window.setCoffeeVolume = (v) => {
+    if (!coffeeGain) return;
+    coffeeGain.gain.value = Math.max(0, Math.min(1, v));
+  };
+
+  window.setEraMusic = (year) => {
+    if (!year) year = currentYear;
+
+    if (currentEraOscillators) {
+      try {
+        currentEraOscillators.osc1.stop();
+      } catch (_) {}
+      try {
+        currentEraOscillators.osc2.stop();
+      } catch (_) {}
+      currentEraOscillators = null;
+    }
+
+    const osc1 = context.createOscillator();
+    const osc2 = context.createOscillator();
+    const gainNode = context.createGain();
+    gainNode.gain.value = 0.0;
+
+    // Types / frequencies per era (simple synth placeholders)
     switch (year) {
       case 1945:
-        // Post-War: warm sine tones with slight detuning
-        osc1.frequency.value = 220; osc1.type = 'sine';
-        osc2.frequency.value = 247; osc2.type = 'sine'; osc2.detune.value = 12;
+        osc1.type = 'sine';
+        osc1.frequency.value = 220;
+        osc2.type = 'sine';
+        osc2.frequency.value = 247;
+        osc2.detune.value = 12;
         break;
       case 1965:
-        // Swinging Sixties: brighter square waves
-        osc1.frequency.value = 330; osc1.type = 'square';
-        osc2.frequency.value = 440; osc2.type = 'square'; osc2.detune.value = 15;
+        osc1.type = 'square';
+        osc1.frequency.value = 330;
+        osc2.type = 'square';
+        osc2.frequency.value = 440;
+        osc2.detune.value = 15;
         break;
       case 1985:
-        // Retro Eighties: sawtooth leads
-        osc1.frequency.value = 440; osc1.type = 'sawtooth';
-        osc2.frequency.value = 554; osc2.type = 'sawtooth'; osc2.detune.value = -8;
+        osc1.type = 'sawtooth';
+        osc1.frequency.value = 440;
+        osc2.type = 'sawtooth';
+        osc2.frequency.value = 554;
+        osc2.detune.value = -8;
         break;
       case 2005:
-        // Digital Age: clean sine waves
-        osc1.frequency.value = 523; osc1.type = 'sine';
-        osc2.frequency.value = 659; osc2.type = 'sine';
+        osc1.type = 'sine';
+        osc1.frequency.value = 523;
+        osc2.type = 'sine';
+        osc2.frequency.value = 659;
         break;
       case 2025:
-        // Modern Times: atmospheric sine pads
-        osc1.frequency.value = 392; osc1.type = 'sine';
-        osc2.frequency.value = 523; osc2.type = 'sine';
+      default:
+        osc1.type = 'sine';
+        osc1.frequency.value = 392;
+        osc2.type = 'sine';
+        osc2.frequency.value = 523;
         break;
     }
 
     osc1.connect(gainNode);
     osc2.connect(gainNode);
-    gainNode.connect(isAudioMuted ? audioContext.destination : musicGain);
-    gainNode.gain.value = 0.0; // Start muted, fade in when activated
 
-    // Fade in after short delay to simulate track start
-    gainNode.gain.setTargetAtTime(0.4, audioContext.currentTime + 0.1, 0.5);
+    gainNode.connect(isAudioMuted ? context.destination : musicGain);
 
-    osc1.start(audioContext.currentTime + 0.1);
-    osc2.start(audioContext.currentTime + 0.1);
+    const target = isAudioMuted ? 0 : 0.4;
+    gainNode.gain.setTargetAtTime(target, context.currentTime + 0.05, 0.15);
 
-    return { gain: gainNode, stop: () => { osc1.stop(); osc2.stop(); } };
-  }
+    osc1.start(context.currentTime + 0.05);
+    osc2.start(context.currentTime + 0.05);
 
-  function stopEraMusic() {
-    // Stop any currently playing music track - called at start of createEraMusicOscillator
-  }
+    currentEraOscillators = { osc1, osc2, gainNode };
+  };
 
-  // Ambient conversation murmur - always present
-  function createAmbienceMurmur() {
-    const oscillator1 = audioContext.createOscillator();
-    const oscillator2 = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
+  window.playCoffeeMachineSFX = () => {
+    if (isAudioMuted) return;
 
-    // Low-frequency oscillators creating murmur texture
-    oscillator1.frequency.value = 1.8;
-    oscillator1.type = 'triangle';
-    oscillator2.frequency.value = 3.2;
-    oscillator2.type = 'triangle';
+    // Hiss + clatter (quick transient)
+    const hissSource = createWhiteNoiseSource(context, true);
+    const hissFilter = context.createBiquadFilter();
+    hissFilter.type = 'bandpass';
+    hissFilter.frequency.value = 400;
+    hissFilter.Q.value = 2.5;
 
-    // Noise source for conversational babble texture
-    const noise = audioContext.createWhiteNoise();
-    const noiseGain = audioContext.createGain();
-    noiseGain.gain.value = 0.25;
-    noise.connect(noiseGain);
-    noiseGain.connect(gainNode);
+    const hissGain = context.createGain();
+    hissGain.gain.value = 0.0;
 
-    oscillator1.connect(gainNode);
-    oscillator2.connect(gainNode);
-    gainNode.connect(isAudioMuted ? audioContext.destination : ambienceGain);
+    hissSource.connect(hissFilter);
+    hissFilter.connect(hissGain);
+    hissGain.connect(coffeeGain);
 
-    gainNode.gain.value = 0.0;
-    gainNode.gain.setTargetAtTime(0.3, audioContext.currentTime + 0.1, 0.3);
+    hissGain.gain.setTargetAtTime(0.25, context.currentTime + 0.01, 0.03);
+    hissSource.start();
 
-    oscillator1.start(audioContext.currentTime + 0.1);
-    oscillator2.start(audioContext.currentTime + 0.1);
-    noise.start(audioContext.currentTime + 0.1);
+    // Clatter: two short oscillators with decay
+    const oscA = context.createOscillator();
+    const oscB = context.createOscillator();
+    const clatterFilter = context.createBiquadFilter();
+    clatterFilter.type = 'highpass';
+    clatterFilter.frequency.value = 250;
 
-    return gainNode;
-  }
+    oscA.type = 'triangle';
+    oscA.frequency.value = 140;
+    oscB.type = 'sawtooth';
+    oscB.frequency.value = 280;
 
-  // Coffee machine SFX - hiss and clatter
-  function createCoffeeMachineSFX() {
-    const oscillator1 = audioContext.createOscillator();
-    const oscillator2 = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    const filter = audioContext.createBiquadFilter();
+    const clatterGain = context.createGain();
+    clatterGain.gain.value = 0.0;
 
-    // Hiss component (broad noise)
-    oscillator1.type = 'triangle';
-    oscillator1.frequency.value = 120;
+    oscA.connect(clatterFilter);
+    oscB.connect(clatterFilter);
+    clatterFilter.connect(clatterGain);
+    clatterGain.connect(coffeeGain);
 
-    // Clatter component
-    oscillator2.type = 'sawtooth';
-    oscillator2.frequency.value = 250;
+    clatterGain.gain.setTargetAtTime(0.18, context.currentTime + 0.02, 0.01);
 
-    // Bandpass filter to shape the sound like a coffee machine
-    filter.type = 'bandpass';
-    filter.frequency.value = 350;
-    filter.Q.value = 4;
+    oscA.start(context.currentTime + 0.02);
+    oscB.start(context.currentTime + 0.02);
 
-    oscillator1.connect(filter);
-    oscillator2.connect(filter);
-    filter.connect(gainNode);
-    gainNode.connect(isAudioMuted ? audioContext.destination : coffeeGain);
+    const endAt = context.currentTime + 1.6;
+    clatterGain.gain.setTargetAtTime(0.0, endAt, 0.05);
 
-    gainNode.gain.value = 0.0;
-    gainNode.gain.setTargetAtTime(0.2, audioContext.currentTime + 0.1, 0.2);
-
-    // Short burst: hiss continuously, clatter fades after 2 seconds
-    oscillator1.start(audioContext.currentTime + 0.1);
-    oscillator2.start(audioContext.currentTime + 0.1);
-
+    // Stop nodes shortly after
     setTimeout(() => {
-      oscillator2.stop();
-    }, 2000);
-
-    return gainNode;
-  }
-
-  // Create ambient murmur (always present)
-  createAmbienceMurmur();
-
-  // Create coffee machine SFX
-  createCoffeeMachineSFX();
-
-  // Expose control functions globally for UI integration
-  window.setEraMusic = function(year) {
-    createEraMusicOscillator(year);
-  };
-
-  window.setAudioMute = function(muted) {
-    isAudioMuted = muted;
-
-    // Update all gain nodes
-    musicGain.gain.value = muted ? 0 : 0.4;
-    ambienceGain.gain.value = muted ? 0 : 0.3;
-    coffeeGain.gain.value = muted ? 0 : 0.2;
-
-    // Update mute button UI if it exists
-    const muteBtn = document.querySelector('.mute-button');
-    if (muteBtn) {
-      muteBtn.classList.toggle('active', muted);
-    }
-  };
-
-  window.setMusicVolume = function(volume) {
-    musicGain.gain.value = Math.max(0, Math.min(1, volume));
-  };
-
-  window.setAmbienceVolume = function(volume) {
-    ambienceGain.gain.value = Math.max(0, Math.min(1, volume));
-  };
-
-  window.setCoffeeVolume = function(volume) {
-    coffeeGain.gain.value = Math.max(0, Math.min(1, volume));
+      try { hissSource.stop(); } catch (_) {}
+      try { oscA.stop(); } catch (_) {}
+      try { oscB.stop(); } catch (_) {}
+    }, 1700);
   };
 }
 
-// Initialize audio when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initAudioSystem);
-} else {
+function ensureAudioOnGesture() {
+  if (audioInitialized) {
+    // already created; just resume if needed
+    resumeAudioContextIfNeeded();
+    return;
+  }
+
   initAudioSystem();
-}
+  resumeAudioContextIfNeeded();
 
-// Year selection handler
-function handleYearSelect(year) {
-  // Hide all year layers with fade-out transition
-  Object.values(yearLayers).forEach(layer => {
-    layer.visible = false;
-    layer.children.forEach(child => {
-      if (child.material) {
-        child.material.opacity = 0.0;
-      }
-    });
-  });
-
-  // Show the selected year layer with fade-in transition
-  if (yearLayers[year]) {
-    yearLayers[year].visible = true;
-    // Animate opacity from 0 to 1
-    let opacity = 0;
-    const fadeIn = setInterval(() => {
-      opacity += 0.1;
-      yearLayers[year].children.forEach(child => {
-        if (child.material) {
-          child.material.opacity = Math.min(opacity, 1.0);
-        }
-      });
-      if (opacity >= 1.0) {
-        clearInterval(fadeIn);
-      }
-    }, 50);
+  // Apply current year music after audio comes up
+  if (typeof window.setEraMusic === 'function') {
+    window.setEraMusic(currentYear);
   }
 
-  // Update the text overlay
-  const yearLabels = {
-    1945: 'Post-War Era',
-    1965: 'Swinging Sixties',
-    1985: 'Retro Eighties',
-    2005: 'Digital Age',
-    2025: 'Modern Times'
-  };
-
-  const sceneElement = document.querySelector('.scene');
-  if (sceneElement) {
-    sceneElement.querySelector('h2').textContent = `Café ${yearLabels[year] || year}`;
-    sceneElement.querySelector('p').textContent = `Year: ${year} - Café timelapse transformation active`;
+  if (typeof window.playCoffeeMachineSFX === 'function') {
+    window.playCoffeeMachineSFX();
   }
-
-  // Update ARIA pressed states
-  document.querySelectorAll('.year-btn').forEach(btn => {
-    btn.setAttribute('aria-pressed', String(parseInt(btn.dataset.year, 10) === year));
-  });
-
-  // Update era-appropriate music for the selected year
-  window.setEraMusic(year);
 }
 
-// Add year button event listeners when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    const yearButtons = document.querySelectorAll('.year-btn');
-
-    yearButtons.forEach(button => {
-      button.addEventListener('click', () => {
-        const year = parseInt(button.dataset.year, 10);
-        handleYearSelect(year);
-      });
-    });
-
-    // Initialize with default year (1945)
-    handleYearSelect(1945);
-  });
-} else {
+// ---------- Wire UI events ----------
+function installYearButtonHandlers() {
   const yearButtons = document.querySelectorAll('.year-btn');
 
-  yearButtons.forEach(button => {
-    button.addEventListener('click', () => {
-      const year = parseInt(button.dataset.year, 10);
+  yearButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Click counts as a user gesture; init/resume audio.
+      ensureAudioOnGesture();
+
+      const year = parseInt(btn.dataset.year, 10);
       handleYearSelect(year);
     });
   });
-
-  // Initialize with default year (1945)
-  handleYearSelect(1945);
 }
 
-// Export for integration
-export { scene, camera, renderer, yearLayers, controls };
+// Any early tap/click should prime audio as well (but still gesture-gated).
+let gestureArmed = false;
+function armGestureOnce() {
+  if (gestureArmed) return;
+  gestureArmed = true;
+
+  const onGesture = () => {
+    ensureAudioOnGesture();
+    document.removeEventListener('pointerdown', onGesture);
+    document.removeEventListener('touchstart', onGesture);
+    document.removeEventListener('mousedown', onGesture);
+  };
+
+  document.addEventListener('pointerdown', onGesture, { passive: true });
+  document.addEventListener('touchstart', onGesture, { passive: true });
+  document.addEventListener('mousedown', onGesture, { passive: true });
+}
+
+// Initialize visuals immediately.
+function boot() {
+  installYearButtonHandlers();
+  armGestureOnce();
+
+  // Default year shown without requiring audio.
+  handleYearSelect(currentYear);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
