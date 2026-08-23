@@ -1830,6 +1830,418 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// 1985 Period Assets
+
+// Coffee machine (1985 retro espresso machine/coffee maker)
+const createCoffeeMachine1985 = () => {
+  const group = new THREE.Group();
+
+  // Main body with 80s color scheme
+  const bodyGeometry = new THREE.BoxGeometry(0.6, 0.8, 0.4);
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x0066ff });
+  const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+  body.position.y = 0.4;
+  body.castShadow = true;
+  group.add(body);
+
+  // Control panel with neon trim
+  const panelGeometry = new THREE.BoxGeometry(0.6, 0.15, 0.3);
+  const panelMaterial = new THREE.MeshStandardMaterial({ color: 0x003366 });
+  const panel = new THREE.Mesh(panelGeometry, panelMaterial);
+  panel.position.y = 0.75;
+  panel.castShadow = true;
+  group.add(panel);
+
+  // Digital display
+  const displayGeometry = new THREE.BoxGeometry(0.5, 0.1, 0.2);
+  const displayMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+  const display = new THREE.Mesh(displayGeometry, displayMaterial);
+  display.position.set(0, 0.8, 0.1);
+  display.castShadow = true;
+  group.add(display);
+
+  // Button panel
+  const buttonGeometry = new THREE.BoxGeometry(0.4, 0.1, 0.2);
+  const buttonMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  const button = new THREE.Mesh(buttonGeometry, buttonMaterial);
+  button.position.set(0, 0.55, 0.1);
+  button.castShadow = true;
+  group.add(button);
+
+  // Group base
+  const baseGeometry = new THREE.BoxGeometry(0.6, 0.05, 0.4);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x0066ff });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.position.y = 0.05;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// Modern espresso grinder
+const createEspressoGrinder1985 = () => {
+  const group = new THREE.Group();
+
+  // Grinder body
+  const bodyGeometry = new THREE.BoxGeometry(0.3, 0.4, 0.3);
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
+  const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+  body.position.y = 0.2;
+  body.castShadow = true;
+  group.add(body);
+
+  // Grinding chamber
+  const chamberGeometry = new THREE.BoxGeometry(0.25, 0.15, 0.25);
+  const chamberMaterial = new THREE.MeshStandardMaterial({ color: 0x999999 });
+  const chamber = new THREE.Mesh(chamberGeometry, chamberMaterial);
+  chamber.position.y = 0.4;
+  chamber.castShadow = true;
+  group.add(chamber);
+
+  // Motor housing
+  const motorGeometry = new THREE.BoxGeometry(0.2, 0.15, 0.2);
+  const motorMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+  const motor = new THREE.Mesh(motorGeometry, motorMaterial);
+  motor.position.y = 0.55;
+  motor.castShadow = true;
+  group.add(motor);
+
+  // Group base
+  const baseGeometry = new THREE.BoxGeometry(0.3, 0.05, 0.3);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.position.y = 0.025;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// Jukebox (1985 retro jukebox)
+const createJukebox1985 = () => {
+  const group = new THREE.Group();
+
+  // Jukebox body
+  const bodyGeometry = new THREE.BoxGeometry(0.7, 0.8, 0.5);
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+  body.position.y = 0.4;
+  body.castShadow = true;
+  group.add(body);
+
+  // Control panel
+  const panelGeometry = new THREE.BoxGeometry(0.7, 0.15, 0.3);
+  const panelMaterial = new THREE.MeshStandardMaterial({ color: 0xff66cc });
+  const panel = new THREE.Mesh(panelGeometry, panelMaterial);
+  panel.position.y = 0.75;
+  panel.castShadow = true;
+  group.add(panel);
+
+  // Selection buttons
+  const buttonGeometry = new THREE.BoxGeometry(0.1, 0.05, 0.1);
+  const buttonMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  for (const pos of [
+    { x: -0.2, y: 0.78, z: 0.15 },
+    { x: 0, y: 0.78, z: 0.15 },
+    { x: 0.2, y: 0.78, z: 0.15 }
+  ]) {
+    const button = new THREE.Mesh(buttonGeometry, buttonMaterial);
+    button.position.set(pos.x, pos.y, pos.z);
+    button.castShadow = true;
+    group.add(button);
+  }
+
+  // Speakers
+  const speakerGeometry = new THREE.BoxGeometry(0.15, 0.1, 0.3);
+  const speakerMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  for (const pos of [
+    { x: -0.3, y: 0.2, z: 0.0 },
+    { x: 0.3, y: 0.2, z: 0.0 }
+  ]) {
+    const speaker = new THREE.Mesh(speakerGeometry, speakerMaterial);
+    speaker.position.set(pos.x, pos.y, pos.z);
+    speaker.castShadow = true;
+  group.add(speaker);
+  }
+
+  // Group base
+  const baseGeometry = new THREE.BoxGeometry(0.7, 0.05, 0.5);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.position.y = 0.025;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// iPod (1985 early digital music player - stylized as conceptual)
+const createIPod1985 = () => {
+  const group = new THREE.Group();
+
+  // iPod body
+  const bodyGeometry = new THREE.BoxGeometry(0.2, 0.05, 0.1);
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x0099ff });
+  const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+  body.position.y = 0.05;
+  body.castShadow = true;
+  group.add(body);
+
+  // Scroll wheel
+  const wheelGeometry = new THREE.SphereGeometry(0.03, 16, 16);
+  const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+  wheel.position.set(0, 0.06, 0.02);
+  wheel.castShadow = true;
+  group.add(wheel);
+
+  // Screen
+  const screenGeometry = new THREE.BoxGeometry(0.15, 0.02, 0.08);
+  const screenMaterial = new THREE.MeshStandardMaterial({ color: 0x0000ff });
+  const screen = new THREE.Mesh(screenGeometry, screenMaterial);
+  screen.position.set(0, 0.07, 0.03);
+  screen.castShadow = true;
+  group.add(screen);
+
+  // Group base
+  const baseGeometry = new THREE.BoxGeometry(0.2, 0.05, 0.1);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x0099ff });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.position.y = 0.025;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// Posters on walls (1985 style - arcade, new wave, etc.)
+const createPosters1985 = () => {
+  const group = new THREE.Group();
+
+  // Poster 1 - New Wave music
+  const poster1Geometry = new THREE.BoxGeometry(0.3, 0.4, 0.02);
+  const poster1Material = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  const poster1 = new THREE.Mesh(poster1Geometry, poster1Material);
+  poster1.position.set(-2, 3.5, -4.01);
+  poster1.castShadow = true;
+  group.add(poster1);
+
+  // Poster 2 - Arcade games
+  const poster2Geometry = new THREE.BoxGeometry(0.3, 0.4, 0.02);
+  const poster2Material = new THREE.MeshStandardMaterial({ color: 0x00ffff });
+  const poster2 = new THREE.Mesh(poster2Geometry, poster2Material);
+  poster2.position.set(2, 3.5, -4.01);
+  poster2.castShadow = true;
+  group.add(poster2);
+
+  // Group base
+  const baseGeometry = new THREE.BoxGeometry(0.35, 0.5, 0.04);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.position.y = 0.25;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// Neon signage
+const createNeonSignage1985 = () => {
+  const group = new THREE.Group();
+
+  // Sign board with neon tubing
+  const signGeometry = new THREE.BoxGeometry(0.4, 0.6, 0.05);
+  const signMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  const sign = new THREE.Mesh(signGeometry, signMaterial);
+  sign.position.set(0, 2.5, -4.025);
+  sign.castShadow = true;
+  group.add(sign);
+
+  // Neon tubing pattern
+  const neonGeometry = new THREE.BoxGeometry(0.35, 0.02, 0.02);
+  const neonMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff, emissive: 0xff00ff });
+  for (const pos of [
+    { x: -0.1, y: 2.3, z: -4.03 },
+    { x: 0, y: 2.3, z: -4.03 },
+    { x: 0.1, y: 2.3, z: -4.03 }
+  ]) {
+    const neon = new THREE.Mesh(neonGeometry, neonMaterial);
+    neon.position.set(pos.x, pos.y, pos.z);
+    neon.castShadow = true;
+    group.add(neon);
+  }
+
+  // "CAFE" letters in neon
+  const letterGeometry = new THREE.BoxGeometry(0.08, 0.15, 0.02);
+  const letterMaterial = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff });
+  for (const pos of [
+    { x: -0.15, y: 2.65, z: -4.03 },
+    { x: 0.05, y: 2.65, z: -4.03 },
+    { x: 0.25, y: 2.65, z: -4.03 }
+  ]) {
+    const letter = new THREE.Mesh(letterGeometry, letterMaterial);
+    letter.position.set(pos.x, pos.y, pos.z);
+    letter.castShadow = true;
+    group.add(letter);
+  }
+
+  // Group base
+  const baseGeometry = new THREE.BoxGeometry(0.45, 0.7, 0.1);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x330066 });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.position.y = 0.35;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// 1985 patrons (big hair, Members Only jackets, leg warmers)
+const createPatrons1985 = () => {
+  const group = new THREE.Group();
+
+  // Patron 1 - big hair, Members Only jacket
+  const patron1Geometry = new THREE.BoxGeometry(0.3, 1.6, 0.2);
+  const patron1Material = new THREE.MeshStandardMaterial({ color: 0xda70d6 });
+  const patron1 = new THREE.Mesh(patron1Geometry, patron1Material);
+  patron1.position.set(-1.2, 0.8, -0.5);
+  patron1.castShadow = true;
+  group.add(patron1);
+
+  // Patron 2 - leg warmers, neon clothing
+  const patron2Geometry = new THREE.BoxGeometry(0.3, 1.6, 0.2);
+  const patron2Material = new THREE.MeshStandardMaterial({ color: 0x00ffff });
+  const patron2 = new THREE.Mesh(patron2Geometry, patron2Material);
+  patron2.position.set(1.2, 0.8, -0.5);
+  patron2.castShadow = true;
+  group.add(patron2);
+
+  // Patron 3 - permed hair, denim jacket
+  const patron3Geometry = new THREE.BoxGeometry(0.3, 1.6, 0.2);
+  const patron3Material = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
+  const patron3 = new THREE.Mesh(patron3Geometry, patron3Material);
+  patron3.position.set(0, 0.8, 0.5);
+  patron3.castShadow = true;
+  group.add(patron3);
+
+  // Group base
+  const baseGeometry = new THREE.BoxGeometry(0.5, 0.1, 0.5);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.position.y = 0.05;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// Menu board (1985 digital menu board)
+const createMenuBoard1985 = () => {
+  const group = new THREE.Group();
+
+  // Menu board background with neon border
+  const boardGeometry = new THREE.BoxGeometry(0.5, 0.8, 0.02);
+  const boardMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  const board = new THREE.Mesh(boardGeometry, boardMaterial);
+  board.position.set(0, 1.5, -4.025);
+  board.castShadow = true;
+  group.add(board);
+
+  // Menu items with 80s pricing
+  const menuItems = [
+    { text: "COFFEE", price: "$1.50", x: -0.15, y: 1.65 },
+    { text: "CAKE", price: "$2.00", x: -0.15, y: 1.85 },
+    { text: "SANDWICH", price: "$3.50", x: -0.15, y: 2.05 },
+    { text: "FRIES", price: "$1.75", x: -0.15, y: 2.25 }
+  ];
+
+  menuItems.forEach((item, i) => {
+    const itemGeometry = new THREE.BoxGeometry(0.3, 0.05, 0.01);
+    const itemMaterial = new THREE.MeshStandardMaterial({ color: i === 0 ? 0x0066ff : i === 1 ? 0xffa500 : i === 2 ? 0x2f4f4f : 0xff00ff });
+    const itemRect = new THREE.Mesh(itemGeometry, itemMaterial);
+    itemRect.position.set(item.x, item.y, -4.03);
+    itemRect.castShadow = true;
+    group.add(itemRect);
+
+    // Price tag below each item
+    const priceGeometry = new THREE.BoxGeometry(0.2, 0.03, 0.01);
+    const priceMaterial = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+    const priceRect = new THREE.Mesh(priceGeometry, priceMaterial);
+    priceRect.position.set(item.x, item.y - 0.25, -4.03);
+    priceRect.castShadow = true;
+    group.add(priceRect);
+  });
+
+  // Group base
+  const baseGeometry = new THREE.BoxGeometry(0.55, 0.9, 0.1);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x330066 });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.position.y = 0.45;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// Furniture (1985 neon-accented chairs, bar stools)
+const createFurniture1985 = () => {
+  const group = new THREE.Group();
+
+  // Chair with big hair silhouette shape
+  const chairGeometry = new THREE.BoxGeometry(0.5, 0.9, 0.5);
+  const chairMaterial = new THREE.MeshStandardMaterial({ color: 0x00ffff });
+  const chair = new THREE.Mesh(chairGeometry, chairMaterial);
+  chair.position.set(-2.5, 0.45, -0.2);
+  chair.castShadow = true;
+  group.add(chair);
+
+  // Second chair with neon accents
+  const chair2 = new THREE.Mesh(chairGeometry, chairMaterial);
+  chair2.position.set(2.5, 0.45, -0.2);
+  chair2.castShadow = true;
+  group.add(chair2);
+
+  // Bar stool with neon trim
+  const barStoolGeometry = new THREE.BoxGeometry(0.4, 0.7, 0.4);
+  const barStoolMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  const barStool = new THREE.Mesh(barStoolGeometry, barStoolMaterial);
+  barStool.position.set(0, 0.35, 0.8);
+  barStool.castShadow = true;
+  group.add(barStool);
+
+  // Small neon table
+  const smallTableGeometry = new THREE.BoxGeometry(0.5, 0.05, 0.5);
+  const smallTableMaterial = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+  const smallTable = new THREE.Mesh(smallTableGeometry, smallTableMaterial);
+  smallTable.position.set(0, 0.25, 0.6);
+  smallTable.castShadow = true;
+  group.add(smallTable);
+
+  // Group base
+  const baseGeometry = new THREE.BoxGeometry(3, 0.5, 1.2);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.position.y = 0.05;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// Add 1985 period assets to the year layer
+yearLayers[1985].add(
+  createCoffeeMachine1985(),
+  createEspressoGrinder1985(),
+  createJukebox1985(),
+  createIPod1985(),
+  createPosters1985(),
+  createNeonSignage1985(),
+  createPatrons1985(),
+  createMenuBoard1985(),
+  createFurniture1985()
+);
+
 // Start animation
 animate();
 
