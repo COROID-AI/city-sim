@@ -15,6 +15,7 @@ import { ERA_YEARS, registerEra, switchTo, getActiveEra, getActiveYear } from '.
 import { registerAllPlaceholderEras } from './eras/placeholder.js';
 import { setAudioMuted, setAudioVolume, isAudioMuted, getAudioVolume } from './world/animation/audio.js';
 import { audioEngine } from './audio/engine.js';
+import { applyRenderPipeline, reportPerformanceBudget } from './world/render.js';
 
 // ---------------------------------------------------------------------------
 // r160 bundle verification
@@ -53,6 +54,10 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 app.appendChild(renderer.domElement);
+
+// Apply the single cross-era ACESFilmic tonemapping + exposure policy and the
+// shared shadow-map configuration (tuned once for all five eras).
+applyRenderPipeline(renderer);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d141b);
@@ -181,10 +186,30 @@ function constrainView() {
 
 function frame() {
   requestAnimationFrame(frame);
+  const now = performance.now();
+  if (frame._last !== undefined) {
+    if (!frame._fpsSamples) frame._fpsSamples = [];
+    frame._fpsSamples.push(1000 / Math.max(0.1, now - frame._last));
+  }
+  frame._last = now;
   controls.update();
   constrainView();
   audioEngine.update();
   renderer.render(scene, camera);
+
+  // Per-era performance budget — sample renderer.info + measured fps and warn
+  // when a budget line is exceeded (~150 draw calls, ~500k triangles, 45fps
+  // floor). This drives the QA render audit without changing era art direction.
+  if (frame._budgetTick === undefined) frame._budgetTick = 0;
+  frame._budgetTick = (frame._budgetTick + 1) % 60;
+  if (frame._budgetTick === 0) {
+    const fps = frame._fpsSamples && frame._fpsSamples.length
+      ? frame._fpsSamples.reduce((a, b) => a + b, 0) / frame._fpsSamples.length
+      : 0;
+    const era = getActiveYear() || '?';
+    reportPerformanceBudget(renderer, era, fps);
+    frame._fpsSamples = [];
+  }
 }
 frame();
 

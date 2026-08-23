@@ -93,24 +93,24 @@ export const era1965 = {
     // Letterboard menu + neon OPEN sign.
     // ------------------------------------------------------------------
     menuBoard(group, 'back', -2.72, 1.6, -2.46).name = 'menu-board';
-    neonSign(group, 'front', 0.25, 2.3, 2.49).name = 'neon-open';
+    neonSign(group, 'front', 0.25, 2.3, 2.47).name = 'neon-open';
 
     // ------------------------------------------------------------------
     // Wall décor.
     // ------------------------------------------------------------------
-    travelPoster(group, WALL_RIGHT, 3.47, 1.78, -1.15);
-    instantAd(group, WALL_BACK, 0.4, 1.5, -2.53);
+    travelPoster(group, WALL_RIGHT, 3.46, 1.78, -1.15);
+    instantAd(group, WALL_BACK, 0.4, 1.5, -2.46);
 
     const sunGrp = new THREE.Group();
     sunGrp.name = 'sunburst-wall';
     sunburst(sunGrp, 0.34);
-    wallPlace(sunGrp, WALL_LEFT, new THREE.Vector3(-3.47, 2.05, 0.5));
+    wallPlace(sunGrp, WALL_LEFT, new THREE.Vector3(-3.46, 2.05, 0.5));
     group.add(sunGrp);
 
     const clockGrp = new THREE.Group();
     clockGrp.name = 'starburst-clock';
     starburstClock(clockGrp, 0.3);
-    wallPlace(clockGrp, WALL_BACK, new THREE.Vector3(1.15, 2.05, -2.47));
+    wallPlace(clockGrp, WALL_BACK, new THREE.Vector3(1.15, 2.05, -2.46));
     group.add(clockGrp);
 
     const macGrp = new THREE.Group();

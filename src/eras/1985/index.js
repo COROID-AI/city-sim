@@ -685,7 +685,7 @@ function makeMemphisMural(group) {
     }
   });
   const mural = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.85), basicMat('memphis mural', tex, { transparent: false }));
-  mural.position.set(0.5, 2.15, -2.47);
+  mural.position.set(0.5, 2.15, -2.44);
   group.add(mural);
 }
 
@@ -729,7 +729,7 @@ function makeMenuLightbox(group) {
   const face = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 0.7), basicMat('lightbox menu', tex, { transparent: false }));
   face.position.set(-1.5, 2.05, -2.36);
   group.add(face);
-  box(group, [1.5, 0.78, 0.04], [-1.5, 2.05, -2.47], material('lightbox back', 0x0c0f14), 'lightbox back');
+  box(group, [1.5, 0.78, 0.04], [-1.5, 2.05, -2.44], material('lightbox back', 0x0c0f14), 'lightbox back');
 }
 
 function makeCoffeeTalkBoard(group) {
@@ -810,7 +810,7 @@ function makeEotmPhoto(group) {
     g.fillText('MONTH', w / 2, h - 10);
   });
   const photo = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.5), basicMat('eotm photo', tex, { transparent: false }));
-  photo.position.set(-1.45, 2.25, -2.47);
+  photo.position.set(-1.45, 2.25, -2.44);
   group.add(photo);
   box(group, [0.44, 0.54, 0.03], [-1.45, 2.25, -2.45], material('photo frame', C.chromeDark, { metalness: 0.7 }), 'eotm frame');
 }

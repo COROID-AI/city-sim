@@ -123,22 +123,22 @@ export const era2025 = {
     // ------------------------------------------------------------------
     // Menu board + QR stickers (QR stickers also dropped on tables).
     // ------------------------------------------------------------------
-    menuBoard(group, 'back', -1.45, 1.85, -2.53).name = 'menu-board';
+    menuBoard(group, 'back', -1.45, 1.85, -2.46).name = 'menu-board';
 
     // ------------------------------------------------------------------
     // Wall décor.
     // ------------------------------------------------------------------
-    roasterPoster(group, WALL_RIGHT, 3.47, 1.6, -1.4);
-    artPrint(group, WALL_LEFT, -3.47, 1.7, 1.4);
-    artPrint(group, WALL_RIGHT, 3.47, 1.7, 0.4);
+    roasterPoster(group, WALL_RIGHT, 3.46, 1.6, -1.4);
+    artPrint(group, WALL_LEFT, -3.46, 1.7, 1.4);
+    artPrint(group, WALL_RIGHT, 3.46, 1.7, 0.4);
 
     const notice = new THREE.Group();
     notice.name = 'community-notice-shelf';
-    noticeShelf(notice, WALL_LEFT, -3.47, 1.35, -1.4);
+    noticeShelf(notice, WALL_LEFT, -3.46, 1.35, -1.4);
     group.add(notice);
 
     // Brand decal on the back wall above the counter.
-    brandDecal(group, WALL_BACK, -1.45, 2.35, -2.53);
+    brandDecal(group, WALL_BACK, -1.45, 2.35, -2.46);
 
     // Chalk A-board outside the door (front-right).
     chalkBoard(group, 2.85, 0, 2.3, 0.3);

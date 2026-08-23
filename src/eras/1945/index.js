@@ -132,17 +132,17 @@ function makeRadio(group, x, z) {
 
 function makeWallDress(group) {
   const poster = label('BUY WAR BONDS\nSAVE & SERVE', 1.45, 0.72, { bg: '#8d3024', border: '#e4c987', font: 'bold 35px Georgia' });
-  poster.position.set(-0.9, 2.25, -2.48); poster.rotation.y = Math.PI; group.add(poster);
+  poster.position.set(-0.9, 2.25, -2.46); poster.rotation.y = Math.PI; group.add(poster);
   const notice = label('RATION NOTICE\nSUGAR: LIMITED', 1.2, 0.58, { bg: '#d8c79f', border: '#493827', color: '#3b2a1c', font: 'bold 28px Georgia' });
-  notice.position.set(0.75, 2.25, -2.48); notice.rotation.y = Math.PI; group.add(notice);
+  notice.position.set(0.75, 2.25, -2.46); notice.rotation.y = Math.PI; group.add(notice);
   const sign = label('ICE COLD\nCOCA-COLA', 1.35, 0.58, { bg: '#a5231e', border: '#f0d59a', font: 'italic 32px Georgia' });
-  sign.position.set(2.1, 1.65, -2.48); sign.rotation.y = Math.PI; group.add(sign);
+  sign.position.set(2.1, 1.65, -2.46); sign.rotation.y = Math.PI; group.add(sign);
   const menu = label('COFFEE ........ 7¢\nPIE ........... 15¢\nMILK .......... 5¢', 1.45, 0.82, { bg: '#20251d', border: '#b1843d', color: '#e8d7ad', font: 'italic 29px Georgia' });
-  menu.position.set(1.0, 1.24, -2.47); menu.rotation.y = Math.PI; group.add(menu);
+  menu.position.set(1.0, 1.24, -2.46); menu.rotation.y = Math.PI; group.add(menu);
   const photo = label('C. 1945\nOUR CAFÉ', 0.74, 0.62, { bg: '#766b59', border: '#32261b', color: '#ead9b5', font: 'bold 23px Georgia' });
-  photo.position.set(2.72, 2.32, -2.48); photo.rotation.y = Math.PI; group.add(photo);
+  photo.position.set(2.72, 2.32, -2.46); photo.rotation.y = Math.PI; group.add(photo);
   const newspaper = label('THE DAILY HERALD\nVICTORY IN EUROPE', 1.5, 0.5, { bg: '#e5dcc4', border: '#4a3926', color: '#30271e', font: 'bold 24px Georgia' });
-  newspaper.position.set(-1.9, 2.5, 2.48); newspaper.rotation.y = 0; group.add(newspaper);
+  newspaper.position.set(-1.9, 2.5, 2.46); newspaper.rotation.y = 0; group.add(newspaper);
   // Lace/damask window dressing: translucent vertical panels and valance.
   const curtain = material('lace curtains', 0xd6c7ad, { transparent: true, opacity: 0.58, roughness: 0.95 });
   for (const x of [-3.12, 1.62]) box(group, [0.42, 1.48, 0.025], [x, 1.72, 2.42], curtain, 'lace curtain');

@@ -14,6 +14,7 @@
  *   kitchen passthrough opening ≈ 0.7–1.6 m on the back wall
  */
 import * as THREE from '../../public/js/three/build/three.module.js';
+import { applyShadowPolicy } from './render.js';
 
 const ROOM = {
   width: 7.0,
@@ -294,13 +295,7 @@ function buildLightRig(group, T) {
   const sun = new T.DirectionalLight(0xfff0d8, 1.2);
   sun.position.set(4, 6, 7);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -8;
-  sun.shadow.camera.right = 8;
-  sun.shadow.camera.top = 8;
-  sun.shadow.camera.bottom = -8;
-  sun.shadow.camera.near = 0.5;
-  sun.shadow.camera.far = 20;
+  applyShadowPolicy(sun);
   group.add(sun);
 
   // Warm pendant points over the customer / counter zone.
