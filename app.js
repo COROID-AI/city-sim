@@ -508,6 +508,32 @@ yearLayers[1945].add(
   createFurniture1945()
 );
 
+// Add 1965 period assets to the year layer
+yearLayers[1965].add(
+  createCoffeeMachine1965(),
+  createManualTill1965(),
+  createTableware1965(),
+  createJukebox1965(),
+  createPosters1965(),
+  createSignage1965(),
+  createPatrons1965(),
+  createMenuBoard1965(),
+  createFurniture1965()
+);
+
+// Add 1965 period assets to the year layer
+yearLayers[1965].add(
+  createCoffeeMachine1965(),
+  createManualTill1965(),
+  createTableware1965(),
+  createJukebox1965(),
+  createPosters1965(),
+  createSignage1965(),
+  createPatrons1965(),
+  createMenuBoard1965(),
+  createFurniture1965()
+);
+
 // Light switch indicator (simple)
 const lightGroup = new THREE.Group();
 const lightBulbGeometry = new THREE.SphereGeometry(0.1, 16, 16);
