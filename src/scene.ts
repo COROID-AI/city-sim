@@ -47,6 +47,16 @@ const bloomPass2005 = new BloomPass({
 });
 composer.addPass(bloomPass2005);
 
+// 1985 era: heavy neon bloom, synth-wave aesthetic, high contrast
+// 1980s neon aesthetic: heavy glow, magenta/cyan contrast, high bloom strength
+const bloomPass1985 = new BloomPass({
+  strength: 1.2,      // heavy neon bloom for synth-wave aesthetic
+  threshold: 0.3,     // low threshold for maximum bloom
+  radius: 0.8,        // large radius for wide neon glow
+  kernelSize: BloomPass.KernelSize.Fourteen,
+});
+composer.addPass(bloomPass1985);
+
 // 1965 era: mid-century modern with subtle neon accents, warm amber tint
 // Subtle bloom for gentle neon glow, warm color grading
 const bloomPass1965 = new BloomPass({

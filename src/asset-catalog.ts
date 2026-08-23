@@ -86,7 +86,9 @@ export class AssetCatalog {
       { type: 'vehicle', name: 'car1985', modelUrl: '/models/1985/car.glb', textureUrls: ['/textures/1985/car.jpg'] },
       { type: 'storefront', name: 'shop1985', modelUrl: '/models/1985/shop.glb', textureUrls: ['/textures/1985/shop.jpg'] },
       { type: 'advertisement', name: 'poster1985', modelUrl: '/models/1985/poster.glb', textureUrls: ['/textures/1985/poster.jpg'] },
-      { type: 'pedestrian', name: 'walker1985', modelUrl: '/models/1985/pedestrian.glb', textureUrls: ['/textures/1985/people.jpg'] },
+      { type: 'advertisement', name: 'billboard1985', modelUrl: '/models/1985/billboard.glb', textureUrls: ['/textures/1985/billboard.jpg'], materialParams: { color: 0xCD853F, roughness: 0.6, metalness: 0.3 } },
+      { type: 'advertisement', name: 'neonSign1985', modelUrl: '/models/1985/neon_sign.glb', textureUrls: ['/textures/1985/neon-tube.jpg'], materialParams: { color: 0xFF00FF, roughness: 0.4, metalness: 0.7 } },
+      { type: 'advertisement', name: 'posterPanel1985', modelUrl: '/models/1985/poster_panel.glb', textureUrls: ['/textures/1985/poster-panel.jpg'] },
       // Additional 1980s storefront ads
       { type: 'storefront', name: 'shop1985a', modelUrl: '/models/1985/shop_alt.glb', textureUrls: ['/textures/1985/shop-alt.jpg'] },
     ]);
