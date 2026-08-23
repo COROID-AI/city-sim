@@ -1,6 +1,6 @@
 /**
  * Three.js Café Timelapse Scene
- * 
+ *
  * Creates a 3D café interior scene with basic geometry, lighting, and
  * year-layer containers for period-specific asset swapping.
  * Integrates with the timeline slider for year selection.
@@ -16,11 +16,12 @@ const yearLayers = {
   1965: new THREE.Group(), // Swinging Sixties
   1985: new THREE.Group(), // Retro Eighties
   2005: new THREE.Group(), // Digital Age
-  2025: new THREE.Group()  // Modern Times
+  2025: new THREE.Group() // Modern Times
 };
 
 // Add all year layers to the scene
 Object.values(yearLayers).forEach(layer => {
+  layer.visible = false;
   scene.add(layer);
 });
 
@@ -99,7 +100,7 @@ ceiling.position.y = 8;
 ceiling.receiveShadow = true;
 scene.add(ceiling);
 
-// Table
+// Table (static across all years)
 function createTable(x, z) {
   const tableGroup = new THREE.Group();
 
@@ -135,15 +136,16 @@ function createTable(x, z) {
 const table1 = createTable(-1, -1);
 const table2 = createTable(1, -1);
 const table3 = createTable(-1, 1);
-scene.add(table1, table2);
+scene.add(table1, table2, table3);
 
-// === 1945 Period Assets ===
+// ===============================
+// 1945 Period Assets
+// ===============================
 
 // Coffee machine (vintage 1945 espresso machine)
 const createCoffeeMachine1945 = () => {
   const group = new THREE.Group();
 
-  // Main body
   const bodyGeometry = new THREE.BoxGeometry(0.6, 0.8, 0.4);
   const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
   const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
@@ -151,7 +153,6 @@ const createCoffeeMachine1945 = () => {
   body.castShadow = true;
   group.add(body);
 
-  // Control panel
   const panelGeometry = new THREE.BoxGeometry(0.6, 0.15, 0.3);
   const panelMaterial = new THREE.MeshStandardMaterial({ color: 0x5d4037 });
   const panel = new THREE.Mesh(panelGeometry, panelMaterial);
@@ -159,7 +160,6 @@ const createCoffeeMachine1945 = () => {
   panel.castShadow = true;
   group.add(panel);
 
-  // Steam pipe
   const pipeGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8);
   const pipeMaterial = new THREE.MeshStandardMaterial({ color: 0xbfbfbf });
   const pipe = new THREE.Mesh(pipeGeometry, pipeMaterial);
@@ -168,7 +168,6 @@ const createCoffeeMachine1945 = () => {
   pipe.castShadow = true;
   group.add(pipe);
 
-  // Group base
   const baseGeometry = new THREE.BoxGeometry(0.6, 0.05, 0.4);
   const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
   const base = new THREE.Mesh(baseGeometry, baseMaterial);
@@ -183,7 +182,6 @@ const createCoffeeMachine1945 = () => {
 const createManualTill1945 = () => {
   const group = new THREE.Group();
 
-  // Till top
   const tillTopGeometry = new THREE.BoxGeometry(0.5, 0.1, 0.3);
   const tillTopMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
   const tillTop = new THREE.Mesh(tillTopGeometry, tillTopMaterial);
@@ -191,7 +189,6 @@ const createManualTill1945 = () => {
   tillTop.castShadow = true;
   group.add(tillTop);
 
-  // Till front panel
   const panelGeometry = new THREE.BoxGeometry(0.5, 0.3, 0.02);
   const panelMaterial = new THREE.MeshStandardMaterial({ color: 0x5d4037 });
   const panel = new THREE.Mesh(panelGeometry, panelMaterial);
@@ -199,7 +196,6 @@ const createManualTill1945 = () => {
   panel.castShadow = true;
   group.add(panel);
 
-  // Cash drawer
   const drawerGeometry = new THREE.BoxGeometry(0.45, 0.15, 0.25);
   const drawerMaterial = new THREE.MeshStandardMaterial({ color: 0x6b4226 });
   const drawer = new THREE.Mesh(drawerGeometry, drawerMaterial);
@@ -207,7 +203,6 @@ const createManualTill1945 = () => {
   drawer.castShadow = true;
   group.add(drawer);
 
-  // Coin slot
   const coinSlotGeometry = new THREE.BoxGeometry(0.1, 0.05, 0.02);
   const coinSlotMaterial = new THREE.MeshStandardMaterial({ color: 0xcd7f32 });
   const coinSlot = new THREE.Mesh(coinSlotGeometry, coinSlotMaterial);
@@ -215,7 +210,6 @@ const createManualTill1945 = () => {
   coinSlot.castShadow = true;
   group.add(coinSlot);
 
-  // Group base
   const baseGeometry = new THREE.BoxGeometry(0.5, 0.05, 0.3);
   const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
   const base = new THREE.Mesh(baseGeometry, baseMaterial);
@@ -230,7 +224,6 @@ const createManualTill1945 = () => {
 const createTableware1945 = () => {
   const group = new THREE.Group();
 
-  // Plate
   const plateGeometry = new THREE.BoxGeometry(0.2, 0.02, 0.2);
   const plateMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
   const plate = new THREE.Mesh(plateGeometry, plateMaterial);
@@ -238,7 +231,6 @@ const createTableware1945 = () => {
   plate.castShadow = true;
   group.add(plate);
 
-  // Cup
   const cupGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.12, 16);
   const cupMaterial = new THREE.MeshStandardMaterial({ color: 0xffa500 });
   const cup = new THREE.Mesh(cupGeometry, cupMaterial);
@@ -246,14 +238,12 @@ const createTableware1945 = () => {
   cup.castShadow = true;
   group.add(cup);
 
-  // Saucer
   const saucerGeometry = new THREE.BoxGeometry(0.15, 0.02, 0.15);
   const saucer = new THREE.Mesh(saucerGeometry, plateMaterial);
   saucer.position.set(-0.15, 0.08, 0.1);
   saucer.castShadow = true;
   group.add(saucer);
 
-  // Group base
   const baseGeometry = new THREE.BoxGeometry(0.25, 0.05, 0.25);
   const baseMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
   const base = new THREE.Mesh(baseGeometry, baseMaterial);
@@ -268,7 +258,6 @@ const createTableware1945 = () => {
 const createWirelessSet1945 = () => {
   const group = new THREE.Group();
 
-  // Radio body
   const bodyGeometry = new THREE.BoxGeometry(0.5, 0.25, 0.3);
   const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x2f4f4f });
   const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
@@ -276,7 +265,6 @@ const createWirelessSet1945 = () => {
   body.castShadow = true;
   group.add(body);
 
-  // Speaker grille
   const grilleGeometry = new THREE.BoxGeometry(0.45, 0.05, 0.25);
   const grilleMaterial = new THREE.MeshStandardMaterial({ color: 0x2f4f4f });
   const grille = new THREE.Mesh(grilleGeometry, grilleMaterial);
@@ -284,7 +272,6 @@ const createWirelessSet1945 = () => {
   grille.castShadow = true;
   group.add(grille);
 
-  // Tuning dial
   const dialGeometry = new THREE.SphereGeometry(0.08, 16, 16);
   const dialMaterial = new THREE.MeshStandardMaterial({ color: 0xffd700 });
   const dial = new THREE.Mesh(dialGeometry, dialMaterial);
@@ -292,7 +279,6 @@ const createWirelessSet1945 = () => {
   dial.castShadow = true;
   group.add(dial);
 
-  // Antenna
   const antennaGeometry = new THREE.CylinderGeometry(0.01, 0.02, 0.5, 8);
   const antennaMaterial = new THREE.MeshStandardMaterial({ color: 0xffd700 });
   const antenna = new THREE.Mesh(antennaGeometry, antennaMaterial);
@@ -301,7 +287,6 @@ const createWirelessSet1945 = () => {
   antenna.castShadow = true;
   group.add(antenna);
 
-  // Group base
   const baseGeometry = new THREE.BoxGeometry(0.5, 0.05, 0.3);
   const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x2f4f4f });
   const base = new THREE.Mesh(baseGeometry, baseMaterial);
@@ -316,7 +301,6 @@ const createWirelessSet1945 = () => {
 const createPosters1945 = () => {
   const group = new THREE.Group();
 
-  // Poster 1 - War bonds
   const poster1Geometry = new THREE.BoxGeometry(0.3, 0.4, 0.02);
   const poster1Material = new THREE.MeshStandardMaterial({ color: 0x8b0000 });
   const poster1 = new THREE.Mesh(poster1Geometry, poster1Material);
@@ -324,7 +308,6 @@ const createPosters1945 = () => {
   poster1.castShadow = true;
   group.add(poster1);
 
-  // Poster 2 - Coffee advertisement
   const poster2Geometry = new THREE.BoxGeometry(0.3, 0.4, 0.02);
   const poster2Material = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
   const poster2 = new THREE.Mesh(poster2Geometry, poster2Material);
@@ -332,7 +315,6 @@ const createPosters1945 = () => {
   poster2.castShadow = true;
   group.add(poster2);
 
-  // Group base
   const baseGeometry = new THREE.BoxGeometry(0.35, 0.5, 0.04);
   const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x8b0000 });
   const base = new THREE.Mesh(baseGeometry, baseMaterial);
@@ -347,7 +329,6 @@ const createPosters1945 = () => {
 const createSignage1945 = () => {
   const group = new THREE.Group();
 
-  // Sign board
   const signGeometry = new THREE.BoxGeometry(0.4, 0.6, 0.05);
   const signMaterial = new THREE.MeshStandardMaterial({ color: 0xffd700 });
   const sign = new THREE.Mesh(signGeometry, signMaterial);
@@ -355,7 +336,6 @@ const createSignage1945 = () => {
   sign.castShadow = true;
   group.add(sign);
 
-  // "CAFE" letters
   const letterGeometry = new THREE.BoxGeometry(0.08, 0.15, 0.02);
   const letterMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
   for (const pos of [
@@ -369,7 +349,6 @@ const createSignage1945 = () => {
     group.add(letter);
   }
 
-  // Group base
   const baseGeometry = new THREE.BoxGeometry(0.45, 0.7, 0.1);
   const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x2f4f4f });
   const base = new THREE.Mesh(baseGeometry, baseMaterial);
@@ -384,29 +363,24 @@ const createSignage1945 = () => {
 const createPatrons1945 = () => {
   const group = new THREE.Group();
 
-  // Patron 1
-  const patron1Geometry = new THREE.BoxGeometry(0.3, 1.6, 0.2);
+  const patronGeometry = new THREE.BoxGeometry(0.3, 1.6, 0.2);
   const patron1Material = new THREE.MeshStandardMaterial({ color: 0xcd853f });
-  const patron1 = new THREE.Mesh(patron1Geometry, patron1Material);
+
+  const patron1 = new THREE.Mesh(patronGeometry, patron1Material);
   patron1.position.set(-1.2, 0.8, -0.5);
   patron1.castShadow = true;
   group.add(patron1);
 
-  // Patron 2
-  const patron2Geometry = new THREE.BoxGeometry(0.3, 1.6, 0.2);
-  const patron2 = new THREE.Mesh(patron2Geometry, patron2Material);
+  const patron2 = new THREE.Mesh(patronGeometry, patron1Material);
   patron2.position.set(1.2, 0.8, -0.5);
   patron2.castShadow = true;
   group.add(patron2);
 
-  // Patron 3
-  const patron3Geometry = new THREE.BoxGeometry(0.3, 1.6, 0.2);
-  const patron3 = new THREE.Mesh(patron3Geometry, patron1Material);
+  const patron3 = new THREE.Mesh(patronGeometry, patron1Material);
   patron3.position.set(0, 0.8, 0.5);
   patron3.castShadow = true;
   group.add(patron3);
 
-  // Group base
   const baseGeometry = new THREE.BoxGeometry(0.5, 0.1, 0.5);
   const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
   const base = new THREE.Mesh(baseGeometry, baseMaterial);
@@ -421,7 +395,6 @@ const createPatrons1945 = () => {
 const createMenuBoard1945 = () => {
   const group = new THREE.Group();
 
-  // Menu board background
   const boardGeometry = new THREE.BoxGeometry(0.5, 0.8, 0.02);
   const boardMaterial = new THREE.MeshStandardMaterial({ color: 0xffd700 });
   const board = new THREE.Mesh(boardGeometry, boardMaterial);
@@ -429,25 +402,23 @@ const createMenuBoard1945 = () => {
   board.castShadow = true;
   group.add(board);
 
-  // Menu items (simple text representations as rectangles)
   const menuItems = [
-    { text: "COFFEE", x: -0.1, y: 1.65 },
-    { text: "CAKE", x: -0.1, y: 1.85 },
-    { text: "SANDWICH", x: -0.1, y: 2.05 }
+    { text: 'COFFEE', x: -0.1, y: 1.65 },
+    { text: 'CAKE', x: -0.1, y: 1.85 },
+    { text: 'SANDWICH', x: -0.1, y: 2.05 }
   ];
 
-  // In a real implementation, these would be text sprites
-  // For now, use colored rectangles as placeholders
   menuItems.forEach((item, i) => {
     const itemGeometry = new THREE.BoxGeometry(0.3, 0.05, 0.01);
-    const itemMaterial = new THREE.MeshStandardMaterial({ color: i === 0 ? 0x8b4513 : i === 1 ? 0xffa500 : 0x2f4f4f });
+    const itemMaterial = new THREE.MeshStandardMaterial({
+      color: i === 0 ? 0x8b4513 : i === 1 ? 0xffa500 : 0x2f4f4f
+    });
     const itemRect = new THREE.Mesh(itemGeometry, itemMaterial);
     itemRect.position.set(item.x, item.y, -4.03);
     itemRect.castShadow = true;
     group.add(itemRect);
   });
 
-  // Group base
   const baseGeometry = new THREE.BoxGeometry(0.55, 0.9, 0.1);
   const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x2f4f4f });
   const base = new THREE.Mesh(baseGeometry, baseMaterial);
@@ -462,21 +433,19 @@ const createMenuBoard1945 = () => {
 const createFurniture1945 = () => {
   const group = new THREE.Group();
 
-  // Chair
   const chairGeometry = new THREE.BoxGeometry(0.4, 0.9, 0.4);
   const chairMaterial = new THREE.MeshStandardMaterial({ color: 0x8b7355 });
+
   const chair = new THREE.Mesh(chairGeometry, chairMaterial);
   chair.position.set(-2.5, 0.45, -0.2);
   chair.castShadow = true;
   group.add(chair);
 
-  // Second chair
   const chair2 = new THREE.Mesh(chairGeometry, chairMaterial);
   chair2.position.set(2.5, 0.45, -0.2);
   chair2.castShadow = true;
   group.add(chair2);
 
-  // Small table
   const smallTableGeometry = new THREE.BoxGeometry(0.5, 0.05, 0.5);
   const smallTableMaterial = new THREE.MeshStandardMaterial({ color: 0x8b5a2b });
   const smallTable = new THREE.Mesh(smallTableGeometry, smallTableMaterial);
@@ -484,7 +453,6 @@ const createFurniture1945 = () => {
   smallTable.castShadow = true;
   group.add(smallTable);
 
-  // Group base
   const baseGeometry = new THREE.BoxGeometry(3, 0.5, 1.2);
   const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
   const base = new THREE.Mesh(baseGeometry, baseMaterial);
@@ -495,7 +463,1216 @@ const createFurniture1945 = () => {
   return group;
 };
 
-// Add 1945 period assets to the year layer
+// ===============================
+// 1965 Period Assets
+// ===============================
+
+const createCoffeeMachine1965 = () => {
+  const group = new THREE.Group();
+
+  const bodyGeometry = new THREE.BoxGeometry(0.65, 0.85, 0.42);
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xc0c0c0 });
+  const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+  body.position.y = 0.42;
+  body.castShadow = true;
+  group.add(body);
+
+  const panelGeometry = new THREE.BoxGeometry(0.65, 0.18, 0.32);
+  const panelMaterial = new THREE.MeshStandardMaterial({ color: 0x37474f });
+  const panel = new THREE.Mesh(panelGeometry, panelMaterial);
+  panel.position.y = 0.8;
+  panel.castShadow = true;
+  group.add(panel);
+
+  const baseGeometry = new THREE.BoxGeometry(0.65, 0.05, 0.42);
+  const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x8d6e63 });
+  const base = new THREE.Mesh(baseGeometry, baseMaterial);
+  base.position.y = 0.05;
+  base.castShadow = true;
+  group.add(base);
+
+  // steam knob
+  const knob = new THREE.Mesh(
+    new THREE.SphereGeometry(0.07, 16, 16),
+    new THREE.MeshStandardMaterial({ color: 0xffd700 })
+  );
+  knob.position.set(-0.15, 0.92, 0.18);
+  knob.castShadow = true;
+  group.add(knob);
+
+  return group;
+};
+
+const createManualTill1965 = () => {
+  const group = new THREE.Group();
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.08, 0.38),
+    new THREE.MeshStandardMaterial({ color: 0x8d6e63 })
+  );
+  base.position.y = 0.04;
+  base.castShadow = true;
+  group.add(base);
+
+  const panel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.28, 0.03),
+    new THREE.MeshStandardMaterial({ color: 0x37474f })
+  );
+  panel.position.y = 0.2;
+  panel.castShadow = true;
+  group.add(panel);
+
+  const drawer = new THREE.Mesh(
+    new THREE.BoxGeometry(0.52, 0.15, 0.27),
+    new THREE.MeshStandardMaterial({ color: 0x5d4037 })
+  );
+  drawer.position.y = 0.16;
+  drawer.castShadow = true;
+  group.add(drawer);
+
+  const slot = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.06, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0xffa000 })
+  );
+  slot.position.set(0.15, 0.12, 0.13);
+  slot.castShadow = true;
+  group.add(slot);
+
+  return group;
+};
+
+const createTableware1965 = () => {
+  const group = new THREE.Group();
+
+  const plateMaterial = new THREE.MeshStandardMaterial({ color: 0xe0f7fa });
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.02, 0.2), plateMaterial);
+  plate.position.y = 0.1;
+  plate.castShadow = true;
+  group.add(plate);
+
+  const cup = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 0.12, 16),
+    new THREE.MeshStandardMaterial({ color: 0x00acc1 })
+  );
+  cup.position.set(-0.15, 0.18, 0.1);
+  cup.castShadow = true;
+  group.add(cup);
+
+  const saucer = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.02, 0.15), plateMaterial);
+  saucer.position.set(-0.15, 0.08, 0.1);
+  saucer.castShadow = true;
+  group.add(saucer);
+
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.05, 0.25), plateMaterial);
+  base.position.y = 0.025;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// Jukebox (1965)
+const createJukebox1965 = () => {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.55, 0.95, 0.22),
+    new THREE.MeshStandardMaterial({ color: 0x1c1c1c })
+  );
+  body.position.y = 0.46;
+  body.castShadow = true;
+  group.add(body);
+
+  const screen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.42, 0.32, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x1565c0 })
+  );
+  screen.position.set(0, 0.55, 0.12);
+  screen.castShadow = true;
+  group.add(screen);
+
+  const knobs = [
+    { x: -0.15, y: 0.32 },
+    { x: 0, y: 0.32 },
+    { x: 0.15, y: 0.32 }
+  ];
+  knobs.forEach(k => {
+    const knob = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, 16, 16),
+      new THREE.MeshStandardMaterial({ color: 0xffd700 })
+    );
+    knob.position.set(k.x, k.y, 0.11);
+    knob.castShadow = true;
+    group.add(knob);
+  });
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.08, 0.25),
+    new THREE.MeshStandardMaterial({ color: 0xff6f00 })
+  );
+  base.position.y = 0.04;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+const createPosters1965 = () => {
+  const group = new THREE.Group();
+
+  const poster1 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.4, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0xff1744 })
+  );
+  poster1.position.set(-2, 3.5, -4.01);
+  poster1.castShadow = true;
+  group.add(poster1);
+
+  const poster2 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.4, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x00e5ff })
+  );
+  poster2.position.set(2, 3.5, -4.01);
+  poster2.castShadow = true;
+  group.add(poster2);
+
+  return group;
+};
+
+const createSignage1965 = () => {
+  const group = new THREE.Group();
+
+  const sign = new THREE.Mesh(
+    new THREE.BoxGeometry(0.4, 0.6, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x00e5ff })
+  );
+  sign.position.set(0, 2.5, -4.025);
+  sign.castShadow = true;
+  group.add(sign);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.45, 0.7, 0.1),
+    new THREE.MeshStandardMaterial({ color: 0x1c1c1c })
+  );
+  base.position.y = 0.35;
+  base.castShadow = true;
+  group.add(base);
+
+  const letterMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  const letter = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.15, 0.02), letterMaterial);
+  for (const pos of [
+    { x: -0.15, y: 2.65, z: -4.03 },
+    { x: 0.05, y: 2.65, z: -4.03 },
+    { x: 0.25, y: 2.65, z: -4.03 }
+  ]) {
+    const l = letter.clone();
+    l.position.set(pos.x, pos.y, pos.z);
+    l.castShadow = true;
+    group.add(l);
+  }
+
+  return group;
+};
+
+const createPatrons1965 = () => {
+  const group = new THREE.Group();
+  const patronGeometry = new THREE.BoxGeometry(0.3, 1.6, 0.2);
+  const materials = [
+    new THREE.MeshStandardMaterial({ color: 0x90caf9 }),
+    new THREE.MeshStandardMaterial({ color: 0xa5d6a7 }),
+    new THREE.MeshStandardMaterial({ color: 0xffcc80 })
+  ];
+
+  const p1 = new THREE.Mesh(patronGeometry, materials[0]);
+  p1.position.set(-1.2, 0.8, -0.5);
+  p1.castShadow = true;
+  group.add(p1);
+
+  const p2 = new THREE.Mesh(patronGeometry, materials[1]);
+  p2.position.set(1.2, 0.8, -0.5);
+  p2.castShadow = true;
+  group.add(p2);
+
+  const p3 = new THREE.Mesh(patronGeometry, materials[2]);
+  p3.position.set(0, 0.8, 0.5);
+  p3.castShadow = true;
+  group.add(p3);
+
+  return group;
+};
+
+const createMenuBoard1965 = () => {
+  const group = new THREE.Group();
+
+  const board = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.8, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0xffa000 })
+  );
+  board.position.set(0, 1.5, -4.025);
+  board.castShadow = true;
+  group.add(board);
+
+  const items = [
+    { x: -0.1, y: 1.65, c: 0x00e5ff },
+    { x: -0.1, y: 1.85, c: 0xff1744 },
+    { x: -0.1, y: 2.05, c: 0x1c1c1c }
+  ];
+
+  items.forEach((it) => {
+    const rect = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 0.05, 0.01),
+      new THREE.MeshStandardMaterial({ color: it.c })
+    );
+    rect.position.set(it.x, it.y, -4.03);
+    rect.castShadow = true;
+    group.add(rect);
+  });
+
+  return group;
+};
+
+const createFurniture1965 = () => {
+  const group = new THREE.Group();
+
+  const chairGeometry = new THREE.BoxGeometry(0.4, 0.9, 0.4);
+  const chairMaterial = new THREE.MeshStandardMaterial({ color: 0x00acc1 });
+
+  const chair = new THREE.Mesh(chairGeometry, chairMaterial);
+  chair.position.set(-2.5, 0.45, -0.2);
+  chair.castShadow = true;
+  group.add(chair);
+
+  const chair2 = new THREE.Mesh(chairGeometry, chairMaterial);
+  chair2.position.set(2.5, 0.45, -0.2);
+  chair2.castShadow = true;
+  group.add(chair2);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.5, 1.2),
+    new THREE.MeshStandardMaterial({ color: 0x26a69a })
+  );
+  base.position.y = 0.05;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// ===============================
+// 1985 Period Assets
+// ===============================
+
+const createCoffeeMachine1985 = () => {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 0.85, 0.42),
+    new THREE.MeshStandardMaterial({ color: 0x26a69a })
+  );
+  body.position.y = 0.42;
+  body.castShadow = true;
+  group.add(body);
+
+  const panel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 0.18, 0.32),
+    new THREE.MeshStandardMaterial({ color: 0x212121 })
+  );
+  panel.position.y = 0.8;
+  panel.castShadow = true;
+  group.add(panel);
+
+  const display = new THREE.Mesh(
+    new THREE.BoxGeometry(0.45, 0.18, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0xbf360c })
+  );
+  display.position.set(0, 0.62, 0.22);
+  display.castShadow = true;
+  group.add(display);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 0.05, 0.42),
+    new THREE.MeshStandardMaterial({ color: 0x616161 })
+  );
+  base.position.y = 0.05;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+const createManualTill1985 = () => {
+  const group = new THREE.Group();
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.65, 0.08, 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x212121 })
+  );
+  base.position.y = 0.04;
+  base.castShadow = true;
+  group.add(base);
+
+  const panel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.65, 0.28, 0.03),
+    new THREE.MeshStandardMaterial({ color: 0x455a64 })
+  );
+  panel.position.y = 0.2;
+  panel.castShadow = true;
+  group.add(panel);
+
+  const drawer = new THREE.Mesh(
+    new THREE.BoxGeometry(0.55, 0.15, 0.28),
+    new THREE.MeshStandardMaterial({ color: 0x0d47a1 })
+  );
+  drawer.position.y = 0.16;
+  drawer.castShadow = true;
+  group.add(drawer);
+
+  const slot = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.06, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0xffd700 })
+  );
+  slot.position.set(0.17, 0.12, 0.13);
+  slot.castShadow = true;
+  group.add(slot);
+
+  return group;
+};
+
+const createTableware1985 = () => {
+  const group = new THREE.Group();
+
+  const plateMaterial = new THREE.MeshStandardMaterial({ color: 0xffe0b2 });
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.02, 0.2), plateMaterial);
+  plate.position.y = 0.1;
+  plate.castShadow = true;
+  group.add(plate);
+
+  const cup = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 0.12, 16),
+    new THREE.MeshStandardMaterial({ color: 0xff6f00 })
+  );
+  cup.position.set(-0.15, 0.18, 0.1);
+  cup.castShadow = true;
+  group.add(cup);
+
+  const saucer = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.02, 0.15), plateMaterial);
+  saucer.position.set(-0.15, 0.08, 0.1);
+  saucer.castShadow = true;
+  group.add(saucer);
+
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.05, 0.25), plateMaterial);
+  base.position.y = 0.025;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// Boombox / portable cassette player (1985)
+const createBoombox1985 = () => {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.75, 0.18, 0.32),
+    new THREE.MeshStandardMaterial({ color: 0x0d47a1 })
+  );
+  body.position.y = 0.12;
+  body.castShadow = true;
+  group.add(body);
+
+  const handle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.02, 0.02, 0.35, 10),
+    new THREE.MeshStandardMaterial({ color: 0xc62828 })
+  );
+  handle.position.set(0, 0.23, 0);
+  handle.rotation.z = Math.PI / 2;
+  handle.castShadow = true;
+  group.add(handle);
+
+  const leftSpeaker = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.12, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0x212121 })
+  );
+  leftSpeaker.position.set(-0.22, 0.1, 0.16);
+  leftSpeaker.castShadow = true;
+  group.add(leftSpeaker);
+
+  const rightSpeaker = leftSpeaker.clone();
+  rightSpeaker.position.set(0.22, 0.1, 0.16);
+  group.add(rightSpeaker);
+
+  const screen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.08, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x26a69a })
+  );
+  screen.position.set(0, 0.12, 0.21);
+  screen.castShadow = true;
+  group.add(screen);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8, 0.05, 0.35),
+    new THREE.MeshStandardMaterial({ color: 0x455a64 })
+  );
+  base.position.y = 0.04;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+const createPosters1985 = () => {
+  const group = new THREE.Group();
+
+  const p1 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.4, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x00e5ff })
+  );
+  p1.position.set(-2, 3.5, -4.01);
+  p1.castShadow = true;
+  group.add(p1);
+
+  const p2 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.4, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0xff00ff })
+  );
+  p2.position.set(2, 3.5, -4.01);
+  p2.castShadow = true;
+  group.add(p2);
+
+  return group;
+};
+
+const createSignage1985 = () => {
+  const group = new THREE.Group();
+
+  const sign = new THREE.Mesh(
+    new THREE.BoxGeometry(0.4, 0.6, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0xff00ff })
+  );
+  sign.position.set(0, 2.5, -4.025);
+  sign.castShadow = true;
+  group.add(sign);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.45, 0.7, 0.1),
+    new THREE.MeshStandardMaterial({ color: 0x212121 })
+  );
+  base.position.y = 0.35;
+  base.castShadow = true;
+  group.add(base);
+
+  const letterMat = new THREE.MeshStandardMaterial({ color: 0x00e5ff });
+  const letter = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.15, 0.02), letterMat);
+
+  for (const pos of [
+    { x: -0.15, y: 2.65, z: -4.03 },
+    { x: 0.05, y: 2.65, z: -4.03 },
+    { x: 0.25, y: 2.65, z: -4.03 }
+  ]) {
+    const l = letter.clone();
+    l.position.set(pos.x, pos.y, pos.z);
+    l.castShadow = true;
+    group.add(l);
+  }
+
+  return group;
+};
+
+const createPatrons1985 = () => {
+  const group = new THREE.Group();
+  const patronGeometry = new THREE.BoxGeometry(0.3, 1.6, 0.2);
+  const materials = [
+    new THREE.MeshStandardMaterial({ color: 0xffcc80 }),
+    new THREE.MeshStandardMaterial({ color: 0xff80ab }),
+    new THREE.MeshStandardMaterial({ color: 0x81d4fa })
+  ];
+
+  const p1 = new THREE.Mesh(patronGeometry, materials[0]);
+  p1.position.set(-1.2, 0.8, -0.5);
+  p1.castShadow = true;
+  group.add(p1);
+
+  const p2 = new THREE.Mesh(patronGeometry, materials[1]);
+  p2.position.set(1.2, 0.8, -0.5);
+  p2.castShadow = true;
+  group.add(p2);
+
+  const p3 = new THREE.Mesh(patronGeometry, materials[2]);
+  p3.position.set(0, 0.8, 0.5);
+  p3.castShadow = true;
+  group.add(p3);
+
+  return group;
+};
+
+const createMenuBoard1985 = () => {
+  const group = new THREE.Group();
+
+  const board = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.8, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x00e5ff })
+  );
+  board.position.set(0, 1.5, -4.025);
+  board.castShadow = true;
+  group.add(board);
+
+  const items = [
+    { x: -0.1, y: 1.65, c: 0xff00ff },
+    { x: -0.1, y: 1.85, c: 0xff6f00 },
+    { x: -0.1, y: 2.05, c: 0x212121 }
+  ];
+
+  items.forEach((it) => {
+    const rect = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 0.05, 0.01),
+      new THREE.MeshStandardMaterial({ color: it.c })
+    );
+    rect.position.set(it.x, it.y, -4.03);
+    rect.castShadow = true;
+    group.add(rect);
+  });
+
+  return group;
+};
+
+const createFurniture1985 = () => {
+  const group = new THREE.Group();
+
+  const chairMaterial = new THREE.MeshStandardMaterial({ color: 0x00e5ff });
+  const chairGeometry = new THREE.BoxGeometry(0.4, 0.9, 0.4);
+
+  const chair = new THREE.Mesh(chairGeometry, chairMaterial);
+  chair.position.set(-2.5, 0.45, -0.2);
+  chair.castShadow = true;
+  group.add(chair);
+
+  const chair2 = new THREE.Mesh(chairGeometry, chairMaterial);
+  chair2.position.set(2.5, 0.45, -0.2);
+  chair2.castShadow = true;
+  group.add(chair2);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.5, 1.2),
+    new THREE.MeshStandardMaterial({ color: 0xff00ff })
+  );
+  base.position.y = 0.05;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// ===============================
+// 2005 Period Assets (Digital Age)
+// ===============================
+
+// iPod (2005 music device)
+const createIPod2005 = () => {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.07, 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a1a })
+  );
+  body.position.y = 0.08;
+  body.castShadow = true;
+  group.add(body);
+
+  const screen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.04, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x000000 })
+  );
+  screen.position.set(0, 0.02, 0.18);
+  screen.castShadow = true;
+  group.add(screen);
+
+  const wheel = new THREE.Mesh(
+    new THREE.CircleGeometry(0.04, 16),
+    new THREE.MeshStandardMaterial({ color: 0xffffff })
+  );
+  wheel.position.set(0, 0.02, 0.22);
+  wheel.rotation.x = Math.PI / 2;
+  wheel.castShadow = true;
+  group.add(wheel);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.18, 0.05, 0.45),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a1a })
+  );
+  base.position.y = 0.01;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// 2005 coffee machine (digital espresso unit)
+const createCoffeeMachine2005 = () => {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.8, 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x4a4a4a })
+  );
+  body.position.y = 0.4;
+  body.castShadow = true;
+  group.add(body);
+
+  const display = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.2, 0.15),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a1a })
+  );
+  display.position.y = 0.7;
+  display.castShadow = true;
+  group.add(display);
+
+  const buttonGeometry = new THREE.BoxGeometry(0.1, 0.05, 0.1);
+  const buttonMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
+  for (const pos of [{ x: -0.2, y: 0.5 }, { x: 0, y: 0.5 }, { x: 0.2, y: 0.5 }]) {
+    const button = new THREE.Mesh(buttonGeometry, buttonMaterial);
+    button.position.set(pos.x, pos.y, 0.25);
+    button.castShadow = true;
+    group.add(button);
+  }
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.05, 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x4a4a4a })
+  );
+  base.position.y = 0.05;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// 2005 digital POS / till
+const createDigitalTill2005 = () => {
+  const group = new THREE.Group();
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.65, 0.06, 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x2f2f2f })
+  );
+  base.position.y = 0.03;
+  base.castShadow = true;
+  group.add(base);
+
+  const panel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.65, 0.28, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x333333 })
+  );
+  panel.position.y = 0.22;
+  panel.castShadow = true;
+  group.add(panel);
+
+  const screen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.55, 0.18, 0.03),
+    new THREE.MeshStandardMaterial({ color: 0x0f172a })
+  );
+  screen.position.set(0, 0.3, 0.06);
+  screen.castShadow = true;
+  group.add(screen);
+
+  const slot = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.04, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0xffd700 })
+  );
+  slot.position.set(0.2, 0.1, 0.16);
+  slot.castShadow = true;
+  group.add(slot);
+
+  return group;
+};
+
+const createTableware2005 = () => {
+  const group = new THREE.Group();
+
+  const plate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.2, 0.02, 0.2),
+    new THREE.MeshStandardMaterial({ color: 0xffffff })
+  );
+  plate.position.y = 0.1;
+  plate.castShadow = true;
+  group.add(plate);
+
+  const cup = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.06, 0.12, 16),
+    new THREE.MeshStandardMaterial({ color: 0x4a90e2 })
+  );
+  cup.position.set(-0.15, 0.18, 0.1);
+  cup.castShadow = true;
+  group.add(cup);
+
+  const saucer = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.02, 0.15),
+    new THREE.MeshStandardMaterial({ color: 0xffffff })
+  );
+  saucer.position.set(-0.15, 0.08, 0.1);
+  saucer.castShadow = true;
+  group.add(saucer);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.25, 0.05, 0.25),
+    new THREE.MeshStandardMaterial({ color: 0xffffff })
+  );
+  base.position.y = 0.025;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// Digital menu board (2005)
+const createDigitalMenuBoard2005 = () => {
+  const group = new THREE.Group();
+
+  const housing = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.8, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x000000 })
+  );
+  housing.position.set(0, 1.5, -4.025);
+  housing.castShadow = true;
+  group.add(housing);
+
+  const display = new THREE.Mesh(
+    new THREE.BoxGeometry(0.45, 0.7, 0.01),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a1a })
+  );
+  display.position.set(0, 1.5, -4.026);
+  display.castShadow = true;
+  group.add(display);
+
+  const glow = new THREE.Mesh(
+    new THREE.BoxGeometry(0.46, 0.04, 0.01),
+    new THREE.MeshStandardMaterial({ color: 0x22c55e })
+  );
+  glow.position.set(0, 1.65, -4.026);
+  glow.castShadow = true;
+  group.add(glow);
+
+  const items = [0x22c55e, 0x60a5fa, 0xf472b6];
+  items.forEach((c, i) => {
+    const rect = new THREE.Mesh(
+      new THREE.BoxGeometry(0.32, 0.05, 0.01),
+      new THREE.MeshStandardMaterial({ color: c })
+    );
+    rect.position.set(-0.1, 1.85 + i * 0.2, -4.028);
+    rect.castShadow = true;
+    group.add(rect);
+  });
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.55, 0.9, 0.1),
+    new THREE.MeshStandardMaterial({ color: 0x333333 })
+  );
+  base.position.y = 0.45;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+const createPosters2005 = () => {
+  const group = new THREE.Group();
+
+  const p1 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.4, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x8b0000 })
+  );
+  p1.position.set(-2, 3.5, -4.01);
+  p1.castShadow = true;
+  group.add(p1);
+
+  const p2 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.4, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x4a90e2 })
+  );
+  p2.position.set(2, 3.5, -4.01);
+  p2.castShadow = true;
+  group.add(p2);
+
+  return group;
+};
+
+const createSignage2005 = () => {
+  const group = new THREE.Group();
+
+  const sign = new THREE.Mesh(
+    new THREE.BoxGeometry(0.4, 0.6, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0xffd700 })
+  );
+  sign.position.set(0, 2.5, -4.025);
+  sign.castShadow = true;
+  group.add(sign);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.45, 0.7, 0.1),
+    new THREE.MeshStandardMaterial({ color: 0x2f4f4f })
+  );
+  base.position.y = 0.35;
+  base.castShadow = true;
+  group.add(base);
+
+  const letterMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  const letter = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.15, 0.02), letterMat);
+  for (const pos of [
+    { x: -0.15, y: 2.65, z: -4.03 },
+    { x: 0.05, y: 2.65, z: -4.03 },
+    { x: 0.25, y: 2.65, z: -4.03 }
+  ]) {
+    const l = letter.clone();
+    l.position.set(pos.x, pos.y, pos.z);
+    l.castShadow = true;
+    group.add(l);
+  }
+
+  return group;
+};
+
+const createPatrons2005 = () => {
+  const group = new THREE.Group();
+  const patronGeometry = new THREE.BoxGeometry(0.3, 1.6, 0.2);
+  const materials = [
+    new THREE.MeshStandardMaterial({ color: 0xcd853f }),
+    new THREE.MeshStandardMaterial({ color: 0x7e57c2 }),
+    new THREE.MeshStandardMaterial({ color: 0x42a5f5 })
+  ];
+
+  const p1 = new THREE.Mesh(patronGeometry, materials[0]);
+  p1.position.set(-1.2, 0.8, -0.5);
+  p1.castShadow = true;
+  group.add(p1);
+
+  const p2 = new THREE.Mesh(patronGeometry, materials[1]);
+  p2.position.set(1.2, 0.8, -0.5);
+  p2.castShadow = true;
+  group.add(p2);
+
+  const p3 = new THREE.Mesh(patronGeometry, materials[2]);
+  p3.position.set(0, 0.8, 0.5);
+  p3.castShadow = true;
+  group.add(p3);
+
+  return group;
+};
+
+const createFurniture2005 = () => {
+  const group = new THREE.Group();
+
+  const chairGeometry = new THREE.BoxGeometry(0.4, 0.9, 0.4);
+  const chairMaterial = new THREE.MeshStandardMaterial({ color: 0x4a4a4a });
+
+  const chair = new THREE.Mesh(chairGeometry, chairMaterial);
+  chair.position.set(-2.5, 0.45, -0.2);
+  chair.castShadow = true;
+  group.add(chair);
+
+  const chair2 = new THREE.Mesh(chairGeometry, chairMaterial);
+  chair2.position.set(2.5, 0.45, -0.2);
+  chair2.castShadow = true;
+  group.add(chair2);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.5, 1.2),
+    new THREE.MeshStandardMaterial({ color: 0x6b6b6b })
+  );
+  base.position.y = 0.05;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// ===============================
+// 2025 Period Assets (Modern)
+// ===============================
+
+const createCoffeeMachine2025 = () => {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 0.85, 0.42),
+    new THREE.MeshStandardMaterial({ color: 0x111827 })
+  );
+  body.position.y = 0.42;
+  body.castShadow = true;
+  group.add(body);
+
+  const display = new THREE.Mesh(
+    new THREE.BoxGeometry(0.6, 0.22, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0x0ea5e9 })
+  );
+  display.position.y = 0.68;
+  display.castShadow = true;
+  group.add(display);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 0.05, 0.42),
+    new THREE.MeshStandardMaterial({ color: 0x1f2937 })
+  );
+  base.position.y = 0.05;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+const createDigitalTill2025 = () => {
+  const group = new THREE.Group();
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 0.06, 0.42),
+    new THREE.MeshStandardMaterial({ color: 0x0f172a })
+  );
+  base.position.y = 0.03;
+  base.castShadow = true;
+  group.add(base);
+
+  const stand = new THREE.Mesh(
+    new THREE.BoxGeometry(0.25, 0.25, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0x111827 })
+  );
+  stand.position.set(0, 0.2, 0.02);
+  stand.castShadow = true;
+  group.add(stand);
+
+  const screen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.45, 0.25, 0.03),
+    new THREE.MeshStandardMaterial({ color: 0x22c55e })
+  );
+  screen.position.set(0, 0.32, 0.08);
+  screen.castShadow = true;
+  group.add(screen);
+
+  const chip = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.03, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0xfbbf24 })
+  );
+  chip.position.set(0.2, 0.12, 0.15);
+  chip.castShadow = true;
+  group.add(chip);
+
+  return group;
+};
+
+const createTableware2025 = () => {
+  const group = new THREE.Group();
+
+  const plate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.2, 0.02, 0.2),
+    new THREE.MeshStandardMaterial({ color: 0xf8fafc })
+  );
+  plate.position.y = 0.1;
+  plate.castShadow = true;
+  group.add(plate);
+
+  const cup = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.06, 0.12, 16),
+    new THREE.MeshStandardMaterial({ color: 0x22c55e })
+  );
+  cup.position.set(-0.15, 0.18, 0.1);
+  cup.castShadow = true;
+  group.add(cup);
+
+  const saucer = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.02, 0.15),
+    new THREE.MeshStandardMaterial({ color: 0xf8fafc })
+  );
+  saucer.position.set(-0.15, 0.08, 0.1);
+  saucer.castShadow = true;
+  group.add(saucer);
+
+  return group;
+};
+
+// Music device (2025): phone/smart speaker stand in
+const createPhone2025 = () => {
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.2, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x111827 })
+  );
+  body.position.set(0, 0.1, 0.15);
+  body.castShadow = true;
+  group.add(body);
+
+  const screen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.11, 0.19, 0.01),
+    new THREE.MeshStandardMaterial({ color: 0x0ea5e9 })
+  );
+  screen.position.set(0, 0.1, 0.16);
+  screen.castShadow = true;
+  group.add(screen);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.04, 0.15),
+    new THREE.MeshStandardMaterial({ color: 0x334155 })
+  );
+  base.position.set(0, 0.03, 0.1);
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+const createDigitalMenuBoard2025 = () => {
+  const group = new THREE.Group();
+
+  const housing = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.8, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x0b1220 })
+  );
+  housing.position.set(0, 1.5, -4.025);
+  housing.castShadow = true;
+  group.add(housing);
+
+  const screen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.47, 0.7, 0.01),
+    new THREE.MeshStandardMaterial({ color: 0x0ea5e9 })
+  );
+  screen.position.set(0, 1.5, -4.026);
+  screen.castShadow = true;
+  group.add(screen);
+
+  const items = [0x22c55e, 0x60a5fa, 0xfbbf24];
+  items.forEach((c, i) => {
+    const rect = new THREE.Mesh(
+      new THREE.BoxGeometry(0.34, 0.05, 0.01),
+      new THREE.MeshStandardMaterial({ color: c })
+    );
+    rect.position.set(-0.1, 1.85 + i * 0.2, -4.028);
+    rect.castShadow = true;
+    group.add(rect);
+  });
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.55, 0.9, 0.1),
+    new THREE.MeshStandardMaterial({ color: 0x111827 })
+  );
+  base.position.y = 0.45;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+const createPosters2025 = () => {
+  const group = new THREE.Group();
+
+  const p1 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.4, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x22c55e })
+  );
+  p1.position.set(-2, 3.5, -4.01);
+  p1.castShadow = true;
+  group.add(p1);
+
+  const p2 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.4, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x60a5fa })
+  );
+  p2.position.set(2, 3.5, -4.01);
+  p2.castShadow = true;
+  group.add(p2);
+
+  return group;
+};
+
+const createSignage2025 = () => {
+  const group = new THREE.Group();
+
+  const sign = new THREE.Mesh(
+    new THREE.BoxGeometry(0.4, 0.6, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x0ea5e9 })
+  );
+  sign.position.set(0, 2.5, -4.025);
+  sign.castShadow = true;
+  group.add(sign);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(0.45, 0.7, 0.1),
+    new THREE.MeshStandardMaterial({ color: 0x111827 })
+  );
+  base.position.y = 0.35;
+  base.castShadow = true;
+  group.add(base);
+
+  const letterMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc });
+  const letter = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.15, 0.02), letterMat);
+  for (const pos of [
+    { x: -0.15, y: 2.65, z: -4.03 },
+    { x: 0.05, y: 2.65, z: -4.03 },
+    { x: 0.25, y: 2.65, z: -4.03 }
+  ]) {
+    const l = letter.clone();
+    l.position.set(pos.x, pos.y, pos.z);
+    l.castShadow = true;
+    group.add(l);
+  }
+
+  return group;
+};
+
+const createPatrons2025 = () => {
+  const group = new THREE.Group();
+  const patronGeometry = new THREE.BoxGeometry(0.3, 1.6, 0.2);
+  const materials = [
+    new THREE.MeshStandardMaterial({ color: 0x93c5fd }),
+    new THREE.MeshStandardMaterial({ color: 0x6ee7b7 }),
+    new THREE.MeshStandardMaterial({ color: 0xfca5a5 })
+  ];
+
+  const p1 = new THREE.Mesh(patronGeometry, materials[0]);
+  p1.position.set(-1.2, 0.8, -0.5);
+  p1.castShadow = true;
+  group.add(p1);
+
+  const p2 = new THREE.Mesh(patronGeometry, materials[1]);
+  p2.position.set(1.2, 0.8, -0.5);
+  p2.castShadow = true;
+  group.add(p2);
+
+  const p3 = new THREE.Mesh(patronGeometry, materials[2]);
+  p3.position.set(0, 0.8, 0.5);
+  p3.castShadow = true;
+  group.add(p3);
+
+  return group;
+};
+
+const createFurniture2025 = () => {
+  const group = new THREE.Group();
+
+  const chairMaterial = new THREE.MeshStandardMaterial({ color: 0x111827 });
+  const chairGeometry = new THREE.BoxGeometry(0.4, 0.9, 0.4);
+
+  const chair = new THREE.Mesh(chairGeometry, chairMaterial);
+  chair.position.set(-2.5, 0.45, -0.2);
+  chair.castShadow = true;
+  group.add(chair);
+
+  const chair2 = new THREE.Mesh(chairGeometry, chairMaterial);
+  chair2.position.set(2.5, 0.45, -0.2);
+  chair2.castShadow = true;
+  group.add(chair2);
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.5, 1.2),
+    new THREE.MeshStandardMaterial({ color: 0x334155 })
+  );
+  base.position.y = 0.05;
+  base.castShadow = true;
+  group.add(base);
+
+  return group;
+};
+
+// ===============================
+// Add assets to year layers
+// ===============================
+
 yearLayers[1945].add(
   createCoffeeMachine1945(),
   createManualTill1945(),
@@ -508,7 +1685,6 @@ yearLayers[1945].add(
   createFurniture1945()
 );
 
-// Add 1965 period assets to the year layer
 yearLayers[1965].add(
   createCoffeeMachine1965(),
   createManualTill1965(),
@@ -521,17 +1697,40 @@ yearLayers[1965].add(
   createFurniture1965()
 );
 
-// Add 1965 period assets to the year layer
-yearLayers[1965].add(
-  createCoffeeMachine1965(),
-  createManualTill1965(),
-  createTableware1965(),
-  createJukebox1965(),
-  createPosters1965(),
-  createSignage1965(),
-  createPatrons1965(),
-  createMenuBoard1965(),
-  createFurniture1965()
+yearLayers[1985].add(
+  createCoffeeMachine1985(),
+  createManualTill1985(),
+  createTableware1985(),
+  createBoombox1985(),
+  createPosters1985(),
+  createSignage1985(),
+  createPatrons1985(),
+  createMenuBoard1985(),
+  createFurniture1985()
+);
+
+yearLayers[2005].add(
+  createCoffeeMachine2005(),
+  createDigitalTill2005(),
+  createTableware2005(),
+  createIPod2005(),
+  createPosters2005(),
+  createSignage2005(),
+  createPatrons2005(),
+  createDigitalMenuBoard2005(),
+  createFurniture2005()
+);
+
+yearLayers[2025].add(
+  createCoffeeMachine2025(),
+  createDigitalTill2025(),
+  createTableware2025(),
+  createPhone2025(),
+  createPosters2025(),
+  createSignage2025(),
+  createPatrons2025(),
+  createDigitalMenuBoard2025(),
+  createFurniture2025()
 );
 
 // Light switch indicator (simple)
@@ -543,7 +1742,6 @@ lightBulb.position.set(2, 1.5, 2);
 lightBulb.castShadow = true;
 lightGroup.add(lightBulb);
 
-// Light filament
 const filamentGeometry = new THREE.CylinderGeometry(0.02, 0.02, 0.3, 8);
 const filamentMaterial = new THREE.MeshStandardMaterial({ color: 0xffd700 });
 const filament = new THREE.Mesh(filamentGeometry, filamentMaterial);
@@ -557,12 +1755,12 @@ function handleYearSelect(year) {
   Object.values(yearLayers).forEach(layer => {
     layer.visible = false;
   });
-  
+
   // Show the selected year layer
   if (yearLayers[year]) {
     yearLayers[year].visible = true;
   }
-  
+
   // Update the text overlay
   const yearLabels = {
     1945: 'Post-War Era',
@@ -571,39 +1769,44 @@ function handleYearSelect(year) {
     2005: 'Digital Age',
     2025: 'Modern Times'
   };
-  
+
   const sceneElement = document.querySelector('.scene');
   if (sceneElement) {
     sceneElement.querySelector('h2').textContent = `Café ${yearLabels[year] || year}`;
     sceneElement.querySelector('p').textContent = `Year: ${year} - Café timelapse transformation active`;
   }
+
+  // Update ARIA pressed states
+  document.querySelectorAll('.year-btn').forEach(btn => {
+    btn.setAttribute('aria-pressed', String(parseInt(btn.dataset.year, 10) === year));
+  });
 }
 
 // Add year button event listeners when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     const yearButtons = document.querySelectorAll('.year-btn');
-    
+
     yearButtons.forEach(button => {
       button.addEventListener('click', () => {
         const year = parseInt(button.dataset.year, 10);
         handleYearSelect(year);
       });
     });
-    
+
     // Initialize with default year (1945)
     handleYearSelect(1945);
   });
 } else {
   const yearButtons = document.querySelectorAll('.year-btn');
-  
+
   yearButtons.forEach(button => {
     button.addEventListener('click', () => {
       const year = parseInt(button.dataset.year, 10);
       handleYearSelect(year);
     });
   });
-  
+
   // Initialize with default year (1945)
   handleYearSelect(1945);
 }
@@ -631,6 +1834,7 @@ window.addEventListener('resize', () => {
 animate();
 
 // Initialize application state integration
+// (kept for compatibility with potential external integration)
 appState.scene = renderer.domElement;
 appState.sceneContext = {
   scene,
