@@ -1,0 +1,35 @@
+node_modules/
+.venv/
+venv/
+vendor/
+target/
+.gradle/
+bin/
+obj/
+.npm/
+.npm-cache/
+.pnpm-store/
+.yarn/
+.next/
+dist/
+coverage/
+.turbo/
+build/
+.coroid/attachments/
+.coroid-runtime/
+.coroid-cache/
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+**/credentials.json
+**/secrets.json
+tmp/
+temp/
+.DS_Store
+._*
+__MACOSX/
+# Local three.js vendor tree is intentionally committed (pinned r160 ES module build)
+# — do not ignore public/js/three.

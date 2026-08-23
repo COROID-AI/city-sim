@@ -1,0 +1,15 @@
+{
+  "name": "cafe-timelapse",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "3D café interior timelapse (1945 → 2025) — static ES-module three.js scene with a fixed café shell and an era registry.",
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "start:npx": "npx --yes serve -l 8000 .",
+    "check": "node scripts/check.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

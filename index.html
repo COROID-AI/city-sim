@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230d141b'/%3E%3Cpath d='M3 3h8v6a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z' fill='%23e8b55c'/%3E%3Crect x='11' y='6' width='2.4' height='3' rx='1' fill='%23e8b55c'/%3E%3C/svg%3E"
+    />
+    <title>Café — 2025</title>
+    <style>
+      :root {
+        --panel: rgba(14, 20, 28, 0.82);
+        --panel-border: rgba(236, 197, 122, 0.45);
+        --ink: #f2ead8;
+        --muted: #b9ac93;
+        --accent: #e8b55c;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0d141b;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        color: var(--ink);
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+      }
+      #app canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      /* Top timeline — always visible across the top of the viewport. */
+      #topbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 10px 16px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--panel-border);
+        backdrop-filter: blur(6px);
+        pointer-events: none;
+      }
+      #topbar > * {
+        pointer-events: auto;
+      }
+      .brand {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.1;
+        white-space: nowrap;
+      }
+      .brand strong {
+        font-size: 15px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .brand small {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .timeline {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex: 1;
+        min-width: 0;
+      }
+      .timeline-label {
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        white-space: nowrap;
+      }
+      #timeline-slider {
+        flex: 1;
+        min-width: 220px;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+      .year-buttons {
+        display: flex;
+        gap: 6px;
+      }
+      .year-btn {
+        border: 1px solid rgba(236, 197, 122, 0.35);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--ink);
+        font: inherit;
+        font-size: 13px;
+        line-height: 1;
+        padding: 8px 10px;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      }
+      .year-btn:hover {
+        border-color: var(--accent);
+      }
+      .year-btn:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .year-btn.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #241a0c;
+        font-weight: 700;
+      }
+      /* Era label HUD. */
+      #era-chip {
+        position: fixed;
+        left: 16px;
+        bottom: 16px;
+        z-index: 20;
+        padding: 10px 14px;
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        border-radius: 8px;
+        font-size: 13px;
+        line-height: 1.4;
+        pointer-events: none;
+      }
+      #era-chip .year {
+        font-size: 22px;
+        font-weight: 800;
+        color: var(--accent);
+      }
+      #era-chip .status {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+      }
+      #version {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 20;
+        color: var(--muted);
+        font-size: 12px;
+        opacity: 0.8;
+        pointer-events: none;
+      }
+      #hint {
+        position: fixed;
+        left: 50%;
+        bottom: 16px;
+        transform: translateX(-50%);
+        z-index: 20;
+        color: var(--muted);
+        font-size: 12px;
+        background: rgba(14, 20, 28, 0.55);
+        padding: 6px 10px;
+        border-radius: 6px;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      @media (max-width: 720px) {
+        #topbar {
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .brand small {
+          display: none;
+        }
+        #hint {
+          display: none;
+        }
+      }
+    </style>
+    <!-- Single shared three.js instance for app + addons via import map. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./public/js/three/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="topbar" role="toolbar" aria-label="Café time period timeline">
+      <div class="brand">
+        <strong>Le Café</strong>
+        <small>timelapse · 1945 → 2025</small>
+      </div>
+      <div class="timeline">
+        <span class="timeline-label" id="timeline-label">Era</span>
+        <input
+          type="range"
+          id="timeline-slider"
+          min="0"
+          max="4"
+          step="1"
+          value="4"
+          list="era-years"
+          aria-label="Select café era"
+          aria-valuemin="0"
+          aria-valuemax="4"
+          aria-valuenow="4"
+          aria-valuetext="2025"
+        />
+        <datalist id="era-years">
+          <option value="0" label="1945"></option>
+          <option value="1" label="1965"></option>
+          <option value="2" label="1985"></option>
+          <option value="3" label="2005"></option>
+          <option value="4" label="2025"></option>
+        </datalist>
+        <div class="year-buttons" id="timeline-years" role="group" aria-label="Select era year">
+          <button type="button" class="year-btn" data-year="1945" aria-pressed="false">1945</button>
+          <button type="button" class="year-btn" data-year="1965" aria-pressed="false">1965</button>
+          <button type="button" class="year-btn" data-year="1985" aria-pressed="false">1985</button>
+          <button type="button" class="year-btn" data-year="2005" aria-pressed="false">2005</button>
+          <button type="button" class="year-btn" data-year="2025" aria-pressed="true">2025</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="era-chip" role="status" aria-live="polite">
+      <div class="year" id="era-year">2025</div>
+      <div class="status" id="era-status">UNDER CONSTRUCTION</div>
+    </div>
+    <div id="version"></div>
+    <div id="hint">Drag to orbit · scroll to zoom · right-drag to pan</div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
