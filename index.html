@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#04060d" />
+<meta name="description" content="Solar Smash — orbit a living planet and tear it apart with six devastating weapons." />
+<title>SOLAR SMASH</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='10' fill='%231a4f8a'/%3E%3Ccircle cx='12' cy='13' r='3' fill='%232e7d46'/%3E%3Cpath d='M16 26 L28 30 L22 20 Z' fill='%23ff7722'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="css/style.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js"
+  }
+}
+</script>
+</head>
+<body class="state-menu tier-high">
+<div id="app">
+  <canvas id="c"></canvas>
+
+  <!-- targeting reticle (replaces OS cursor over canvas) -->
+  <div id="crosshair"><span></span></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="planet-panel" class="panel">
+      <div class="pp-name">TERRA&nbsp;PRIME <em>· orbital strike platform</em></div>
+      <div class="pp-row">
+        <label>INTEGRITY</label>
+        <div id="integrity-bar"><i></i></div>
+        <b id="integrity-num">100%</b>
+      </div>
+      <div class="pp-row">
+        <label>POPULATION</label>
+        <b id="population">7.90B</b>
+        <span id="population-delta"></span>
+      </div>
+    </div>
+
+    <div id="topbar">
+      <button id="btn-quality" class="tbtn" title="Quality (Q)">Q·AUTO</button>
+      <button id="btn-mute" class="tbtn" title="Mute (M)">SND ON</button>
+      <button id="btn-help" class="tbtn" title="Help (H)">?</button>
+    </div>
+
+    <div id="dock"></div>
+    <div id="toasts"></div>
+  </div>
+
+  <!-- full-screen effects layers -->
+  <div id="flash"></div>
+  <div id="vignette"></div>
+
+  <!-- start screen -->
+  <div id="start" class="overlay">
+    <div class="start-inner">
+      <h1>SOLAR<em>SMASH</em></h1>
+      <p class="tagline">A world hangs in your crosshairs. End it.</p>
+      <div class="controls-grid">
+        <div><b>CLICK / TAP</b><span>fire selected weapon at the surface</span></div>
+        <div><b>HOLD (Laser)</b><span>sustain the beam — watch the heat</span></div>
+        <div><b>DRAG</b><span>orbit the planet</span></div>
+        <div><b>SCROLL / PINCH</b><span>zoom</span></div>
+        <div><b>1 – 6</b><span>select weapon</span></div>
+        <div><b>M · Q · H · P · R</b><span>mute · quality · help · pause · rebuild</span></div>
+      </div>
+      <button id="btn-start">ENGAGE ORBITAL PLATFORM</button>
+      <p class="footnote">headphones recommended — audio is fully procedural</p>
+    </div>
+  </div>
+
+  <!-- pause -->
+  <div id="pause" class="overlay hidden">
+    <div class="pause-inner">
+      <h2>PAUSED</h2>
+      <p>press P or ESC to resume</p>
+    </div>
+  </div>
+
+  <!-- help modal -->
+  <div id="help" class="overlay hidden">
+    <div class="help-inner panel">
+      <h2>FIELD MANUAL</h2>
+      <ul>
+        <li><b>Missile [1]</b> — reliable warhead, medium crater and shockwave.</li>
+        <li><b>Laser Beam [2]</b> — hold to scorch the crust; overheats if abused.</li>
+        <li><b>Asteroid [3]</b> — redirects a chondrite onto your target point. Big splash.</li>
+        <li><b>Nuke [4]</b> — slow descent, blinding flash, continent-scale scarring.</li>
+        <li><b>Black Hole [5]</b> — tears matter off the surface until it collapses.</li>
+        <li><b>Railgun [6]</b> — instant hypervelocity slug. Precise, deep penetration.</li>
+      </ul>
+      <p>Every impact scars the planet permanently. Damage unlocks seismic stages;
+         at zero integrity the core breaches and the planet shatters.</p>
+      <button id="btn-help-close" class="tbtn">CLOSE</button>
+    </div>
+  </div>
+
+  <!-- game over -->
+  <div id="gameover" class="overlay hidden">
+    <div class="go-inner">
+      <h1>PLANET<span>DESTROYED</span></h1>
+      <div class="go-stats panel">
+        <div><label>TIME TO KILL</label><b id="go-time">0:00</b></div>
+        <div><label>SHOTS FIRED</label><b id="go-shots">0</b></div>
+        <div><label>DESTRUCTION</label><b>100%</b></div>
+        <div><label>SURVIVORS</label><b>0</b></div>
+      </div>
+      <p id="go-flavor" class="flavor"></p>
+      <button id="go-rebuild">REBUILD PLANET &nbsp;[R]</button>
+    </div>
+  </div>
+
+  <!-- graceful failure -->
+  <div id="fatal" class="overlay hidden">
+    <div class="pause-inner panel">
+      <h2>WEBGL UNAVAILABLE</h2>
+      <p id="fatal-msg">This game needs WebGL 2. Try another browser or enable hardware acceleration.</p>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

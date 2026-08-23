@@ -1,0 +1,19 @@
+{
+  "name": "solar-smash",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Solar Smash — a 3D planetary-destruction browser game built with three.js.",
+  "scripts": {
+    "start": "node server.js",
+    "check": "esbuild js/main.js --bundle --format=esm --external:three --outfile=node_modules/.cache/bundle-check.js --log-level=warning"
+  },
+  "dependencies": {
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
