@@ -14,6 +14,7 @@ import { buildShell } from './world/shell.js';
 import { ERA_YEARS, registerEra, switchTo, getActiveEra, getActiveYear } from './eras/registry.js';
 import { registerAllPlaceholderEras } from './eras/placeholder.js';
 import { setAudioMuted, setAudioVolume, isAudioMuted, getAudioVolume } from './world/animation/audio.js';
+import { audioEngine } from './audio/engine.js';
 
 // ---------------------------------------------------------------------------
 // r160 bundle verification
@@ -39,6 +40,8 @@ const slider = document.getElementById('timeline-slider');
 const yearButtons = Array.from(document.querySelectorAll('#timeline-years .year-btn'));
 const chipYear = document.querySelector('#era-chip .year');
 const versionEl = document.getElementById('version');
+const audioMute = document.getElementById('audio-mute');
+const audioVolume = document.getElementById('audio-volume');
 
 // ---------------------------------------------------------------------------
 // Renderer / scene / camera / controls / lights
@@ -81,6 +84,12 @@ controls.update();
 // World shell + era registry wiring
 // ---------------------------------------------------------------------------
 const shellMeta = buildShell(scene);
+audioEngine.attach({ scene, camera });
+const unlockAudio = () => audioEngine.resume();
+document.addEventListener('pointerdown', unlockAudio, { once: true, passive: true });
+document.addEventListener('keydown', unlockAudio, { once: true });
+audioMute?.addEventListener('click', () => { audioEngine.resume(); audioMute.textContent = audioEngine.toggleMute() ? '🔇' : '🔊'; });
+audioVolume?.addEventListener('input', () => { audioEngine.resume(); audioEngine.setVolume(audioVolume.value); });
 
 const ctx = {
   THREE,
@@ -122,6 +131,7 @@ volumeSlider?.addEventListener('input', () => {
 function applyYear(year) {
   if (!ERA_YEARS.includes(year)) return;
   switchTo(year, ctx);
+  audioEngine.switchEra(year);
   const idx = ERA_YEARS.indexOf(year);
   slider.value = String(idx);
   slider.setAttribute('aria-valuetext', String(year));
@@ -173,6 +183,7 @@ function frame() {
   requestAnimationFrame(frame);
   controls.update();
   constrainView();
+  audioEngine.update();
   renderer.render(scene, camera);
 }
 frame();

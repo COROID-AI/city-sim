@@ -83,6 +83,32 @@
         letter-spacing: 0.08em;
         white-space: nowrap;
       }
+      .audio-controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      .audio-controls button {
+        border: 1px solid rgba(236, 197, 122, 0.35);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--ink);
+        font: inherit;
+        font-size: 13px;
+        line-height: 1;
+        padding: 6px 8px;
+        cursor: pointer;
+      }
+      .audio-controls button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .audio-controls input {
+        width: 72px;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
       #timeline-slider {
         flex: 1;
         min-width: 220px;
@@ -267,6 +293,11 @@
           <button type="button" class="year-btn" data-year="1985" aria-pressed="false">1985</button>
           <button type="button" class="year-btn" data-year="2005" aria-pressed="false">2005</button>
           <button type="button" class="year-btn" data-year="2025" aria-pressed="true">2025</button>
+        </div>
+        <div class="audio-controls" aria-label="Audio controls">
+          <button id="audio-mute" type="button" aria-label="Mute or unmute audio">🔊</button>
+          <label for="audio-volume" class="timeline-label">Vol</label>
+          <input id="audio-volume" type="range" min="0" max="1" step="0.01" value="0.62" aria-label="Audio volume" />
         </div>
       </div>
     </div>
