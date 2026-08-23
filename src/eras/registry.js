@@ -20,6 +20,7 @@ import era1985 from './1985/index.js';
 
 import { era1965 } from './1965/index.js';
 import era2005 from './2005/index.js';
+import { transitionTo } from '../world/animation/timelapse.js';
 
 export const ERA_YEARS = Object.freeze([1945, 1965, 1985, 2005, 2025]);
 
@@ -32,6 +33,7 @@ const BY_YEAR = new Map(); // year -> EraModule
 let activeId = null;
 let activeYear = null;
 let activeCtx = null;
+let activeGroup = null;
 
 // Load the completed 1945 interior before the scaffold supplies fallbacks.
 registerEra('postwar-1945', era1945);
@@ -90,18 +92,13 @@ export function switchTo(year, ctx) {
   if (activeId === next.id) {
     activeCtx = ctx;
     if (typeof next.enter === 'function') {
-      next.enter(ctx, getEraGroup(ctx, next.id));
+      next.enter(ctx, activeGroup || getEraGroup(ctx, next.id));
     }
     return next;
   }
-  if (activeId && activeCtx) {
-    const prev = BY_ID.get(activeId);
-    if (prev && typeof prev.exit === 'function') {
-      prev.exit(activeCtx);
-    }
-    const prevGroup = ctx.scene.getObjectByName(`era-group:${activeId}`);
-    if (prevGroup) ctx.scene.remove(prevGroup);
-  }
+  const prev = activeId ? BY_ID.get(activeId) : null;
+  const prevGroup = activeGroup || (activeId ? getEraGroup(ctx, activeId) : null);
+  const prevCtx = activeCtx || ctx;
   const group = next.build(ctx);
   if (group) {
     group.name = `era-group:${next.id}`;
@@ -110,8 +107,16 @@ export function switchTo(year, ctx) {
   activeId = next.id;
   activeYear = year;
   activeCtx = ctx;
-  if (typeof next.enter === 'function') {
-    next.enter(ctx, group);
+  activeGroup = group;
+  if (prevGroup && prev) {
+    transitionTo(ctx, prevGroup, group, prev, next, () => {
+      if (prev && typeof prev.exit === 'function') prev.exit(prevCtx);
+      if (prevGroup.parent) prevGroup.parent.remove(prevGroup);
+      if (typeof next.enter === 'function') next.enter(ctx, group);
+    });
+  } else {
+    ctx.scene.add(group);
+    if (typeof next.enter === 'function') next.enter(ctx, group);
   }
   return next;
 }
