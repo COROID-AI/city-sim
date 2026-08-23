@@ -113,24 +113,36 @@ let currentYear = 1945;
 function fadeLayer(layer, visible) {
   const fades = [];
   layer.children.forEach(child => {
-    if (child.material && typeof child.material.opacity === 'number') {
+    if (child.material) {
       fades.push(child.material);
     }
   });
 
   if (visible) {
+    // Use requestAnimationFrame for smooth fading instead of setInterval
+    fades.forEach(m => {
+      m.opacity = 0;
+      m.transparent = true;
+    });
     layer.visible = true;
-    fades.forEach(m => (m.opacity = 0));
 
-    let opacity = 0;
-    const fadeIn = setInterval(() => {
-      opacity += 0.1;
-      fades.forEach(m => (m.opacity = Math.min(opacity, 1)));
-      if (opacity >= 1) clearInterval(fadeIn);
-    }, 50);
+    const fadeIn = () => {
+      let opacity = 0;
+      const step = () => {
+        opacity += 0.1;
+        fades.forEach(m => (m.opacity = Math.min(opacity, 1)));
+        if (opacity < 1) {
+          requestAnimationFrame(step);
+        } else {
+          fades.forEach(m => (m.opacity = 1));
+        }
+      };
+      requestAnimationFrame(step);
+    };
+    fadeIn();
   } else {
     fades.forEach(m => {
-      if (typeof m.opacity === 'number') m.opacity = 0;
+      m.opacity = 0;
     });
     layer.visible = false;
   }
@@ -153,9 +165,11 @@ function handleYearSelect(year) {
     if (p) p.textContent = `Year: ${year} - Café timelapse transformation active`;
   }
 
+  // Year indicator - always update to show current year
   const indicator = document.querySelector('.year-indicator');
   if (indicator) {
     indicator.textContent = `${year} - ${yearLabels[year] || ''}`.trim();
+    indicator.style.display = 'block';
   }
 
   // Accessibility / state
@@ -172,6 +186,13 @@ function handleYearSelect(year) {
   if (typeof window.playCoffeeMachineSFX === 'function') {
     window.playCoffeeMachineSFX();
   }
+}
+
+// Ensure coffee SFX is always available as a no-op if audio not initialized
+if (!window.playCoffeeMachineSFX) {
+  window.playCoffeeMachineSFX = () => {
+    // SFX will be enabled after audio initialization via user gesture
+  };
 }
 
 // ---------- Audio (lazy, user-gesture gated) ----------
