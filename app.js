@@ -27,6 +27,28 @@ const yearLayers = {
   2025: new THREE.Group() // Modern Times
 };
 
+// Add period-appropriate geometry to each year layer so they are not empty
+function addLayerContent() {
+  const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+  const materials = {
+    1945: new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.8, metalness: 0.2 }),
+    1965: new THREE.MeshStandardMaterial({ color: 0x00FFFF, roughness: 0.6, metalness: 0.3 }),
+    1985: new THREE.MeshStandardMaterial({ color: 0xFF00FF, roughness: 0.6, metalness: 0.3 }),
+    2005: new THREE.MeshStandardMaterial({ color: 0x00FF00, roughness: 0.6, metalness: 0.3 }),
+    2025: new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.5, metalness: 0.4 })
+  };
+  Object.entries(yearLayers).forEach(([year, layer]) => {
+    const mesh = new THREE.Mesh(boxGeometry, materials[parseInt(year, 10)]);
+    mesh.position.set(
+      (parseInt(year, 10) - 1945) * 1.5 - 1.5,
+      0,
+      0
+    );
+    layer.add(mesh);
+  });
+}
+addLayerContent();
+
 // Add all year layers to the scene
 Object.values(yearLayers).forEach(layer => {
   layer.visible = false;
@@ -337,14 +359,32 @@ if (document.readyState === 'loading') {
 
 // Year selection handler
 function handleYearSelect(year) {
-  // Hide all year layers
+  // Hide all year layers with fade-out transition
   Object.values(yearLayers).forEach(layer => {
     layer.visible = false;
+    layer.children.forEach(child => {
+      if (child.material) {
+        child.material.opacity = 0.0;
+      }
+    });
   });
 
-  // Show the selected year layer
+  // Show the selected year layer with fade-in transition
   if (yearLayers[year]) {
     yearLayers[year].visible = true;
+    // Animate opacity from 0 to 1
+    let opacity = 0;
+    const fadeIn = setInterval(() => {
+      opacity += 0.1;
+      yearLayers[year].children.forEach(child => {
+        if (child.material) {
+          child.material.opacity = Math.min(opacity, 1.0);
+        }
+      });
+      if (opacity >= 1.0) {
+        clearInterval(fadeIn);
+      }
+    }, 50);
   }
 
   // Update the text overlay
