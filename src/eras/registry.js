@@ -16,6 +16,8 @@
  *   { scene, renderer, camera, controls, clock, HUD, THREE }
  */
 
+import { era1965 } from './1965/index.js';
+
 export const ERA_YEARS = Object.freeze([1945, 1965, 1985, 2005, 2025]);
 
 const BY_ID = new Map();   // id -> EraModule
@@ -104,3 +106,8 @@ export function switchTo(year, ctx) {
 function getEraGroup(ctx, id) {
   return ctx.scene.getObjectByName(`era-group:${id}`) ?? null;
 }
+
+// Real 1965 era — imported above, registered here so the shared registry
+// (and the 1965 slider position) is owned by the era module, replacing the
+// 1965 placeholder.
+registerEra(era1965.id, era1965);
