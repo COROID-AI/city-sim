@@ -59,8 +59,11 @@ const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 
-// Zoom limits to prevent motion discomfort
-controls.minDistance = 1.5;
+// Zoom limits - adjusted for close-up inspection
+// Allow closer zoom for detailed inspection of period-specific elements
+// minDistance reduced to enable closer inspection while preventing
+// camera from getting too close and clipping geometry
+controls.minDistance = 0.5;
 controls.maxDistance = 10;
 
 // Disable auto-rotate to avoid motion discomfort
@@ -70,8 +73,11 @@ controls.autoRotate = false;
 controls.enableZoom = true;
 
 // Tilt limits to keep the scene in a comfortable viewing range
-controls.maxPolarAngle = Math.PI / 2.2;
-controls.minPolarAngle = Math.PI / 4;
+// Expanded polar angle range for better orbit flexibility around café interior
+// Allows viewing from above and below the café tables/equipment
+controls.maxPolarAngle = Math.PI / 2;
+// Lower minimum polar angle to allow viewing the café floor and lower details
+controls.minPolarAngle = Math.PI / 6;
 
 // Animation loop
 function animate() {
@@ -94,6 +100,32 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// Close-up inspection: adjust controls for mobile/touch devices
+// Ensure smooth interaction on both desktop (mouse) and mobile (touch)
+function handleTouchControls() {
+  // Detect if we're on a touch device
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  
+  if (isTouchDevice) {
+    // Touch-specific: enable pinch zoom and prevent default touch behaviors
+    controls.enablePan = true;
+    controls.enableZoom = true;
+    // Add subtle damping for natural feel on touch
+    controls.dampingFactor = 0.1;
+  } else {
+    // Desktop: maintain current settings
+    controls.enablePan = false;
+    controls.dampingFactor = 0.05;
+  }
+}
+
+// Initialize touch controls on load
+handleTouchControls();
+
+// Re-evaluate on window resize in case device orientation changes
+window.addEventListener('orientationchange', handleTouchControls);
+window.addEventListener('resize', handleTouchControls);
 
 // Initialize audio on load
 function initAudioSystem() {
