@@ -18,6 +18,7 @@
 import era1945 from './1945/index.js';
 
 import { era1965 } from './1965/index.js';
+import era2005 from './2005/index.js';
 
 export const ERA_YEARS = Object.freeze([1945, 1965, 1985, 2005, 2025]);
 
@@ -121,3 +122,4 @@ function getEraGroup(ctx, id) {
 // (and the 1965 slider position) is owned by the era module, replacing the
 // 1965 placeholder.
 registerEra(era1965.id, era1965);
+registerEra(era2005.id, era2005);
