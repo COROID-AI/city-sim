@@ -5,6 +5,8 @@
   "description": "Solar Smash — a 3D planetary-destruction browser game built with three.js.",
   "scripts": {
     "start": "node server.js",
+    "vendor": "node scripts/vendor-three.mjs",
+    "postinstall": "npm run vendor",
     "check": "esbuild js/main.js --bundle --format=esm --external:three --outfile=node_modules/.cache/bundle-check.js --log-level=warning"
   },
   "dependencies": {
