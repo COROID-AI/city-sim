@@ -1,14 +1,17 @@
 {
   "name": "cafe-timelapse",
   "version": "1.0.0",
-  "description": "Café timelapse simulation with timeline slider",
+  "description": "Café timelapse simulation with timeline slider and Three.js 3D scene",
   "main": "index.html",
   "scripts": {
     "start": "live-server",
-    "build": "echo 'No build step needed for vanilla JS'",
+    "build": "echo 'Three.js build step'",
     "test": "echo 'No test framework configured'"
   },
-  "keywords": ["timeline", "slider", "accessible", "responsive"],
+  "keywords": ["timeline", "slider", "accessible", "responsive", "threejs"],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "three": "^0.165.0"
+  }
 }
