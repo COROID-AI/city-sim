@@ -7,7 +7,10 @@
  */
 import * as THREE from '../../public/js/three/build/three.module.js';
 
-const YEARS = [1945, 1965, 1985, 2005, 2025];
+// 1965 is implemented by the real era module (src/eras/1965/), so it is no
+// longer part of the placeholder set. Keeping the other four years lets the
+// scaffolding remain visible until the other era tasks land.
+const YEARS = [1945, 1985, 2005, 2025];
 
 export function createPlaceholderEra(year) {
   return {
