@@ -1,4 +1,7 @@
-/** Three.js Café Timelapse Scene (single-file, global THREE build) */
+/** Three.js Café Timelapse Scene (ESM, single-file) */
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 // ---------- Scene / rendering ----------
 const scene = new THREE.Scene();
@@ -10,49 +13,6 @@ const yearLayers = {
   2005: new THREE.Group(),
   2025: new THREE.Group()
 };
-
-function addLayerContent() {
-  const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
-  const materials = {
-    1945: new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.8, metalness: 0.2, transparent: true }),
-    1965: new THREE.MeshStandardMaterial({ color: 0x00FFFF, roughness: 0.6, metalness: 0.3, transparent: true }),
-    1985: new THREE.MeshStandardMaterial({ color: 0xFF00FF, roughness: 0.6, metalness: 0.3, transparent: true }),
-    2005: new THREE.MeshStandardMaterial({ color: 0x00FF00, roughness: 0.6, metalness: 0.3, transparent: true }),
-    2025: new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.5, metalness: 0.4, transparent: true })
-  };
-
-  Object.entries(yearLayers).forEach(([year, layer]) => {
-    const mesh = new THREE.Mesh(boxGeometry, new THREE.MeshStandardMaterial({ color: materials[parseInt(year, 10)].color, roughness: 0.8, metalness: 0.2, transparent: true }));
-    mesh.position.set((parseInt(year, 10) - 1945) * 1.5 - 1.5, 0, 0);
-    layer.add(mesh);
-
-    // Light decor so the layer isn't “empty” visually.
-    const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(2, 0.6),
-      new THREE.MeshStandardMaterial({
-        color: materials[parseInt(year, 10)].color,
-        roughness: 0.9,
-        metalness: 0.0,
-        transparent: true,
-        opacity: 0
-      })
-    );
-    plane.position.set((parseInt(year, 10) - 1945) * 1.5 - 1.5, -0.9, -1.2);
-    layer.add(plane);
-  });
-}
-addLayerContent();
-
-// Basic lighting
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-dir.position.set(2, 5, 3);
-scene.add(dir);
-
-Object.values(yearLayers).forEach(layer => {
-  layer.visible = false;
-  scene.add(layer);
-});
 
 // Camera
 const camera = new THREE.PerspectiveCamera(
@@ -71,7 +31,7 @@ renderer.setPixelRatio(window.devicePixelRatio);
 document.querySelector('.scene').appendChild(renderer.domElement);
 
 // Orbit controls
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.minDistance = 0.5;
@@ -81,25 +41,19 @@ controls.enableZoom = true;
 controls.maxPolarAngle = Math.PI / 2;
 controls.minPolarAngle = Math.PI / 6;
 
-function animate() {
-  requestAnimationFrame(animate);
+// Audio context
+let audioContext = null;
+let audioInitialized = false;
 
-  Object.values(yearLayers).forEach((layer, i) => {
-    layer.rotation.y = i * 0.2 + Date.now() / 1000 / (5 + i);
-  });
+let musicGain;
+let ambienceGain;
+let coffeeGain;
 
-  controls.update();
-  renderer.render(scene, camera);
-}
-animate();
+let isAudioMuted = false;
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+let currentEraOscillators = null;
 
-// ---------- Year selection ----------
+// Year labels
 const yearLabels = {
   1945: 'Post-War Era',
   1965: 'Swinging Sixties',
@@ -110,6 +64,51 @@ const yearLabels = {
 
 let currentYear = 1945;
 
+function addLayerContent() {
+  const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+  const materials = {
+    1945: new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.8, metalness: 0.2, transparent: true }),
+    1965: new THREE.MeshStandardMaterial({ color: 0x00FFFF, roughness: 0.6, metalness: 0.3, transparent: true }),
+    1985: new THREE.MeshStandardMaterial({ color: 0xFF00FF, roughness: 0.6, metalness: 0.3, transparent: true }),
+    2005: new THREE.MeshStandardMaterial({ color: 0x00FF00, roughness: 0.6, metalness: 0.3, transparent: true }),
+    2025: new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.5, metalness: 0.4, transparent: true })
+  };
+
+  Object.entries(yearLayers).forEach(([year, layer]) => {
+    const mesh = new THREE.Mesh(boxGeometry, new THREE.MeshStandardMaterial({ color: materials[parseInt(year, 10)].color, roughness: 0.8, metalness: 0.2, transparent: true }));
+    mesh.position.set((parseInt(year, 10) - 1945) * 1.5 - 1.5, 0, 0);
+    layer.add(mesh);
+
+    // Light decor so the layer isn't "empty" visually.
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 0.6),
+      new THREE.MeshStandardMaterial({
+        color: materials[parseInt(year, 10)].color,
+        roughness: 0.9,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0
+      })
+    );
+    plane.position.set((parseInt(year, 10) - 1945) * 1.5 - 1.5, -0.9, -1.2);
+    layer.add(plane);
+  });
+}
+
+addLayerContent();
+
+// Basic lighting
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+dir.position.set(2, 5, 3);
+scene.add(dir);
+
+Object.values(yearLayers).forEach(layer => {
+  layer.visible = false;
+  scene.add(layer);
+});
+
+// Function to fade a layer in or out
 function fadeLayer(layer, visible) {
   const fades = [];
   layer.children.forEach(child => {
@@ -148,6 +147,7 @@ function fadeLayer(layer, visible) {
   }
 }
 
+// Handle year selection
 function handleYearSelect(year) {
   currentYear = year;
 
@@ -196,20 +196,7 @@ if (!window.playCoffeeMachineSFX) {
   };
 }
 
-// ---------- Audio (lazy, user-gesture gated) ----------
-let audioContext = null;
-let audioInitialized = false;
-
-let musicGain;
-let ambienceGain;
-let coffeeGain;
-
-let isAudioMuted = false;
-
-let currentEraOscillators = null; // { osc1, osc2, gainNode }
-let ambienceNodes = null; // { source, gain }
-let coffeeNodes = null; // not persistent
-
+// Initialize AudioContext
 function ensureAudioContext() {
   if (!audioContext) {
     const Ctor = window.AudioContext || window.webkitAudioContext;
@@ -218,17 +205,19 @@ function ensureAudioContext() {
   return audioContext;
 }
 
-async function resumeAudioContextIfNeeded() {
+// Resume audio context if needed
+function resumeAudioContextIfNeeded() {
   if (!audioContext) return;
   if (audioContext.state === 'suspended') {
     try {
-      await audioContext.resume();
+      audioContext.resume();
     } catch (e) {
       // ignore
     }
   }
 }
 
+// Create a noise buffer
 function createNoiseBuffer(context, seconds = 1) {
   const frameCount = context.sampleRate * seconds;
   const buffer = context.createBuffer(1, frameCount, context.sampleRate);
@@ -239,6 +228,7 @@ function createNoiseBuffer(context, seconds = 1) {
   return buffer;
 }
 
+// Create a white noise source
 function createWhiteNoiseSource(context, loop = true) {
   const source = context.createBufferSource();
   source.buffer = createNoiseBuffer(context, 1);
@@ -246,6 +236,7 @@ function createWhiteNoiseSource(context, loop = true) {
   return source;
 }
 
+// Initialize audio system
 function initAudioSystem() {
   if (audioInitialized) return;
   audioInitialized = true;
@@ -287,8 +278,6 @@ function initAudioSystem() {
   ambienceLevel.gain.setTargetAtTime(0.35, context.currentTime + 0.05, 0.3);
 
   ambienceSource.start();
-
-  ambienceNodes = { ambienceSource, ambienceLevel, ambienceFilter, ambienceLow };
 
   // Expose controls
   window.setAudioMute = (muted) => {
@@ -446,6 +435,7 @@ function initAudioSystem() {
   };
 }
 
+// Ensure audio on gesture
 function ensureAudioOnGesture() {
   if (audioInitialized) {
     // already created; just resume if needed
@@ -466,7 +456,7 @@ function ensureAudioOnGesture() {
   }
 }
 
-// ---------- Wire UI events ----------
+// Wire UI events
 function installYearButtonHandlers() {
   const yearButtons = document.querySelectorAll('.year-btn');
 
@@ -513,3 +503,10 @@ if (document.readyState === 'loading') {
 } else {
   boot();
 }
+
+// Handle resize
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});

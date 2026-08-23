@@ -8,10 +8,19 @@
     "build": "echo 'Three.js build step'",
     "test": "echo 'No test framework configured'"
   },
-  "keywords": ["timeline", "slider", "accessible", "responsive", "threejs"],
+  "keywords": [
+    "timeline",
+    "slider",
+    "accessible",
+    "responsive",
+    "threejs"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "three": "^0.165.0"
+  },
+  "devDependencies": {
+    "live-server": "^1.2.2"
   }
 }
