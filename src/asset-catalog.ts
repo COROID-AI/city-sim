@@ -136,12 +136,18 @@ export class AssetCatalog {
       { type: 'vehicle', name: 'car2025', modelUrl: '/models/2025/car.glb', textureUrls: ['/textures/2025/car-ev.jpg'] },
       { type: 'storefront', name: 'store2025', modelUrl: '/models/2025/store.glb', textureUrls: ['/textures/2025/storefront.jpg'] },
       { type: 'advertisement', name: 'digital2025', modelUrl: '/models/2025/digital.glb', textureUrls: ['/textures/2025/digital.jpg'] },
+      // Contemporary 2025-era digital billboards and LED signage
+      { type: 'advertisement', name: 'billboard2025', modelUrl: '/models/2025/billboard.glb', textureUrls: ['/textures/2025/billboard.jpg'], materialParams: { color: 0xFFFFFF, roughness: 0.1, metalness: 0.9 } },
+      { type: 'advertisement', name: 'ledSign2025', modelUrl: '/models/2025/led_sign.glb', textureUrls: ['/textures/2025/led_sign.jpg'], materialParams: { color: 0x1E90FF, roughness: 0.05, metalness: 0.1 } },
       { type: 'pedestrian', name: 'walker2025', modelUrl: '/models/2025/pedestrian.glb', textureUrls: ['/textures/2025/people.jpg'] },
       // Additional 2025-era storefronts with digital displays
       { type: 'storefront', name: 'shop2025a', modelUrl: '/models/2025/shop_a.glb', textureUrls: ['/textures/2025/shop-front.jpg'], materialParams: { color: 0xF0F0F0, roughness: 0.4, metalness: 0.5 } },
       { type: 'storefront', name: 'shop2025b', modelUrl: '/models/2025/shop_b.glb', textureUrls: ['/textures/2025/shop-front2.jpg'], materialParams: { color: 0xE8E8E8, roughness: 0.3, metalness: 0.6 } },
       { type: 'advertisement', name: 'digitalDisplay2025', modelUrl: '/models/2025/digital_display.glb', textureUrls: ['/textures/2025/digital_screen.jpg'], materialParams: { color: 0x1E90FF, roughness: 0.1, metalness: 0.0 } },
       { type: 'advertisement', name: 'signage2025', modelUrl: '/models/2025/sign.glb', textureUrls: ['/textures/2025/sign.jpg'], materialParams: { color: 0xB0C4DE, roughness: 0.7, metalness: 0.3 } },
+      // Poster panels / street-level commercial advertising
+      { type: 'advertisement', name: 'posterPanel2025', modelUrl: '/models/2025/poster_panel.glb', textureUrls: ['/textures/2025/poster_panel.jpg'] },
+      { type: 'advertisement', name: 'poster2025', modelUrl: '/models/2025/poster.glb', textureUrls: ['/textures/2025/poster.jpg'] },
       // 2025-era pedestrian variations
       { type: 'pedestrian', name: 'walker2025a', modelUrl: '/models/2025/pedestrian.glb', textureUrls: ['/textures/2025/people.jpg'] },
       { type: 'pedestrian', name: 'walker2025b', modelUrl: '/models/2025/pedestrian.glb', textureUrls: ['/textures/2025/people2.jpg'] },
