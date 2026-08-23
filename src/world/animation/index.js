@@ -8,3 +8,11 @@ export {
   getStyleTokens,
   TRANSITION_DURATION,
 } from './timelapse.js';
+export {
+  audio,
+  setAudioMuted,
+  setAudioVolume,
+  toggleAudioMuted,
+  isAudioMuted,
+  getAudioVolume,
+} from './audio.js';

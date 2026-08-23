@@ -13,6 +13,7 @@ import { OrbitControls } from '../public/js/three/examples/jsm/controls/OrbitCon
 import { buildShell } from './world/shell.js';
 import { ERA_YEARS, registerEra, switchTo, getActiveEra, getActiveYear } from './eras/registry.js';
 import { registerAllPlaceholderEras } from './eras/placeholder.js';
+import { setAudioMuted, setAudioVolume, isAudioMuted, getAudioVolume } from './world/animation/audio.js';
 
 // ---------------------------------------------------------------------------
 // r160 bundle verification
@@ -100,6 +101,23 @@ for (const era of registerAllPlaceholderEras()) {
 // UI wiring — fixed top timeline slider (exactly 1945/1965/1985/2005/2025)
 // ---------------------------------------------------------------------------
 const statusEl = document.getElementById('era-status');
+
+// --- Audio controls (mute + volume) ---------------------------------------
+const muteBtn = document.getElementById('audio-mute');
+const volumeSlider = document.getElementById('audio-volume');
+
+setAudioMuted(isAudioMuted());
+if (muteBtn) muteBtn.setAttribute('aria-pressed', isAudioMuted() ? 'true' : 'false');
+if (volumeSlider) volumeSlider.value = String(getAudioVolume());
+
+muteBtn?.addEventListener('click', () => {
+  const muted = setAudioMuted(!isAudioMuted());
+  muteBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
+  muteBtn.textContent = muted ? 'Unmute' : 'Mute';
+});
+volumeSlider?.addEventListener('input', () => {
+  setAudioVolume(Number(volumeSlider.value));
+});
 
 function applyYear(year) {
   if (!ERA_YEARS.includes(year)) return;
