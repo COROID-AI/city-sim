@@ -7,10 +7,7 @@
 // Scene globals
 let renderer, scene, camera, ambientLight, directionalLight;
 let yearButtons = [];
-let currentYear = 1985;
-
-// Era tracking for compatible GLTF/usdz assets across 5 eras
-// All 5 era tasks must produce compatible GLTF/usdz assets for same scene graph
+let currentYear = 2005;
 
 // Initialize the Three.js scene
 function initScene() {
@@ -102,21 +99,20 @@ function initScene() {
 }
 
 // Add café interior geometry compatible across 5 eras
+// Add café interior geometry compatible across 5 eras
 function addCaféGeometry() {
   // Floor
   const floorGeometry = new THREE.PlaneGeometry(10, 10);
   const floorMaterial = new THREE.MeshStandardMaterial({
-    color: 0x0a0a0a,
-    roughness: 0.3,
-    metalness: 0.7
+    color: 0x8B4513,
+    roughness: 0.4
   });
-
   const floor = new THREE.Mesh(floorGeometry, floorMaterial);
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
 
-  // Base checkerboard tile pattern (from the 1945 side)
+  // Checkerboard inset (1945 language)
   const checkerTileGeometry = new THREE.BoxGeometry(1, 0.02, 1);
   const checkerColors = [0x111111, 0x1a1a1a];
   for (let ix = 0; ix < 10; ix++) {
@@ -134,7 +130,7 @@ function addCaféGeometry() {
     }
   }
 
-  // Additional Memphis Group style floor rectangles (from the 1985 side)
+  // Memphis-style rectangles (1985 language)
   const patternColors = [0xff00ff, 0x00ffff, 0xffa500, 0x4169e1];
   for (let i = 0; i < 50; i++) {
     const rectGeometry = new THREE.BoxGeometry(1 + Math.random() * 2, 0.1, 1 + Math.random() * 2);
@@ -155,20 +151,15 @@ function addCaféGeometry() {
   // Walls
   const wallGeometry = new THREE.PlaneGeometry(10, 6);
 
-  // Back wall base color (1945 side)
   const backWall = new THREE.Mesh(
     wallGeometry,
-    new THREE.MeshStandardMaterial({
-      color: 0x4b3832,
-      roughness: 0.7
-    })
+    new THREE.MeshStandardMaterial({ color: 0xF5F5F0, roughness: 0.7 })
   );
   backWall.position.set(0, 3, -5);
   backWall.rotation.y = Math.PI / 2;
   backWall.receiveShadow = true;
   scene.add(backWall);
 
-  // Back wall geometric panels (1985 side)
   const backPatternColors = [0xff00ff, 0x00ffff, 0xffa500];
   for (let i = 0; i < 20; i++) {
     const panelGeometry = new THREE.BoxGeometry(
@@ -190,16 +181,14 @@ function addCaféGeometry() {
     scene.add(panel);
   }
 
-  // Left wall base color (1945 side)
   const leftWall = new THREE.Mesh(
     wallGeometry,
-    new THREE.MeshStandardMaterial({ color: 0xf5f5dc })
+    new THREE.MeshStandardMaterial({ color: 0xDEB887, roughness: 0.8 })
   );
   leftWall.position.set(-5, 3, 0);
   leftWall.receiveShadow = true;
   scene.add(leftWall);
 
-  // Add subtle left-wall accent panels (to merge the 1985 side color language)
   const leftAccentColors = [0x4169e1, 0x00ffff];
   for (let i = 0; i < 10; i++) {
     const panelGeometry = new THREE.BoxGeometry(0.4 + Math.random() * 0.6, 1.2 + Math.random() * 1.5, 0.08);
@@ -216,16 +205,14 @@ function addCaféGeometry() {
     scene.add(panel);
   }
 
-  // Right wall base color (1945 side)
   const rightWall = new THREE.Mesh(
     wallGeometry,
-    new THREE.MeshStandardMaterial({ color: 0xf5f5dc })
+    new THREE.MeshStandardMaterial({ color: 0xDEB887, roughness: 0.8 })
   );
   rightWall.position.set(5, 3, 0);
   rightWall.receiveShadow = true;
   scene.add(rightWall);
 
-  // Right-wall orange accent band (1985 side)
   const rightAccent = new THREE.Mesh(
     wallGeometry,
     new THREE.MeshStandardMaterial({
@@ -240,14 +227,14 @@ function addCaféGeometry() {
 
   // Ceiling
   const ceilingGeometry = new THREE.PlaneGeometry(10, 6);
-  const ceilingMaterial = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.7 });
+  const ceilingMaterial = new THREE.MeshStandardMaterial({ color: 0xF0F0F0, roughness: 0.8 });
   const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
   ceiling.position.set(0, 6, 0);
   ceiling.rotation.x = Math.PI / 2;
   ceiling.receiveShadow = true;
   scene.add(ceiling);
 
-  // Neon tubes along ceiling perimeter
+  // Neon tubes (1985 language)
   const neonTubeGeometry = new THREE.BoxGeometry(0.2, 0.05, 10);
   const neonTubeMaterial = new THREE.MeshStandardMaterial({
     color: 0x00ffff,
@@ -258,244 +245,114 @@ function addCaféGeometry() {
   const neonTube1 = new THREE.Mesh(neonTubeGeometry, neonTubeMaterial);
   neonTube1.position.set(-2, 6.1, -2);
   scene.add(neonTube1);
-
   const neonTube2 = new THREE.Mesh(neonTubeGeometry, neonTubeMaterial);
   neonTube2.position.set(2, 6.1, -2);
   scene.add(neonTube2);
 
-  // 1985 era furniture & props (preserve lane contents)
-  // 1985 era curved sofa (plastic/vinyl)
+  // --- Furniture + props (merged) ---
+
+  // 2005 era table + chairs
+  const tableGeometry = new THREE.BoxGeometry(2, 0.7, 1.2);
+  const tableMaterial = new THREE.MeshStandardMaterial({ color: 0xCD853F, roughness: 0.6 });
+  const table = new THREE.Mesh(tableGeometry, tableMaterial);
+  table.position.set(0, 0.35, -2);
+  table.castShadow = true;
+  scene.add(table);
+
+  const chairGeometry = new THREE.BoxGeometry(0.5, 0.8, 0.5);
+  const chairMaterial = new THREE.MeshStandardMaterial({ color: 0xA0522D, roughness: 0.7 });
+  const chairPositions = [
+    [-1.8, 0.4, -2],
+    [1.8, 0.4, -2],
+    [-0.8, 0.4, -3],
+    [0.8, 0.4, -3]
+  ];
+  for (const [x,y,z] of chairPositions) {
+    const chair = new THREE.Mesh(chairGeometry, chairMaterial);
+    chair.position.set(x,y,z);
+    scene.add(chair);
+  }
+
+  // Espresso machine (2000s)
+  const espressoGeometry = new THREE.BoxGeometry(1, 1.5, 0.5);
+  const espressoMaterial = new THREE.MeshStandardMaterial({ color: 0x2B1B0C, roughness: 0.5, metalness: 0.7 });
+  const espressoMachine = new THREE.Mesh(espressoGeometry, espressoMaterial);
+  espressoMachine.position.set(0, 0.75, -3.5);
+  espressoMachine.castShadow = true;
+  scene.add(espressoMachine);
+
+  const gaugeGeometry = new THREE.CircleGeometry(0.1, 32);
+  const gaugeMaterial = new THREE.MeshStandardMaterial({ color: 0xFF0000, roughness: 0.3, metalness: 0.9 });
+  const gauge = new THREE.Mesh(gaugeGeometry, gaugeMaterial);
+  gauge.position.set(0.3, 1.2, -3.5);
+  gauge.rotation.x = Math.PI / 2;
+  scene.add(gauge);
+
+  // iPod docking (2000s)
+  const dockingGeometry = new THREE.BoxGeometry(0.8, 0.3, 0.2);
+  const dockingMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.6 });
+  const dockingStation = new THREE.Mesh(dockingGeometry, dockingMaterial);
+  dockingStation.position.set(2, 0.15, -2.5);
+  dockingStation.castShadow = true;
+  scene.add(dockingStation);
+
+  const ipodGeometry = new THREE.BoxGeometry(0.12, 0.06, 0.08);
+  const ipodMaterial = new THREE.MeshStandardMaterial({ color: 0x1A1A1A, roughness: 0.9 });
+  const ipod = new THREE.Mesh(ipodGeometry, ipodMaterial);
+  ipod.position.set(2, 0.2, -2.5);
+  ipod.rotation.z = 0.2;
+  scene.add(ipod);
+
+  // 1980s sofa + armchairs
   const sofaGeometry = new THREE.BoxGeometry(3, 0.6, 2.5);
-  const sofaMaterial = new THREE.MeshStandardMaterial({
-    color: 0xff69b4,
-    roughness: 0.9
-  });
+  const sofaMaterial = new THREE.MeshStandardMaterial({ color: 0xff69b4, roughness: 0.9 });
   const sofa = new THREE.Mesh(sofaGeometry, sofaMaterial);
   sofa.position.set(0, 0.3, -4);
   sofa.castShadow = true;
   scene.add(sofa);
 
-  // 1985 era curved armchair
   const armchairGeometry = new THREE.BoxGeometry(0.8, 0.6, 0.7);
-  const armchairMaterial = new THREE.MeshStandardMaterial({
-    color: 0x1e90ff,
-    roughness: 0.9
-  });
+  const armchairMaterial = new THREE.MeshStandardMaterial({ color: 0x1e90ff, roughness: 0.9 });
   const armchair1 = new THREE.Mesh(armchairGeometry, armchairMaterial);
   armchair1.position.set(-2.5, 0.3, -3);
   scene.add(armchair1);
-
   const armchair2 = new THREE.Mesh(armchairGeometry, armchairMaterial);
   armchair2.position.set(2.5, 0.3, -3);
   scene.add(armchair2);
 
-  // 1985 era coffee table - glass with bold base
-  const coffeeTableGeometry = new THREE.BoxGeometry(1.5, 0.5, 1.5);
-  const coffeeTableMaterial = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 0.8
-  });
-  const coffeeTableBaseGeometry = new THREE.BoxGeometry(1.2, 0.3, 1.2);
-  const coffeeTableBase = new THREE.Mesh(coffeeTableBaseGeometry, coffeeTableMaterial);
-  coffeeTableBase.position.set(0, 0.15, -1.5);
-  coffeeTableBase.castShadow = true;
-  scene.add(coffeeTableBase);
-
-  const coffeeTable = new THREE.Mesh(coffeeTableGeometry, coffeeTableMaterial);
-  coffeeTable.position.set(0, 0.4, -1.5);
-  coffeeTable.castShadow = true;
-  scene.add(coffeeTable);
-
-  // 1980s digital espresso machine
-  const espressoMachineGeometry = new THREE.BoxGeometry(1, 1.5, 0.5);
-  const espressoMachineMaterial = new THREE.MeshStandardMaterial({
-    color: 0x2c3e50,
-    roughness: 0.5
-  });
-  const espressoMachine = new THREE.Mesh(espressoMachineGeometry, espressoMachineMaterial);
-  espressoMachine.position.set(3, 0.75, -1.5);
-  espressoMachine.castShadow = true;
-  scene.add(espressoMachine);
-
-  // Digital display panels on espresso machine
-  const displayGeometry = new THREE.BoxGeometry(0.6, 0.2, 0.1);
-  const displayMaterial = new THREE.MeshStandardMaterial({
-    color: 0x000000,
-    emissive: 0x00ff00,
-    emissiveIntensity: 0.8
-  });
-  const display1 = new THREE.Mesh(displayGeometry, displayMaterial);
-  display1.position.set(3.2, 1.2, -1.35);
-  scene.add(display1);
-
-  const display2 = new THREE.Mesh(displayGeometry, displayMaterial);
-  display2.position.set(3.2, 1.0, -1.35);
-  scene.add(display2);
-
-  const display3 = new THREE.Mesh(displayGeometry, displayMaterial);
-  display3.position.set(3.2, 0.8, -1.35);
-  scene.add(display3);
-
-  // Boombox with 1980s aesthetics
+  // Boombox (1980s)
   const boomboxGeometry = new THREE.BoxGeometry(2, 1, 1.5);
-  const boomboxMaterial = new THREE.MeshStandardMaterial({
-    color: 0x4169e1,
-    roughness: 0.7
-  });
+  const boomboxMaterial = new THREE.MeshStandardMaterial({ color: 0x4169e1, roughness: 0.7 });
   const boombox = new THREE.Mesh(boomboxGeometry, boomboxMaterial);
   boombox.position.set(-3.5, 0.5, -1);
   boombox.castShadow = true;
   scene.add(boombox);
 
-  // Cassette tape deck on top
+  // Cassette deck
   const cassetteGeometry = new THREE.BoxGeometry(0.8, 0.2, 0.5);
-  const cassetteMaterial = new THREE.MeshStandardMaterial({
-    color: 0x2c3e50,
-    roughness: 0.8
-  });
+  const cassetteMaterial = new THREE.MeshStandardMaterial({ color: 0x2c3e50, roughness: 0.8 });
   const cassette1 = new THREE.Mesh(cassetteGeometry, cassetteMaterial);
   cassette1.position.set(-3.2, 0.7, -0.8);
   scene.add(cassette1);
-
   const cassette2 = new THREE.Mesh(cassetteGeometry, cassetteMaterial);
   cassette2.position.set(-2.8, 0.7, -0.8);
   scene.add(cassette2);
 
-  // Speaker grilles
-  const grilleGeometry = new THREE.BoxGeometry(0.1, 0.3, 0.8);
-  const grilleMaterial = new THREE.MeshStandardMaterial({
-    color: 0x000000
-  });
-  const grille1 = new THREE.Mesh(grilleGeometry, grilleMaterial);
-  grille1.position.set(-3.6, 0.5, -1.1);
-  scene.add(grille1);
-
-  const grille2 = new THREE.Mesh(grilleGeometry, grilleMaterial);
-  grille2.position.set(-3.0, 0.5, -1.1);
-  scene.add(grille2);
-
-  // 1980s patrons seating at tables
-  // Patron 1 - shoulder pads, members-only jacket
-  const patron1Geometry = new THREE.BoxGeometry(0.5, 1.2, 0.5);
-  const patron1Material = new THREE.MeshStandardMaterial({
-    color: 0x8b4513,
-    roughness: 0.6
-  });
-  const patron1 = new THREE.Mesh(patron1Geometry, patron1Material);
-  patron1.position.set(-2, 0.6, -2);
-  patron1.castShadow = true;
-  scene.add(patron1);
-
-  // Patron 2 - big hair (sphere), leg warmers
-  const patron2Geometry = new THREE.SphereGeometry(0.3, 16, 16);
-  const patron2Material = new THREE.MeshStandardMaterial({
-    color: 0xff69b4,
-    emissive: 0xff69b4,
-    emissiveIntensity: 0.5
-  });
-  const patron2Head = new THREE.Mesh(patron2Geometry, patron2Material);
-  patron2Head.position.set(2, 1.2, -2);
-  scene.add(patron2Head);
-
-  const patron2BodyGeometry = new THREE.BoxGeometry(0.4, 0.8, 0.4);
-  const patron2Body = new THREE.Mesh(patron2BodyGeometry, patron2Material);
-  patron2Body.position.set(2, 0.4, -2);
-  scene.add(patron2Body);
-
-  // Patron 3 - leg warmers
-  const patron3Geometry = new THREE.BoxGeometry(0.5, 1.0, 0.5);
-  const patron3Material = new THREE.MeshStandardMaterial({
-    color: 0x1e90ff,
-    roughness: 0.6
-  });
-  const patron3 = new THREE.Mesh(patron3Geometry, patron3Material);
-  patron3.position.set(0, 0.5, -2);
-  patron3.castShadow = true;
-  scene.add(patron3);
-
-  // Patron 4 - members-only jacket
-  const patron4 = new THREE.Mesh(patron1Geometry, patron1Material);
-  patron4.position.set(2, 0.6, -2);
-  patron4.castShadow = true;
-  scene.add(patron4);
-
-  // Tableware - 1980s glass/ceramic styling with bold patterns
-  // Plate
-  const plateGeometry = new THREE.BoxGeometry(0.3, 0.04, 0.3);
-  const plateMaterial = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 0.3
-  });
-  const plate1 = new THREE.Mesh(plateGeometry, plateMaterial);
-  plate1.position.set(-1.2, 0.15, -1.5);
-  scene.add(plate1);
-
-  const plate2 = new THREE.Mesh(plateGeometry, plateMaterial);
-  plate2.position.set(1.2, 0.15, -1.5);
-  scene.add(plate2);
-
-  // Decorative 1980s bowls
-  const bowlGeometry = new THREE.SphereGeometry(0.15, 16, 16);
-  const bowlMaterial = new THREE.MeshStandardMaterial({
-    color: 0xff69b4,
-    roughness: 0.5,
-    transparent: true,
-    opacity: 0.7
-  });
-  const bowl1 = new THREE.Mesh(bowlGeometry, bowlMaterial);
-  bowl1.position.set(-0.8, 0.2, -1.5);
-  scene.add(bowl1);
-
-  const bowl2 = new THREE.Mesh(bowlGeometry, bowlMaterial);
-  bowl2.position.set(0.8, 0.2, -1.5);
-  scene.add(bowl2);
-
-  // Coffee mugs with 1980s styling
-  const mugGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 32);
-  const mugMaterial = new THREE.MeshStandardMaterial({
-    color: 0x4169e1,
-    roughness: 0.7
-  });
-  const mug1 = new THREE.Mesh(mugGeometry, mugMaterial);
-  mug1.position.set(-0.8, 0.6, -1.5);
-  scene.add(mug1);
-
-  const mug2 = new THREE.Mesh(mugGeometry, mugMaterial);
-  mug2.position.set(0.8, 0.6, -1.5);
-  scene.add(mug2);
-
-  // Posters
-  const posterGeometry = new THREE.PlaneGeometry(1.5, 2);
-  const posterMaterial1 = new THREE.MeshStandardMaterial({
-    color: 0x1a1a2e,
-    transparent: true,
-    opacity: 0.9
-  });
-
-  const poster1 = new THREE.Mesh(posterGeometry, posterMaterial1);
-  poster1.position.set(0, 1.5, -4.9);
-  poster1.rotation.y = Math.PI / 2;
-  scene.add(poster1);
-
-  const poster2 = new THREE.Mesh(posterGeometry, posterMaterial1.clone());
-  poster2.position.set(-4.5, 1.5, 0);
-  poster2.rotation.y = Math.PI;
-  scene.add(poster2);
-
-  const poster3 = new THREE.Mesh(posterGeometry, posterMaterial1.clone());
-  poster3.position.set(4.5, 1.5, 0);
-  poster3.rotation.y = Math.PI;
-  scene.add(poster3);
-
-  // Menu board
+  // Menu board + posters (digital + coffee culture merged)
   const menuGeometry = new THREE.PlaneGeometry(2, 1.5);
-  const menuMaterial = new THREE.MeshStandardMaterial({ color: 0xfff5e1, roughness: 0.5 });
+  const menuMaterial = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.3 });
   const menuBoard = new THREE.Mesh(menuGeometry, menuMaterial);
   menuBoard.position.set(0, 2.5, -5);
   menuBoard.rotation.y = Math.PI / 2;
   scene.add(menuBoard);
 
-  // Digital pricing elements on menu board
+  const menuScreenGeometry = new THREE.PlaneGeometry(1.8, 1.3);
+  const menuScreenMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, transparent: true, opacity: 0.9 });
+  const menuScreen = new THREE.Mesh(menuScreenGeometry, menuScreenMaterial);
+  menuScreen.position.set(0, 2.55, -4.9);
+  menuScreen.rotation.y = Math.PI / 2;
+  scene.add(menuScreen);
+
   const pricingColors = [0xff00ff, 0x00ffff, 0xffa500, 0x4169e1];
   for (let i = 0; i < 8; i++) {
     const pricingGeometry = new THREE.BoxGeometry(0.3, 0.1, 0.1);
@@ -512,24 +369,54 @@ function addCaféGeometry() {
     scene.add(pricingLabel);
   }
 
-  // Formica tableware patterns with bold 1980s styling
-  const formicaPlateGeometry = new THREE.BoxGeometry(0.25, 0.04, 0.25);
-  const formicaPlateMaterial = new THREE.MeshStandardMaterial({
-    color: 0xfff8dc,
-    roughness: 0.7
-  });
-  const formicaPlate = new THREE.Mesh(formicaPlateGeometry, formicaPlateMaterial);
-  formicaPlate.position.set(0, 0.1, -1.8);
-  scene.add(formicaPlate);
+  const posterGeometry = new THREE.PlaneGeometry(1.5, 2);
+  const posterMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, transparent: true, opacity: 0.9 });
 
-  // Decorative items with Memphis Group patterns
-  const memphisColors = [0xff00ff, 0x00ffff, 0xffa500, 0x4169e1, 0x8b4513, 0xf0e68c];
+  const poster1 = new THREE.Mesh(posterGeometry, posterMaterial);
+  poster1.position.set(0, 1.5, -4.9);
+  poster1.rotation.y = Math.PI / 2;
+  scene.add(poster1);
+
+  const poster2 = new THREE.Mesh(posterGeometry, posterMaterial.clone());
+  poster2.position.set(-4.5, 1.5, 0);
+  poster2.rotation.y = Math.PI;
+  scene.add(poster2);
+
+  const poster3 = new THREE.Mesh(posterGeometry, posterMaterial.clone());
+  poster3.position.set(4.5, 1.5, 0);
+  poster3.rotation.y = Math.PI;
+  scene.add(poster3);
+
+  // Tableware (merged)
+  const plateGeometry = new THREE.BoxGeometry(0.3, 0.05, 0.3);
+  const plateMaterial = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, roughness: 0.8 });
+  const plate1 = new THREE.Mesh(plateGeometry, plateMaterial);
+  plate1.position.set(0, 0.1, -1.8);
+  scene.add(plate1);
+
+  const mugGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 32);
+  const mugMaterial = new THREE.MeshStandardMaterial({ color: 0xF0E68C, roughness: 0.7 });
+  const mug1 = new THREE.Mesh(mugGeometry, mugMaterial);
+  mug1.position.set(-1, 0.15, -1.5);
+  scene.add(mug1);
+  const mug2 = new THREE.Mesh(mugGeometry, mugMaterial);
+  mug2.position.set(1, 0.15, -1.5);
+  scene.add(mug2);
+
+  const glassGeometry = new THREE.CylinderGeometry(0.1, 0.15, 0.6, 32);
+  const glassMaterial = new THREE.MeshStandardMaterial({ color: 0xE0E0F8, transparent: true, opacity: 0.8, roughness: 0.3 });
+  const glass1 = new THREE.Mesh(glassGeometry, glassMaterial);
+  glass1.position.set(-0.5, 0.3, -1.8);
+  scene.add(glass1);
+  const glass2 = new THREE.Mesh(glassGeometry, glassMaterial);
+  glass2.position.set(0.5, 0.3, -1.8);
+  scene.add(glass2);
+
+  // Decorative items
+  const decorativeColors = [0xFF6B6B, 0x4ECDC4, 0x444444, 0xFFD700];
   for (let i = 0; i < 8; i++) {
-    const boxGeometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
-    const boxMaterial = new THREE.MeshStandardMaterial({
-      color: memphisColors[i],
-      roughness: 0.6
-    });
+    const boxGeometry = new THREE.BoxGeometry(0.25, 0.25, 0.25);
+    const boxMaterial = new THREE.MeshStandardMaterial({ color: decorativeColors[i % decorativeColors.length], roughness: 0.6 });
     const box = new THREE.Mesh(boxGeometry, boxMaterial);
     box.position.set(
       (Math.random() - 0.5) * 3,
@@ -543,7 +430,64 @@ function addCaféGeometry() {
 
 // Add timeline slider container
 function addTimelineSlider() {
-  // Timeline slider implementation
+  // Create slider container
+  const sliderContainer = document.createElement('div');
+  sliderContainer.style.position = 'absolute';
+  sliderContainer.style.top = '20px';
+  sliderContainer.style.left = '50%';
+  sliderContainer.style.transform = 'translateX(-50%)';
+  sliderContainer.style.display = 'flex';
+  sliderContainer.style.gap = '10px';
+  sliderContainer.style.zIndex = '100';
+
+  // Year options - 2005 era exclusively loaded
+  const years = [2005];
+
+  years.forEach(year => {
+    const button = document.createElement('button');
+    button.className = 'year-btn';
+    button.innerText = year;
+    button.dataset.year = year;
+    button.style.padding = '8px 16px';
+    button.style.border = '2px solid #8B4513';
+    button.style.background = 'transparent';
+    button.style.borderRadius = '4px';
+    button.style.cursor = 'pointer';
+    button.style.fontFamily = 'sans-serif';
+    button.style.fontSize = '14px';
+
+    // Highlight current year
+    if (year === currentYear) {
+      button.style.background = '#8B4513';
+      button.style.color = 'white';
+    }
+
+    button.addEventListener('click', () => {
+      selectYear(parseInt(button.dataset.year));
+    });
+
+    sliderContainer.appendChild(button);
+    yearButtons.push(button);
+  });
+
+  document.body.appendChild(sliderContainer);
+}
+
+// Select a specific year - era-specific tasks will extend this
+function selectYear(year) {
+  currentYear = year;
+  // Update button visuals
+  yearButtons.forEach(button => {
+    if (parseInt(button.dataset.year) === year) {
+      button.style.background = '#8B4513';
+      button.style.color = 'white';
+    } else {
+      button.style.background = 'transparent';
+      button.style.color = '#8B4513';
+    }
+  });
+  // Era-specific tasks will react to year changes
+  console.log(`Year selected: ${year}`);
 }
 
 // Handle window resize
