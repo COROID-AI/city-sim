@@ -5,14 +5,72 @@
 // smartphone music streaming, digital menu boards, tech/sustainability ads,
 // contemporary patrons, smart lighting with app control
 
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
 // Scene globals
 let renderer, scene, camera, ambientLight, directionalLight;
+let orbitControls;
 let yearButtons = [];
 let currentYear = 2025;
 
 // Smart lighting controls (2025 era)
 let smartLightingMode = 'warm'; // 'warm' or 'cool'
 let lightingIntensity = 0.6;
+
+// Audio system globals
+let audioListener, sound;
+let musicSource, ambienceSource, coffeeSoundSource;
+let currentEraMusic = null;
+let isCoffeeBrewing = false;
+let closeUpMode = false;
+
+// Era definitions with audio configuration
+const ERAS = {
+  1945: {
+    name: '1945 - Wireless Radio Era',
+    musicFile: 'audio/1945_radio.mp3',
+    musicType: 'radio',
+    equipment: 'wireless radio'
+  },
+  1965: {
+    name: '1965 - Jukebox Era',
+    musicFile: 'audio/1965_jukebox.mp3',
+    musicType: 'jukebox',
+    equipment: 'jukebox'
+  },
+  1985: {
+    name: '1985 - Boombox Era',
+    musicFile: 'audio/1985_boombox.mp3',
+    musicType: 'boombox',
+    equipment: 'boombox'
+  },
+  2005: {
+    name: '2005 - iPod Dock Era',
+    musicFile: 'audio/2005_ipod.mp3',
+    musicType: 'ipod',
+    equipment: 'iPod dock'
+  },
+  2025: {
+    name: '2025 - Smartphone Era',
+    musicFile: 'audio/2025_smartphone.mp3',
+    musicType: 'smartphone',
+    equipment: 'smartphone'
+  }
+};
+
+// Audio volume settings (acceptance criteria: music ~30%, ambience/coffee ~70%)
+const AUDIO_VOLUMES = {
+  music: 0.3,
+  ambience: 0.7,
+  coffee: 0.7
+};
+
+// Interaction distance thresholds for close-up triggers
+const INTERACTION_THRESHOLDS = {
+  patron: 2.0,
+  coffeeMachine: 1.5,
+  tableware: 1.0
+};
 
 // Initialize the Three.js scene
 function initScene() {
@@ -34,6 +92,23 @@ function initScene() {
   );
   camera.position.set(0, 1.6, 5); // Eye level in café
   camera.lookAt(0, 0, 0);
+
+  // --- Orbit Camera Controls ---
+  orbitControls = new OrbitControls(camera, renderer.domElement);
+  orbitControls.enableDamping = true;
+  orbitControls.dampingFactor = 0.05;
+  orbitControls.enablePan = true;
+  orbitControls.minDistance = 2;
+  orbitControls.maxDistance = 20;
+  orbitControls.maxPolarAngle = Math.PI / 2 - 0.1; // Prevent going under floor
+
+  // --- Audio System ---
+  audioListener = new THREE.AudioListener();
+  camera.add(audioListener);
+  scene.add(camera);
+
+  // Initialize audio sources
+  initAudio();
 
   // --- Smart/Dimmable Lighting (2025 era) ---
   // Smart ambient lighting with warm/cool temperature options
@@ -100,6 +175,256 @@ function initScene() {
 
   // Start animation loop
   animate();
+}
+
+// Initialize audio system
+function initAudio() {
+  // Create audio context if not available
+  window.AudioContext = window.AudioContext || window.webkitAudioContext;
+  
+  // Create background music (era-specific)
+  musicSource = new THREE.Audio(audioListener);
+  musicSource.setVolume(AUDIO_VOLUMES.music);
+  musicSource.loop = true;
+  scene.add(musicSource);
+
+  // Create ambient conversation murmur (continuous)
+  ambienceSource = new THREE.Audio(audioListener);
+  ambienceSource.setVolume(AUDIO_VOLUMES.ambience);
+  ambienceSource.loop = true;
+  scene.add(ambienceSource);
+
+  // Create coffee machine sound effects
+  coffeeSoundSource = new THREE.Audio(audioListener);
+  coffeeSoundSource.setVolume(AUDIO_VOLUMES.coffee);
+  scene.add(coffeeSoundSource);
+
+  // Start ambient conversation
+  playAmbience();
+}
+
+// Play era-appropriate music based on year
+function playEraMusic(year) {
+  // Unload previous era audio cleanly (acceptance criteria)
+  if (currentEraMusic && currentEraMusic.isPlaying) {
+    currentEraMusic.stop();
+  }
+
+  const era = ERAS[year];
+  if (!era) return;
+
+  // Create new audio for the era
+  if (currentEraMusic) {
+    currentEraMusic.dispose();
+  }
+  
+  currentEraMusic = new THREE.Audio(audioListener);
+  currentEraMusic.setVolume(AUDIO_VOLUMES.music);
+  currentEraMusic.loop = true;
+
+  // Load era-specific music file
+  const audioLoader = new THREE.AudioLoader();
+  audioLoader.load(era.musicFile, (buffer) => {
+    currentEraMusic.setBuffer(buffer);
+    currentEraMusic.play();
+  }, undefined, (error) => {
+    console.warn(`Could not load era music for ${year}:`, error);
+    // Play fallback tone for development
+    playFallbackMusic(year);
+  });
+}
+
+// Play fallback music when audio files aren't available
+function playFallbackMusic(year) {
+  // Generate era-appropriate audio using Web Audio API
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+  
+  // Set frequency based on era (musical scales)
+  const eraNotes = {
+    1945: 330,  // A4 - radio era
+    1965: 349,  // B4 - jukebox era
+    1985: 392,  // G4 - boombox era
+    2005: 440,  // A4 - iPod era
+    2025: 494   // B4 - smartphone era
+  };
+  
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(eraNotes[year] || 440, audioContext.currentTime);
+  oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  gainNode.gain.setValueAtTime(AUDIO_VOLUMES.music * 0.3, audioContext.currentTime);
+  
+  oscillator.start();
+  
+  // Store reference for cleanup
+  if (!window._eraOscillators) window._eraOscillators = [];
+  window._eraOscillators.push({ oscillator, gainNode, audioContext });
+}
+
+// Play ambient conversation murmur throughout café
+function playAmbience() {
+  // Create ambient sound with white noise filtered for conversation-like quality
+  const audioLoader = new THREE.AudioLoader();
+  audioLoader.load('audio/ambience_conversation.mp3', (buffer) => {
+    ambienceSource.setBuffer(buffer);
+    ambienceSource.play();
+  }, undefined, () => {
+    // Generate conversation-like ambient sound
+    playFallbackAmbience();
+  });
+}
+
+// Generate conversation-like ambient sound
+function playFallbackAmbience() {
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const noiseBuffer = audioContext.createBuffer(1, audioContext.sampleRate * 5, audioContext.sampleRate);
+  const output = audioContext.createGain();
+  
+  // Fill with noise
+  const data = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    // Create a filtered noise pattern for conversation-like ambience
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioContext.sampleRate * 2)) * 0.1;
+  }
+  
+  const source = audioContext.createBufferSource();
+  source.buffer = noiseBuffer;
+  source.loop = true;
+  source.connect(output);
+  output.connect(audioContext.destination);
+  output.gain.setValueAtTime(AUDIO_VOLUMES.ambience, audioContext.currentTime);
+  source.start();
+}
+
+// Play coffee machine sound effects
+function playCoffeeHiss() {
+  const audioLoader = new THREE.AudioLoader();
+  audioLoader.load('audio/coffee_hiss.mp3', (buffer) => {
+    coffeeSoundSource.setBuffer(buffer);
+    coffeeSoundSource.play();
+  }, undefined, () => {
+    // Generate hiss sound
+    playCoffeeHissFallback();
+  });
+}
+
+function playCoffeeClatter() {
+  const audioLoader = new THREE.AudioLoader();
+  audioLoader.load('audio/coffee_clatter.mp3', (buffer) => {
+    coffeeSoundSource.setBuffer(buffer);
+    coffeeSoundSource.play();
+  }, undefined, () => {
+    // Generate clatter sound
+    playCoffeeClatterFallback();
+  });
+}
+
+function playCoffeePump() {
+  const audioLoader = new THREE.AudioLoader();
+  audioLoader.load('audio/coffee_pump.mp3', (buffer) => {
+    coffeeSoundSource.setBuffer(buffer);
+    coffeeSoundSource.play();
+  }, undefined, () => {
+    // Generate pump sound
+    playCoffeePumpFallback();
+  });
+}
+
+// Fallback sounds for development
+function playCoffeeHissFallback() {
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const noiseBuffer = audioContext.createBuffer(1, audioContext.sampleRate * 0.5, audioContext.sampleRate);
+  const data = noiseBuffer.getChannelData(0);
+  
+  // High-frequency filtered noise for hiss
+  for (let i = 0; i < data.length; i++) {
+    data[i] = (Math.random() * 2 - 1) * 0.15;
+  }
+  
+  const source = audioContext.createBufferSource();
+  source.buffer = noiseBuffer;
+  source.connect(audioContext.destination);
+  source.gain.setValueAtTime(AUDIO_VOLUMES.coffee * 0.5, audioContext.currentTime);
+  source.start();
+}
+
+function playCoffeeClatterFallback() {
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+  
+  // Random clatter frequencies
+  oscillator.type = 'square';
+  oscillator.frequency.setValueAtTime(200 + Math.random() * 300, audioContext.currentTime);
+  oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  gainNode.gain.setValueAtTime(AUDIO_VOLUMES.coffee * 0.4, audioContext.currentTime);
+  
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.1);
+}
+
+function playCoffeePumpFallback() {
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+  
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(80, audioContext.currentTime);
+  oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  gainNode.gain.setValueAtTime(AUDIO_VOLUMES.coffee * 0.6, audioContext.currentTime);
+  
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.3);
+}
+
+// Check for close-up interactions (acceptance criteria)
+function checkCloseUpInteractions() {
+  const cameraPos = camera.position;
+  
+  // Check distance to patrons
+  const patrons = [];
+  scene.traverse((object) => {
+    if (object.userData && object.userData.isPatron) {
+      patrons.push(object);
+    }
+  });
+  
+  patrons.forEach(patron => {
+    const distance = cameraPos.distanceTo(patron.position);
+    if (distance < INTERACTION_THRESHOLDS.patron) {
+      if (!closeUpMode) {
+        closeUpMode = true;
+        patron.material.emissive?.setHex(0x4A90E2);
+        console.log('Close-up mode activated for patron');
+      }
+    } else {
+      if (closeUpMode) {
+        closeUpMode = false;
+        patron.material.emissive?.setHex(0x000000);
+      }
+    }
+  });
+
+  // Check distance to coffee machine
+  scene.traverse((object) => {
+    if (object.userData && object.userData.isCoffeeMachine) {
+      const distance = cameraPos.distanceTo(object.position);
+      if (distance < INTERACTION_THRESHOLDS.coffeeMachine) {
+        // Trigger coffee sound effect when near machine
+        if (!isCoffeeBrewing) {
+          playCoffeeHiss();
+          playCoffeeClatter();
+          playCoffeePump();
+          isCoffeeBrewing = true;
+          setTimeout(() => { isCoffeeBrewing = false; }, 2000);
+        }
+      }
+    }
+  });
 }
 
 // Add café interior geometry compatible across 5 eras
@@ -219,6 +544,7 @@ function addCaféGeometry() {
   const coffeeMachine = new THREE.Mesh(coffeeMachineGeometry, coffeeMachineMaterial);
   coffeeMachine.position.set(0, 0.9, -3.5);
   coffeeMachine.castShadow = true;
+  coffeeMachine.userData.isCoffeeMachine = true;
   scene.add(coffeeMachine);
 
   // Contactless payment interface screen
@@ -391,21 +717,25 @@ function addCaféGeometry() {
   const patronMaterial = new THREE.MeshStandardMaterial({ color: 0x4A90E2, roughness: 0.3 });
   const patron1 = new THREE.Mesh(patronGeometry, patronMaterial);
   patron1.position.set(-3, 0.8, 0);
+  patron1.userData.isPatron = true;
   scene.add(patron1);
 
   // Patron 2 - fashion-conscious customer
   const patron2 = new THREE.Mesh(patronGeometry, new THREE.MeshStandardMaterial({ color: 0xFF6B6B, roughness: 0.3 }));
   patron2.position.set(3, 0.8, 0);
+  patron2.userData.isPatron = true;
   scene.add(patron2);
 
   // Patron 3 - business casual
   const patron3 = new THREE.Mesh(patronGeometry, new THREE.MeshStandardMaterial({ color: 0x2E8B57, roughness: 0.3 }));
   patron3.position.set(-1, 0.8, 1);
+  patron3.userData.isPatron = true;
   scene.add(patron3);
 
   // Patron 4 - casual modern
   const patron4 = new THREE.Mesh(patronGeometry, new THREE.MeshStandardMaterial({ color: 0x9B59B6, roughness: 0.3 }));
   patron4.position.set(1, 0.8, 1);
+  patron4.userData.isPatron = true;
   scene.add(patron4);
 
   // Tech accessories (smartwatches, earbuds) on patrons
@@ -422,7 +752,7 @@ function addCaféGeometry() {
   }
 }
 
-// Add timeline slider container
+// Add timeline slider container with all 5 eras
 function addTimelineSlider() {
   // Create slider container
   const sliderContainer = document.createElement('div');
@@ -434,8 +764,8 @@ function addTimelineSlider() {
   sliderContainer.style.gap = '10px';
   sliderContainer.style.zIndex = '100';
 
-  // Year options - 2025 era exclusively loaded
-  const years = [2025];
+  // Year options for all 5 eras
+  const years = [1945, 1965, 1985, 2005, 2025];
 
   years.forEach(year => {
     const button = document.createElement('button');
@@ -443,17 +773,17 @@ function addTimelineSlider() {
     button.innerText = year;
     button.dataset.year = year;
     button.style.padding = '8px 16px';
-    button.style.border = '2px solid #4A90E2';
+    button.style.border = '2px solid #8B4513';
     button.style.background = 'transparent';
     button.style.borderRadius = '4px';
     button.style.cursor = 'pointer';
     button.style.fontFamily = 'sans-serif';
     button.style.fontSize = '14px';
-    button.style.color = '#FFFFFF';
+    button.style.color = '#8B4513';
 
     // Highlight current year
     if (year === currentYear) {
-      button.style.background = '#4A90E2';
+      button.style.background = '#8B4513';
       button.style.color = 'white';
     }
 
@@ -470,18 +800,35 @@ function addTimelineSlider() {
 
 // Select a specific year - era-specific tasks will extend this
 function selectYear(year) {
+  // Unload previous era audio cleanly (acceptance criteria)
+  if (currentEraMusic && currentEraMusic.isPlaying) {
+    currentEraMusic.stop();
+  }
+  
+  // Stop any existing oscillators
+  if (window._eraOscillators) {
+    window._eraOscillators.forEach(o => {
+      try { o.oscillator.stop(); } catch(e) {}
+    });
+    window._eraOscillators = [];
+  }
+
   currentYear = year;
+  
   // Update button visuals
   yearButtons.forEach(button => {
     if (parseInt(button.dataset.year) === year) {
-      button.style.background = '#4A90E2';
+      button.style.background = '#8B4513';
       button.style.color = 'white';
     } else {
       button.style.background = 'transparent';
-      button.style.color = '#4A90E2';
+      button.style.color = '#8B4513';
     }
   });
-  // Era-specific tasks will react to year changes
+  
+  // Play era-appropriate music
+  playEraMusic(year);
+  
   console.log(`Year selected: ${year}`);
 }
 
@@ -495,5 +842,17 @@ function onWindowResize() {
 // Start animation loop
 function animate() {
   requestAnimationFrame(animate);
+  
+  // Update orbit controls
+  if (orbitControls) {
+    orbitControls.update();
+  }
+  
+  // Check for close-up interactions
+  checkCloseUpInteractions();
+  
   renderer.render(scene, camera);
 }
+
+// Initialize scene on load
+window.addEventListener('load', initScene);
