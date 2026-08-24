@@ -21,7 +21,7 @@
  *   active transition is finalized, the mid-state group becomes the new
  *   outgoing group, and base opacities are captured so there is no frame pop.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { audio } from './audio.js';
 
 export const TRANSITION_DURATION = 2.5;

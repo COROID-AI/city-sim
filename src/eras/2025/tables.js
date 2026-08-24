@@ -6,7 +6,7 @@
  * stoneware cups, keep-cups, ceramic pour-over servers on trays, and matte
  * black cutlery.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, matte, metal, glassy, box, cyl, sph, torus, taperedLeg } from './util.js';
 import { qrSticker } from './menu.js';
 

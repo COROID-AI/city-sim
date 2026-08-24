@@ -4,7 +4,7 @@
  *   steam wands, round-key electric cash register with receipt printer,
  *   glass cake stand, chrome sugar dispensers.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, metal, glassy as glass, box, cyl, sph, torus } from './util.js';
 
 /** Lathe profile for the espresso machine's rounded dome/pedestal look. */

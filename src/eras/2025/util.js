@@ -6,7 +6,7 @@
  * procedural (Three.js primitives + canvas textures) so no external assets
  * are required.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 
 export const C = {
   oak: 0xc9a97a,        // light oak

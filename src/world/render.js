@@ -17,7 +17,7 @@
  *   4. Performance budget — renderer.info sampling + per-era budget report
  *      (~150 draw calls, ~500k triangles, 60fps target / 45fps floor).
  */
-import * as THREE from '../../public/js/three/build/three.module.js';
+import * as THREE from '../../public/js/three/lib/three.module.js';
 
 export const RENDER_POLICY = Object.freeze({
   // --- ACESFilmic tonemapping + exposure (one policy for all eras) --------

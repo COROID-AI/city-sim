@@ -5,7 +5,7 @@
  * generation. Everything is procedural (Three.js primitives + canvas
  * textures) so no external assets are required.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 
 export const C = {
   walnut: 0x4e3823,

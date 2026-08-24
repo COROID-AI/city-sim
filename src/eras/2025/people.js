@@ -5,7 +5,7 @@
  *   filming a latte with a phone on a mini-gimbal, one with a tote bag, plus
  *   earbuds in a case. Simple low-poly figures so the cast reads clearly.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, matte, emissive, box, cyl, sph } from './util.js';
 import { laptop, smartwatch, earbudsCase } from './music.js';
 

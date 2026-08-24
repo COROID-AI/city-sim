@@ -7,7 +7,7 @@
  * then mounted with wallPlace(group, wall, anchor) or the poster wrappers.
  * No external assets — every texture is drawn onto canvas at build time.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, box, sph, torus } from './util.js';
 
 export const WALL_FRONT = 'front'; // z = +2.5, faces -z

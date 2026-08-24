@@ -12,7 +12,7 @@
  *   60s patrons (slim suits, shift dresses, beehives, leather jacket,
  *   teens at the jukebox).
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { canvasTexture } from './util.js';
 import {
   travelPoster,

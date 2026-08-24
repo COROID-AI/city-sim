@@ -5,7 +5,7 @@
  * letters in fitted rows, era-accurate prices ("COFFEE ... 15", "COFFEE 25"),
  * milkshakes and sandwiches. The neon OPEN sign is a glowing arc tube.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, metal, emissive, box, cyl } from './util.js';
 import { artworkTexture, WALL_LEFT } from './wallArt.js';
 

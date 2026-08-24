@@ -5,7 +5,7 @@
  * Clearly labeled "UNDER CONSTRUCTION" in the HUD and as an in-scene floating
  * sign so it can never be mistaken for real content.
  */
-import * as THREE from '../../public/js/three/build/three.module.js';
+import * as THREE from '../../public/js/three/lib/three.module.js';
 
 // 1965 and 2025 are implemented by the real era modules (src/eras/1965/ and
 // src/eras/2025/), so they are no longer part of the placeholder set. Keeping

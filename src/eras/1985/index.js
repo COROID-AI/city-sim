@@ -16,7 +16,7 @@
  * Everything is procedural (primitives + canvas textures), deliberately low-poly
  * so the era holds 60 fps on integrated graphics.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 
 const C = {
   chrome: 0xd9dee3,

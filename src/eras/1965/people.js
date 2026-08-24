@@ -6,7 +6,7 @@
  * Simple low-poly figures (torso + legs + head + accents) so the cast
  * reads clearly at café scale without high triangle counts.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, box, cyl, sph } from './util.js';
 
 const SKIN = C.skin;

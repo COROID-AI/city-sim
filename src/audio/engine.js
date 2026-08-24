@@ -22,7 +22,7 @@ export class AudioEngine {
     this.volume = Number(storage?.getItem('cafe-audio-volume')) || .62;
     this.muted = storage?.getItem('cafe-audio-muted') === 'true';
     this.currentEra = null; this.player = null; this.ambience = null; this.scene = null; this.camera = null;
-    this.ambiencePanner = null; this.counterX = -2.9;
+    this.ambiencePanner = null;
   }
   attach(ctx = {}) { this.scene = ctx.scene; this.camera = ctx.camera; return this; }
   _init() {

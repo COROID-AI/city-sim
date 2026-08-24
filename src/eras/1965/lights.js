@@ -7,7 +7,7 @@
  *   - a faint pool of warm light above the menu board / jukebox
  * All light sources are lightweight point lights so the era stays fast.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, metal, emissive, box, cyl, sph, torus } from './util.js';
 
 /** Sputnik-style pendant: chrome arms radiating from a central hub. */

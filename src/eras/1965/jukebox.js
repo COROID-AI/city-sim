@@ -4,7 +4,7 @@
  *   coin slot, selector buttons, full-height pedestal silhouette.
  * Built in local space facing +z; parent adds + rotates.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, metal, glassy, emissive, box, cyl, sph, torus } from './util.js';
 
 export function jukebox() {

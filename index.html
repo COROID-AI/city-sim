@@ -318,7 +318,7 @@
     <script type="importmap">
       {
         "imports": {
-          "three": "./public/js/three/build/three.module.js"
+          "three": "./public/js/three/lib/three.module.js"
         }
       }
     </script>
@@ -336,13 +336,20 @@
           <span class="timeline-label" id="timeline-label">Era</span>
           <div class="era-slider" id="era-slider">
             <input type="range" id="timeline-slider" min="0" max="4" step="1" value="4" aria-label="Select café era" aria-valuemin="0" aria-valuemax="4" aria-valuenow="4" aria-valuetext="2025" />
-            <div class="era-rail" id="era-rail" aria-hidden="true">
+            <div class="era-rail" id="era-rail">
               <div class="era-track"></div>
               <div class="era-thumb"></div>
             </div>
           </div>
         </div>
         <div class="era-caption" id="era-caption" aria-live="polite"></div>
+        <div class="year-buttons" id="timeline-years" role="group" aria-label="Select era year">
+          <button type="button" class="year-btn" data-year="1945" aria-label="Select 1945 era" aria-pressed="false">1945</button>
+          <button type="button" class="year-btn" data-year="1965" aria-label="Select 1965 era" aria-pressed="false">1965</button>
+          <button type="button" class="year-btn" data-year="1985" aria-label="Select 1985 era" aria-pressed="false">1985</button>
+          <button type="button" class="year-btn" data-year="2005" aria-label="Select 2005 era" aria-pressed="false">2005</button>
+          <button type="button" class="year-btn" data-year="2025" aria-label="Select 2025 era" aria-pressed="true">2025</button>
+        </div>
         <div class="audio-controls" aria-label="Audio controls">
           <button id="audio-mute" type="button" aria-label="Mute or unmute audio">🔊</button>
           <label for="audio-volume" class="timeline-label">Vol</label>

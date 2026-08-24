@@ -3,7 +3,7 @@
  *   hanging globe pendants and linear LED pendants over the tables.
  * Light sources are lightweight point / rect-area lights so the era stays fast.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, matte, metal, emissive, box, cyl, sph } from './util.js';
 
 /** Hanging globe pendant — a translucent glass globe with a warm bulb. */

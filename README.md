@@ -109,5 +109,5 @@ scripts/
   serve.mjs             # `npm start` zero-dependency Node static server
 ```
 
-> The pinned `public/js/three/build/three.module.js` is committed (not ignored)
+> The pinned `public/js/three/lib/three.module.js` is committed (not ignored)
 > so a fresh clone boots without a network fetch.

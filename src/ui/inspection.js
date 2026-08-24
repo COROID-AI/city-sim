@@ -1,4 +1,4 @@
-import * as THREE from '../../public/js/three/build/three.module.js';
+import * as THREE from '../../public/js/three/lib/three.module.js';
 import { findInspectableForHit } from './metadata.js';
 
 /** Install raycast hover/click inspection on the renderer canvas. */

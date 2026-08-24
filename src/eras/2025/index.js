@@ -16,7 +16,7 @@
  *   cutlery, LED pendants, abundant plants (monstera, hanging pothos), a
  *   living-wall shelving unit with ceramics, and five patrons in 2025 fashion.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C } from './util.js';
 import {
   espressoMachine,

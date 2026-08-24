@@ -5,7 +5,7 @@
  * (flat white $4.50–$5.50, cold brew, matcha, oat milk +50¢) plus small
  * QR-code table-ordering stickers on the tables.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, metal, canvasTexture } from './util.js';
 
 export const MENU_LINES = [

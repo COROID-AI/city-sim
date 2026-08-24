@@ -13,7 +13,7 @@
  *   front window sill  ≈ 0.90 m, header ≈ 2.50 m
  *   kitchen passthrough opening ≈ 0.7–1.6 m on the back wall
  */
-import * as THREE from '../../public/js/three/build/three.module.js';
+import * as THREE from '../../public/js/three/lib/three.module.js';
 import { applyShadowPolicy } from './render.js';
 
 const ROOM = {

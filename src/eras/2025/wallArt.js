@@ -7,7 +7,7 @@
  * Each piece is built in LOCAL space (centered on origin, front face +z),
  * then mounted with wallPlace(group, wall, anchor). No external assets.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, matte, box, cyl, sph } from './util.js';
 
 export const WALL_FRONT = 'front'; // z = +2.5, faces -z

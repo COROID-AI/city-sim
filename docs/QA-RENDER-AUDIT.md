@@ -50,7 +50,7 @@ oak/sage (2025). This is an evolution rather than a single neutralized grade.
 
 The application now reports live per-era values through `renderer.info`, but a
 numeric five-era baseline could not be captured in this workspace: the pinned
-`public/js/three/build/three.module.js` file referenced by the import map is
+`public/js/three/lib/three.module.js` file referenced by the import map is
 not present in the checkout, and no browser/WebGL runner is available here.
 Consequently, the 150-draw-call / 500k-triangle / 60-FPS acceptance gate is
 **not claimed as measured**. No geometry was merged or instanced speculatively;

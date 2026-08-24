@@ -2,7 +2,7 @@
  * 2005 early-Wi-Fi café.  Low-poly procedural scenery, deliberately readable
  * silhouettes, and canvas signs carry the period story without external assets.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 
 const C = {
   wood: 0x3b281d, woodEdge: 0x684631, cream: 0xe8dfce, wall: 0xcbbda8,

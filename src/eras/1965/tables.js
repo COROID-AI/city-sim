@@ -6,7 +6,7 @@
  * Tableware: pastel melamine mugs, chrome-rimmed glasses, milkshake
  * glasses with straws, ashtrays, checkered napkin dispensers.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, metal, glassy, box, cyl, sph, torus, splayedLeg } from './util.js';
 
 /**

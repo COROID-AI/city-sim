@@ -6,7 +6,7 @@
  *   a tap-to-pay contactless reader, tablet order screens, oat/almond milk
  *   cartons, and a pastry case with modern minimal labels.
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, matte, metal, glassy, emissive, box, cyl, sph, torus } from './util.js';
 
 /**

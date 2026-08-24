@@ -3,7 +3,7 @@
  * charging stand paired with a small smart speaker on a shelf — the era's
  * sound source (streaming from the phone to the speaker).
  */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 import { C, mat, matte, metal, emissive, box, cyl, sph } from './util.js';
 
 /**

@@ -36,7 +36,7 @@ if (typeof THREE.REVISION !== 'string' || THREE.REVISION !== '160') {
   throw new Error(`[cafe] invalid three.js revision "${THREE.REVISION}"; expected r160 module build`);
 }
 console.info(
-  `%c[three] r${THREE.REVISION} verified — ES module build public/js/three/build/three.module.js`,
+  `%c[three] r${THREE.REVISION} verified — ES module build public/js/three/lib/three.module.js`,
   'color:#7fb069;font-weight:bold'
 );
 

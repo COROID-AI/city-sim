@@ -1,5 +1,5 @@
 /** Post-war café, 1945.  All scenery is deliberately low-poly and procedural. */
-import * as THREE from '../../../public/js/three/build/three.module.js';
+import * as THREE from '../../../public/js/three/lib/three.module.js';
 
 const C = {
   oak: 0x24150f, oakEdge: 0x4a2d1c, brass: 0xb1843d, brassDark: 0x62451e,
