@@ -5,6 +5,7 @@
 // smartphone music streaming, digital menu boards, tech/sustainability ads,
 // contemporary patrons, smart lighting with app control
 
+import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 // Scene globals
@@ -825,7 +826,147 @@ function selectYear(year) {
       button.style.color = '#8B4513';
     }
   });
+
+  // Apply era-specific scene transformations
+  // Update lighting colors to match the era
+  const eraColors = {
+    1945: { ambient: 0x8B4513, directional: 0xCD8500 }, // Warm radio era
+    1965: { ambient: 0xFFD700, directional: 0xFF4500 },  // Mod jukebox era
+    1985: { ambient: 0x00FFFF, directional: 0xFF00FF }, // Boombox era
+    2005: { ambient: 0x808080, directional: 0xFFFFFF }, // iPod era
+    2025: { ambient: 0x1a1a2e, directional: 0xfff5e1 }  // Smartphone era
+  };
+
+  // Update ambient and directional light colors for the selected era
+  if (ambientLight) {
+    ambientLight.color.setHex(eraColors[year].ambient);
+  }
+  if (directionalLight) {
+    directionalLight.color.setHex(eraColors[year].directional);
+  }
   
+  // Transform key scene objects based on the selected era
+  scene.traverse((object) => {
+    // Update coffee machine appearance for the selected era
+    if (object.userData && object.userData.isCoffeeMachine) {
+      if (year === 1945) {
+        object.material.color.setHex(0xCD8500);
+        object.material.metalness = 0.3;
+      } else if (year === 1965) {
+        object.material.color.setHex(0xFF4500);
+        object.material.metalness = 0.5;
+      } else if (year === 1985) {
+        object.material.color.setHex(0x00FFFF);
+        object.material.metalness = 0.8;
+      } else if (year === 2005) {
+        object.material.color.setHex(0x808080);
+        object.material.metalness = 0.9;
+      } else {
+        object.material.color.setHex(0xFFFFFF);
+        object.material.metalness = 0.9;
+      }
+    }
+    
+    // Update table appearance for the selected era
+    if (object.geometry && object.geometry.type === 'BoxGeometry' && 
+        Math.abs(object.position.z + 2) < 0.1 && Math.abs(object.position.y - 0.25) < 0.1) {
+      if (year === 1945) {
+        object.material.color.setHex(0x8B4513);
+        object.material.roughness = 0.5;
+      } else if (year === 1965) {
+        object.material.color.setHex(0xCD853F);
+        object.material.roughness = 0.4;
+      } else if (year === 1985) {
+        object.material.color.setHex(0x00FFFF);
+        object.material.roughness = 0.3;
+      } else if (year === 2005) {
+        object.material.color.setHex(0xA9A9A9);
+        object.material.roughness = 0.2;
+      }
+    }
+    
+    // Update lighting fixtures (led strip) for the selected era
+    if (object.geometry && object.geometry.type === 'PlaneGeometry' && 
+        object.geometry.parameters.width > 8 && object.geometry.parameters.height < 1) {
+      if (year === 1945) {
+        object.material.color.setHex(0x8B4513);
+        object.material.emissiveIntensity = 0.2;
+      } else if (year === 1965) {
+        object.material.color.setHex(0xFF6B6B);
+        object.material.emissiveIntensity = 0.3;
+      } else if (year === 1985) {
+        object.material.color.setHex(0x00FFFF);
+        object.material.emissiveIntensity = 0.5;
+      } else if (year === 2005) {
+        object.material.color.setHex(0xFFFFFF);
+        object.material.emissiveIntensity = 0.4;
+      }
+    }
+  });
+  
+  // Update wall poster colors for the selected era
+  scene.traverse((object) => {
+    if (object.geometry && object.geometry.type === 'PlaneGeometry' && 
+        object.userData && object.userData.isPoster) {
+      if (year === 1945) {
+        object.material.color.setHex(0x654321);
+      } else if (year === 1965) {
+        object.material.color.setHex(0xFF69B4);
+      } else if (year === 1985) {
+        object.material.color.setHex(0x00FF00);
+      } else if (year === 2005) {
+        object.material.color.setHex(0x87CEEB);
+      }
+    }
+  });
+  
+  // Update menu board colors for the selected era
+  scene.traverse((object) => {
+    if (object.geometry && object.geometry.type === 'PlaneGeometry' && 
+        Math.abs(object.position.z + 5) < 0.5 && Math.abs(object.position.y - 2.9) < 0.1) {
+      if (year === 1945) {
+        object.material.color.setHex(0x4A3A2A);
+      } else if (year === 1965) {
+        object.material.color.setHex(0x2A2A2A);
+      } else if (year === 1985) {
+        object.material.color.setHex(0x333333);
+      } else if (year === 2005) {
+        object.material.color.setHex(0x1A1A1A);
+      }
+    }
+  });
+  
+  // Update pricing labels colors for the selected era
+  scene.traverse((object) => {
+    if (object.geometry && object.geometry.type === 'BoxGeometry' && 
+        Math.abs(object.position.z + 4.51) < 0.1 && object.position.y > 2.3) {
+      if (year === 1945) {
+        object.material.color.setHex(0x8B0000);
+      } else if (year === 1965) {
+        object.material.color.setHex(0x0000CD);
+      } else if (year === 1985) {
+        object.material.color.setHex(0x00CD00);
+      } else if (year === 2005) {
+        object.material.color.setHex(0xCD00CD);
+      }
+    }
+  });
+  
+  // Update patrons' appearance for the selected era
+  scene.traverse((object) => {
+    if (object.userData && object.userData.isPatron) {
+      if (year === 1945) {
+        object.material.color.setHex(0x8B4513);
+      } else if (year === 1965) {
+        object.material.color.setHex(0xFFB6C1);
+      } else if (year === 1985) {
+        object.material.color.setHex(0x00FF00);
+      } else if (year === 2005) {
+        object.material.color.setHex(0x87CEEB);
+      }
+    }
+  });
+
   // Play era-appropriate music
   playEraMusic(year);
   
