@@ -250,6 +250,7 @@ function buildPresets(ctx) {
     btn.type = 'button';
     btn.className = 'preset-btn';
     btn.dataset.preset = p.label;
+    btn.dataset.testid = `camera-preset-${p.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
     btn.textContent = p.label;
     btn.addEventListener('click', () => applyPreset(ctx, p));
     bar.appendChild(btn);

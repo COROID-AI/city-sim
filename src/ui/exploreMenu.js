@@ -33,6 +33,7 @@ export function createExploreMenu(opts) {
       const item = document.createElement('button');
       item.type = 'button';
       item.className = 'explore-item';
+      item.dataset.testid = `explore-preset-${preset.id || preset.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
       item.textContent = preset.name;
       item.addEventListener('click', () => {
         close();
@@ -49,6 +50,7 @@ export function createExploreMenu(opts) {
       back.type = 'button';
       back.className = 'explore-item explore-overview';
       back.textContent = 'Return to overview';
+      back.dataset.testid = 'explore-overview';
       back.addEventListener('click', () => {
         close();
         if (onOverview) onOverview(overview);

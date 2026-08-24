@@ -19,6 +19,7 @@ export function createTimeline({ sliderEl, railEl, captionEl, getActiveEra, onSe
       stop.textContent = String(ERA_YEARS[i]);
       stop.style.left = `${(i / (ERA_YEARS.length - 1)) * 100}%`;
       stop.setAttribute('aria-label', `Select ${ERA_YEARS[i]} era`);
+      stop.dataset.testid = `era-stop-${ERA_YEARS[i]}`;
       stop.addEventListener('click', () => selectYear(ERA_YEARS[i]));
       railEl.appendChild(stop);
     }
