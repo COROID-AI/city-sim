@@ -644,18 +644,22 @@ function addCaféGeometry() {
   poster1.position.set(0, 1.5, -4.9);
   poster1.rotation.y = Math.PI / 2;
   scene.add(poster1);
+poster1.userData.isPoster = true;
 
   // Poster 2: Technology & Innovation
   const poster2 = new THREE.Mesh(posterGeometry, posterMaterial.clone());
   poster2.position.set(-4.5, 1.5, 0);
   poster2.rotation.y = Math.PI;
   scene.add(poster2);
+poster2.userData.isPoster = true;
 
   // Poster 3: Modern Coffee Culture
   const poster3 = new THREE.Mesh(posterGeometry, posterMaterial.clone());
   poster3.position.set(4.5, 1.5, 0);
   poster3.rotation.y = Math.PI;
   scene.add(poster3);
+
+  poster3.userData.isPoster = true;
 
   // --- 2025 Era Tableware ---
   // Sleek modern ceramic/glass styling
