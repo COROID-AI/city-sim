@@ -1,0 +1,22 @@
+{
+  "name": "cafe-time-timelapse",
+  "version": "1.0.0",
+  "description": "Café Time Period Timelapse - Three.js scene foundation",
+  "type": "module",
+  "scripts": {
+    "dev": "http-server public -p 8080",
+    "build": "echo 'No build step needed for static Three.js scene'",
+    "test": "echo 'No tests yet'"
+  },
+  "keywords": [
+    "three",
+    "webgl",
+    "timelapse",
+    "café"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "three": "^0.185.1"
+  }
+}
