@@ -986,6 +986,25 @@ export const era1985 = {
   year: 1985,
   hudText: '1985 · NEON CAFÉ',
   assets: [],
+  metadata: {
+    tint: '#ff4fa3',
+    caption: { name: 'Neon Café', vibe: 'Pastel neon, arcade glow, and a boombox on the shelf' },
+    inspectables: [
+      { id: 'espresso', name: 'Boxy Espresso Machine', object: 'boxy chrome espresso machine', story: 'Espresso machine — 1985: digital keypad and a green readout, still chrome' },
+      { id: 'pos', name: 'Electronic POS', object: 'early electronic POS', story: 'Electronic POS — 1985: green segment display and a dot-matrix "THANK YOU"' },
+      { id: 'boombox', name: 'Twin-cassette Boombox', object: 'silver twin-cassette boombox', story: 'Boombox — 1985: the café soundtrack is a cassette on the wall shelf' },
+      { id: 'arcade', name: 'Arcade Cabinet', object: 'arcade cabinet', story: 'Arcade cabinet — 1985: a quarter for NEON BLASTER high scores' },
+      { id: 'cassettes', name: 'Cassette Rack', object: 'cassette sales rack', story: 'Cassette rack — 1985: MIX 85, HOT 100 and NEW WAVE for sale' },
+    ],
+    presets: [
+      { id: 'counter', name: 'Counter & Machine', position: [-3.1, 1.4, 2.2], target: [-2.9, 1.1, 0.4] },
+      { id: 'menu', name: 'Lightbox Menu', position: [-0.2, 1.6, 2.2], target: [-1.0, 1.3, -2.0] },
+      { id: 'music', name: 'Boombox Shelf', position: [1.6, 1.2, 2.2], target: [1.8, 1.2, -2.2] },
+      { id: 'seating', name: 'Seating Area', position: [0.6, 1.5, 2.2], target: [0.2, 0.9, 0.2] },
+      { id: 'posters', name: 'Posters & Mural', position: [-0.2, 1.6, 2.2], target: [0.5, 1.2, -2.0] },
+    ],
+    overview: { position: [3.1, 1.9, 2.3], target: [0, 1.05, -0.3] },
+  },
   build(ctx) {
     const group = new THREE.Group();
     group.name = 'neon-cafe-interior';

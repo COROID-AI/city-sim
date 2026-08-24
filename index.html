@@ -115,6 +115,21 @@
         accent-color: var(--accent);
         cursor: pointer;
       }
+      .timeline { flex-direction: column; align-items: stretch; gap: 2px; }
+      .timeline-main { display: flex; align-items: center; gap: 10px; }
+      .era-slider { position: relative; flex: 1; min-width: 240px; height: 52px; }
+      .era-slider #timeline-slider { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; z-index: 3; }
+      .era-rail { position: absolute; inset: 0; pointer-events: none; --fill: 100%; }
+      .era-track { position: absolute; left: 10px; right: 10px; top: 12px; height: 4px; border-radius: 4px; background: linear-gradient(90deg, var(--accent) var(--fill), rgba(255,255,255,.14) var(--fill)); }
+      .era-thumb { position: absolute; top: 14px; left: 100%; width: 18px; height: 18px; transform: translate(-50%,-50%); border: 2px solid rgba(255,255,255,.9); border-radius: 50%; background: var(--accent); box-shadow: 0 0 14px var(--accent); transition: left 2.5s cubic-bezier(.22,1,.36,1); }
+      .era-slider.dragging .era-thumb { transition: none; }
+      .era-stop { position: absolute; top: 25px; transform: translateX(-50%); z-index: 4; padding: 5px 7px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); font: 600 12px/1 inherit; cursor: pointer; pointer-events: auto; transition: color .15s ease, background .15s ease, border-color .15s ease; }
+      .era-stop:hover, .era-stop:focus-visible { color: var(--accent); border-color: rgba(236,197,122,.45); background: rgba(255,255,255,.06); outline: none; }
+      .era-stop.active { color: var(--accent); border-color: rgba(236,197,122,.55); background: rgba(236,197,122,.12); font-weight: 800; }
+      .era-stop:disabled { opacity: .4; cursor: default; }
+      .era-caption { min-height: 16px; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .caption-name { font-weight: 800; }
+      #timeline-slider:focus-visible ~ .era-rail { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 8px; }
       .year-buttons {
         display: flex;
         gap: 6px;
@@ -263,6 +278,21 @@
         line-height: 1.5;
         color: var(--muted);
       }
+      .explore-wrap { position: relative; white-space: nowrap; }
+      #explore-toggle { border: 1px solid rgba(236,197,122,.35); border-radius: 6px; background: rgba(255,255,255,.04); color: var(--ink); padding: 8px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+      #explore-toggle:hover, #explore-toggle:focus-visible { border-color: var(--accent); outline: 2px solid transparent; }
+      #explore-menu { position: absolute; top: calc(100% + 6px); right: 0; display: none; min-width: 190px; padding: 5px; z-index: 40; background: rgba(14,20,28,.97); border: 1px solid var(--panel-border); border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+      #explore-menu.open { display: grid; gap: 3px; }
+      .explore-item { width: 100%; padding: 8px 10px; border: 0; border-radius: 5px; background: transparent; color: var(--ink); text-align: left; font: inherit; font-size: 13px; cursor: pointer; }
+      .explore-item:hover, .explore-item:focus-visible { background: rgba(255,255,255,.07); color: var(--accent); outline: none; }
+      .explore-sep { height: 1px; margin: 4px 5px; background: rgba(236,197,122,.2); }
+      #info-card { position: fixed; right: 16px; bottom: 56px; z-index: 35; display: none; width: min(340px, calc(100vw - 32px)); padding: 13px 15px; background: rgba(14,20,28,.96); border: 1px solid var(--panel-border); border-left: 3px solid var(--accent); border-radius: 9px; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+      #info-card.open { display: block; animation: info-in .2s ease; }
+      @keyframes info-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      #info-close { position: absolute; right: 7px; top: 5px; border: 0; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
+      #info-name { padding-right: 22px; font-size: 15px; font-weight: 800; }
+      #info-story { margin-top: 5px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+      #info-era { margin-top: 9px; color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
       @media (max-width: 720px) {
         #topbar {
           flex-wrap: wrap;
@@ -278,6 +308,10 @@
           top: auto;
           bottom: 56px;
         }
+        .timeline-main { width: 100%; }
+        .timeline { width: 100%; }
+        .era-slider { min-width: 0; }
+        #info-card { right: 10px; bottom: 12px; }
       }
     </style>
     <!-- Single shared three.js instance for app + addons via import map. -->
@@ -298,40 +332,26 @@
         <small>timelapse · 1945 → 2025</small>
       </div>
       <div class="timeline">
-        <span class="timeline-label" id="timeline-label">Era</span>
-        <input
-          type="range"
-          id="timeline-slider"
-          min="0"
-          max="4"
-          step="1"
-          value="4"
-          list="era-years"
-          aria-label="Select café era"
-          aria-valuemin="0"
-          aria-valuemax="4"
-          aria-valuenow="4"
-          aria-valuetext="2025"
-        />
-        <datalist id="era-years">
-          <option value="0" label="1945"></option>
-          <option value="1" label="1965"></option>
-          <option value="2" label="1985"></option>
-          <option value="3" label="2005"></option>
-          <option value="4" label="2025"></option>
-        </datalist>
-        <div class="year-buttons" id="timeline-years" role="group" aria-label="Select era year">
-          <button type="button" class="year-btn" data-year="1945" aria-pressed="false">1945</button>
-          <button type="button" class="year-btn" data-year="1965" aria-pressed="false">1965</button>
-          <button type="button" class="year-btn" data-year="1985" aria-pressed="false">1985</button>
-          <button type="button" class="year-btn" data-year="2005" aria-pressed="false">2005</button>
-          <button type="button" class="year-btn" data-year="2025" aria-pressed="true">2025</button>
+        <div class="timeline-main">
+          <span class="timeline-label" id="timeline-label">Era</span>
+          <div class="era-slider" id="era-slider">
+            <input type="range" id="timeline-slider" min="0" max="4" step="1" value="4" aria-label="Select café era" aria-valuemin="0" aria-valuemax="4" aria-valuenow="4" aria-valuetext="2025" />
+            <div class="era-rail" id="era-rail" aria-hidden="true">
+              <div class="era-track"></div>
+              <div class="era-thumb"></div>
+            </div>
+          </div>
         </div>
+        <div class="era-caption" id="era-caption" aria-live="polite"></div>
         <div class="audio-controls" aria-label="Audio controls">
           <button id="audio-mute" type="button" aria-label="Mute or unmute audio">🔊</button>
           <label for="audio-volume" class="timeline-label">Vol</label>
           <input id="audio-volume" type="range" min="0" max="1" step="0.01" value="0.62" aria-label="Audio volume" />
         </div>
+      </div>
+      <div class="explore-wrap">
+        <button type="button" id="explore-toggle" aria-haspopup="menu" aria-expanded="false">Explore ▾</button>
+        <div id="explore-menu" role="menu" aria-label="Explore camera presets"></div>
       </div>
     </div>
 
@@ -352,6 +372,13 @@
           hardware acceleration (or WebGL) in your browser and reload the page.
         </p>
       </div>
+    </div>
+
+    <div id="info-card" role="dialog" aria-label="Object information" aria-hidden="true">
+      <button type="button" id="info-close" aria-label="Close information">×</button>
+      <div id="info-name"></div>
+      <div id="info-story"></div>
+      <div id="info-era"></div>
     </div>
 
     <script type="module" src="./src/main.js"></script>
