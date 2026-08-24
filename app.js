@@ -76,7 +76,7 @@ function addLayerContent() {
 
   Object.entries(yearLayers).forEach(([year, layer]) => {
     const mesh = new THREE.Mesh(boxGeometry, new THREE.MeshStandardMaterial({ color: materials[parseInt(year, 10)].color, roughness: 0.8, metalness: 0.2, transparent: true }));
-    mesh.position.set((parseInt(year, 10) - 1945) * 1.5 - 1.5, 0, 0);
+    mesh.position.set(0, 0, 0);
     layer.add(mesh);
 
     // Light decor so the layer isn't "empty" visually.
@@ -90,7 +90,7 @@ function addLayerContent() {
         opacity: 0
       })
     );
-    plane.position.set((parseInt(year, 10) - 1945) * 1.5 - 1.5, -0.9, -1.2);
+    plane.position.set(0, -0.9, -1.2);
     layer.add(plane);
   });
 }
@@ -120,7 +120,7 @@ function fadeLayer(layer, visible) {
   if (visible) {
     // Use requestAnimationFrame for smooth fading instead of setInterval
     fades.forEach(m => {
-      m.opacity = 0;
+      m.opacity = 1;
       m.transparent = true;
     });
     layer.visible = true;
@@ -510,3 +510,11 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// Render loop for Three.js scene
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
