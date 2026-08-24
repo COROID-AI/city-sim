@@ -28,7 +28,14 @@
     <button class="mute-button" aria-label="Toggle audio mute">Mute</button>
   </div>
 
-  <script type="module" src="node_modules/three/build/three.module.js"></script>
+  <script type="importmap">
+{
+  "imports": {
+    "three": "node_modules/three/build/three.module.js",
+    "three/examples/jsm/controls/OrbitControls.js": "node_modules/three/examples/jsm/controls/OrbitControls.js"
+  }
+}
+</script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
