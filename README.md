@@ -11,109 +11,62 @@ loaded directly as static files. No bundler, no framework.
 
 ```bash
 # 1) Serve the repo root over http (required — ES modules + import map)
-python3 -m http.server 8000
-# or: npx --yes serve -l 8000 .
-
-# 2) Open http://localhost:8000
+npm start
+# or: npm run start:python   (if python3 is available)
+# or: npm run start:npx      (npx serve -l 8000 .)
 ```
 
-Or use the npm scripts:
+Then open **http://127.0.0.1:8000** in a WebGL-capable browser.
 
-```bash
-npm start        # python3 -m http.server 8000
-npm run start:npx # npx serve -l 8000 .
-npm run check    # node --check every file under src/ (cheap syntax gate for all tasks)
-```
+`npm start` uses a zero-dependency Node static server (`scripts/serve.mjs`) so
+it works even when `python3` is not installed on the host. It serves the
+correct `text/javascript` MIME type for ES modules and resolves directory
+requests to `index.html`.
 
-> `npm run check` has no dependencies — it just runs Node's parser over `src/**`
-> so every later era/world task has a one-command sanity check.
+## Controls
 
-## Structure
+| Input | Action |
+| --- | --- |
+| **Timeline slider** (top) | Drag between 1945 / 1965 / 1985 / 2005 / 2025 |
+| **Era buttons** (top) | Jump straight to a year |
+| **Left-drag** on the scene | Orbit the camera |
+| **Scroll / middle-drag** | Zoom |
+| **Right-drag** | Pan |
+| **Arrow keys** (canvas focused) | Pan (OrbitControls keyboard mode) |
+| **Hover** a hotspot | Info card with a period note |
+| **Click** a hotspot | Pin / unpin the info card |
+| **Esc** | Dismiss a pinned info card |
+| **Camera preset buttons** (top-right) | Composed viewpoints: Counter, Tables, Music, Menu/Arcade |
+| **Mute / Vol** (top bar) | Toggle or adjust the ambient sound + music |
 
-```
-index.html              # fullscreen canvas, timeline slider (fixed top), era HUD
-src/
-  main.js               # boots renderer/camera/lights/OrbitControls + r160 assertion
-  eras/
-    registry.js         # shared era registry: registerEra(id, module), switchTo(year)
-    placeholder.js      # temporary "UNDER CONSTRUCTION" era for all five years
-  world/
-    shell.js            # permanent café shell: floor/walls/ceiling, windows, door,
-                        # counter run, kitchen passthrough, interior light rig
-public/js/
-  three/                # three.js r160 module build (pinned from unpkg source)
-    build/three.module.js
-    examples/jsm/controls/OrbitControls.js
-scripts/
-  check.js              # `npm run check` implementation
-```
+## The five eras
 
-> `src/index.js` no longer exists — `src/main.js` is the single entrypoint loaded
-> by `index.html`.
+Each era is a fully furnished period café interior sharing one architectural
+shell (floor, walls, windows, door, counter run). Every era transforms all nine
+audit categories — furniture & decor, coffee & brewing equipment, menu &
+prices, music source, posters & ads, tableware, signage & lighting, counter
+tech, and patron outfits / hairstyles / gadgets.
 
-## The scene
-
-- A realistic **~7 m × 5 m × 3 m** café room with consistent human scale:
-  counter top at **0.90 m**, entrance door **2.05 m** tall, window sill 0.90 m,
-  kitchen passthrough opening on the back wall.
-- Permanent architectural shell lives in `src/world/shell.js` and is shared by
-  every era module: floor, walls, ceiling, front window wall with mullions,
-  entrance door, a long base counter run (customer front / staff back), and a
-  base interior lighting rig.
-- **OrbitControls** give pointer-driven orbit / dolly / pan (no WASD needed)
-  with smooth damping and clamps: the camera cannot dip under the floor or fly
-  out of the interior volume.
-
-## Era registry contract
-
-Each era is an ES module exposing a plain object:
-
-```js
-{
-  id: 'year-2025',          // stable id
-  label: '2025',            // slider/HUD label
-  year: 2025,               // slider year this era replaces
-  build(ctx) -> THREE.Group // create the era's group (called on switch)
-  enter(ctx, group)         // optional: animate on entry
-  exit(ctx),                // optional: teardown hook
-  assets(ctx)               // list of asset URLs preloaded for the era
-}
-```
-
-`ctx` is the shared app context: `{ THREE, scene, renderer, camera, controls,
-clock, shell, shellMeta }`.
-
-Register and switch:
-
-```js
-import { registerEra, switchTo } from './src/eras/registry.js';
-registerEra('year-2025', myEraModule);
-switchTo(2025, ctx);
-```
-
-All five years are wired in `src/main.js` to the timeline slider and buttons;
-switching swaps the era `THREE.Group` in the scene and updates the era-label
-HUD chip.
-
-## Timeline slider (UI)
-
-- Fixed along the top of the viewport, always visible.
-- Exactly five options: **1945 / 1965 / 1985 / 2005 / 2025**, as a keyboard
-  accessible `<input type="range">` plus five labeled buttons.
-- Clear selected-year state: aria-valuetext, pressed/active styling, HUD chip.
-
-## Vendored three.js
-
-- `public/js/three/` contains the **three.js r160** ES module build from the
-  pinned `three@0.160.0` npm tarball (shasum
-  `cd1e4dbd01aee0719280a9086d75545db52b7a8f`, size 9.4 MB, the same source unpkg
-  serves at `three@0.160.0`), copied during scaffold setup with
-  `npm pack three@0.160.0`.
-- Startup asserts **`THREE.REVISION === '160'`** in the browser console, and
-  boots nothing until the assertion passes, proving the local bundle is the
-  genuine r160 module build.
-- `public/js/three/` is intentionally committed (not gitignored) so every later
-  era task can rely on the identical three.js build without a network fetch.
+- **1945 — Post-war Café**: warm tungsten, heavy oak tables, Thonet bentwood
+  chairs, a hand-pulled lever espresso machine, a hand-crank cash register, a
+  walnut valve wireless set, war-bond posters and a ration notice, 7¢ coffee.
+- **1965 — Mid-Century Espresso Bar**: chrome-and-bakelite espresso bar,
+  round-key electric register, chrome-and-glass jukebox with 45s, plastic
+  letterboard menu (15¢ coffee), sputnik pendant, travel posters, swing-era
+  patrons with beehives and skinny suits.
+- **1985 — Neon Café**: black-and-chrome + pastel neon, boxy chrome espresso
+  with a digital keypad, drip-brew tower, early electronic POS with green
+  segment display, twin-cassette boombox, backlit lightbox menu (55¢ coffee),
+  arcade cabinet + CRT static TV, Members-Only jackets, Walkman, pager.
+- **2005 — Early Wi-Fi Café**: stainless E61 semi-auto espresso, touchscreen
+  POS with card swipe, beige CRT iMac order station, white click-wheel iPod in
+  a speaker dock with CDs for sale, $1.50 coffee menu, bootcut jeans, flip
+  phones, chunky earbuds, early laptops.
+- **2025 — Contemporary Café**: multi-boiler espresso with touchscreen,
+  pour-over station (gooseneck kettle + V60s + scale), batch brewer into
+  double-wall carafes, iPad POS with contactless tap-to-pay, smart speaker +
+  wireless-charging phone, minimal $4.50 flat-white menu, QR table ordering,
+  communal oak slab table, LED pendants, oversized fits and smartwatches.
 
 ## Verification
 
@@ -121,5 +74,40 @@ HUD chip.
   is considered done.
 - Open the page and check the console for the r160 assertion and
   `[cafe] era switched to <year>` on every slider move.
-- Orbit/zoom/pan with the mouse; the camera stays above the floor and inside
-  the café volume.
+- Orbit / zoom / pan with the mouse; the camera stays above the floor and
+  inside the café volume.
+- See **docs/FINAL-QA.md** for the full 5-eras × 9-categories walkthrough
+  matrix, the defects found and fixed, and known limitations (including that
+  the music is synthesized period-styled audio, not licensed recordings).
+
+## Structure
+
+```
+index.html              # fullscreen canvas, timeline slider (fixed top), era HUD,
+                        # camera presets, WebGL fallback, info-card surface
+src/
+  main.js               # boots renderer/camera/lights/OrbitControls + r160 assertion
+  ui.js                 # info cards, camera presets, reduced-motion, keyboard access
+  eras/
+    registry.js         # shared era registry: registerEra(id, module), switchTo(year)
+    placeholder.js      # temporary "UNDER CONSTRUCTION" era for the remaining years
+    1945/ 1965/ 1985/ 2005/ 2025/   # per-era interior modules
+  audio/
+    engine.js           # single WebAudio engine (crossfade, mute/volume, era beds)
+    eras/               # per-era synthesized period-styled music profiles
+    sfx/                # procedural ambient SFX
+  world/
+    shell.js            # permanent café shell: floor/walls/ceiling, windows, door,
+                        # counter run, kitchen passthrough, interior light rig
+    animation/
+      timelapse.js      # era transition controller (choreographed ~2.5s)
+      audio.js          # adapter from the timelapse to the single audio engine
+    render.js           # cross-era render policy (ACESFilmic, shadow map, budget)
+public/js/three/        # three.js r160 module build (pinned, committed)
+scripts/
+  check.js              # `npm run check` implementation
+  serve.mjs             # `npm start` zero-dependency Node static server
+```
+
+> The pinned `public/js/three/build/three.module.js` is committed (not ignored)
+> so a fresh clone boots without a network fetch.

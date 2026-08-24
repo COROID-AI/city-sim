@@ -32,4 +32,4 @@ temp/
 ._*
 __MACOSX/
 # Local three.js vendor tree is intentionally committed (pinned r160 ES module build)
-# — do not ignore public/js/three.
+# — do not ignore public/js/three.!public/js/three/build/

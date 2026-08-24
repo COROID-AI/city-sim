@@ -194,23 +194,21 @@
         pointer-events: none;
         white-space: nowrap;
       }
-      /* Audio controls — mute + volume for the ambient soundscape. */
-      #audio-panel {
+      /* Camera preset buttons. */
+      #cam-presets {
         position: fixed;
         right: 16px;
         top: 64px;
         z-index: 20;
         display: flex;
-        align-items: center;
-        gap: 8px;
+        flex-wrap: wrap;
+        gap: 6px;
         padding: 8px 10px;
         background: var(--panel);
         border: 1px solid var(--panel-border);
         border-radius: 8px;
-        font-size: 12px;
-        color: var(--muted);
       }
-      #audio-panel .mute-btn {
+      .preset-btn {
         border: 1px solid rgba(236, 197, 122, 0.35);
         border-radius: 6px;
         background: rgba(255, 255, 255, 0.04);
@@ -218,17 +216,52 @@
         font: inherit;
         font-size: 12px;
         line-height: 1;
-        padding: 4px 8px;
+        padding: 6px 8px;
         cursor: pointer;
       }
-      #audio-panel .mute-btn[aria-pressed="true"] {
-        background: var(--accent);
-        color: #241a0c;
+      .preset-btn:hover {
+        border-color: var(--accent);
       }
-      #audio-volume {
-        width: 90px;
-        accent-color: var(--accent);
-        cursor: pointer;
+      .preset-btn:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      #app canvas:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+      /* WebGL-unavailable fallback. */
+      #webgl-fallback {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(13, 20, 27, 0.96);
+        color: var(--ink);
+        text-align: center;
+        padding: 24px;
+      }
+      #webgl-fallback[hidden] {
+        display: none;
+      }
+      #webgl-fallback .box {
+        max-width: 480px;
+        padding: 24px 28px;
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        border-radius: 10px;
+      }
+      #webgl-fallback h2 {
+        margin: 0 0 8px;
+        color: var(--accent);
+        font-size: 20px;
+      }
+      #webgl-fallback p {
+        margin: 0;
+        line-height: 1.5;
+        color: var(--muted);
       }
       @media (max-width: 720px) {
         #topbar {
@@ -241,7 +274,7 @@
         #hint {
           display: none;
         }
-        #audio-panel {
+        #cam-presets {
           top: auto;
           bottom: 56px;
         }
@@ -309,24 +342,16 @@
     <div id="version"></div>
     <div id="hint">Drag to orbit · scroll to zoom · right-drag to pan</div>
 
-    <div id="audio-panel" role="group" aria-label="Sound controls">
-      <button
-        type="button"
-        class="mute-btn"
-        id="audio-mute"
-        aria-pressed="false"
-        title="Mute ambient sound and music"
-      >Mute</button>
-      <label for="audio-volume">Vol</label>
-      <input
-        type="range"
-        id="audio-volume"
-        min="0"
-        max="1"
-        step="0.05"
-        value="0.8"
-        aria-label="Sound volume"
-      />
+    <div id="cam-presets" role="group" aria-label="Camera presets"></div>
+
+    <div id="webgl-fallback" hidden>
+      <div class="box">
+        <h2>WebGL is unavailable</h2>
+        <p>
+          This café timelapse needs WebGL to render its 3D scene. Please enable
+          hardware acceleration (or WebGL) in your browser and reload the page.
+        </p>
+      </div>
     </div>
 
     <script type="module" src="./src/main.js"></script>

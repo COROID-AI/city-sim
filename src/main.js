@@ -16,6 +16,7 @@ import { registerAllPlaceholderEras } from './eras/placeholder.js';
 import { setAudioMuted, setAudioVolume, isAudioMuted, getAudioVolume } from './world/animation/audio.js';
 import { audioEngine } from './audio/engine.js';
 import { applyRenderPipeline, reportPerformanceBudget } from './world/render.js';
+import { setupUI, updateUI, rebuildPresets, showWebGLFallback, applyReducedMotion } from './ui.js';
 
 // ---------------------------------------------------------------------------
 // r160 bundle verification
@@ -47,7 +48,14 @@ const audioVolume = document.getElementById('audio-volume');
 // ---------------------------------------------------------------------------
 // Renderer / scene / camera / controls / lights
 // ---------------------------------------------------------------------------
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+} catch (err) {
+  console.warn('[cafe] WebGL renderer could not be created:', err);
+  showWebGLFallback();
+  throw err;
+}
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
@@ -93,8 +101,8 @@ audioEngine.attach({ scene, camera });
 const unlockAudio = () => audioEngine.resume();
 document.addEventListener('pointerdown', unlockAudio, { once: true, passive: true });
 document.addEventListener('keydown', unlockAudio, { once: true });
-audioMute?.addEventListener('click', () => { audioEngine.resume(); audioMute.textContent = audioEngine.toggleMute() ? '🔇' : '🔊'; });
-audioVolume?.addEventListener('input', () => { audioEngine.resume(); audioEngine.setVolume(audioVolume.value); });
+// NOTE: mute/volume are wired once below (muteBtn/volumeSlider) so the two
+// handlers never fight over the same engine state.
 
 const ctx = {
   THREE,
@@ -127,7 +135,7 @@ if (volumeSlider) volumeSlider.value = String(getAudioVolume());
 muteBtn?.addEventListener('click', () => {
   const muted = setAudioMuted(!isAudioMuted());
   muteBtn.setAttribute('aria-pressed', muted ? 'true' : 'false');
-  muteBtn.textContent = muted ? 'Unmute' : 'Mute';
+  muteBtn.textContent = muted ? '🔇' : '🔊';
 });
 volumeSlider?.addEventListener('input', () => {
   setAudioVolume(Number(volumeSlider.value));
@@ -136,7 +144,10 @@ volumeSlider?.addEventListener('input', () => {
 function applyYear(year) {
   if (!ERA_YEARS.includes(year)) return;
   switchTo(year, ctx);
-  audioEngine.switchEra(year);
+  // The timelapse controller already drove the era audio via the adapter
+  // (transitionTo → audio.setEra). Only drive it here at boot / when the
+  // engine has not yet seen this year, so the crossfade is never restarted.
+  if (audioEngine.currentEra !== year) audioEngine.switchEra(year);
   const idx = ERA_YEARS.indexOf(year);
   slider.value = String(idx);
   slider.setAttribute('aria-valuetext', String(year));
@@ -151,6 +162,7 @@ function applyYear(year) {
     statusEl.textContent = era.hudText || era.label || String(year);
   }
   document.title = `Café — ${year}`;
+  rebuildPresets(ctx);
   console.info(`[cafe] era switched to ${year} (${getActiveYear()})`);
 }
 
@@ -192,8 +204,11 @@ function frame() {
     frame._fpsSamples.push(1000 / Math.max(0.1, now - frame._last));
   }
   frame._last = now;
+  const delta = Math.min(0.1, (now - (frame._prevNow || now)) / 1000);
+  frame._prevNow = now;
   controls.update();
   constrainView();
+  updateUI(ctx, delta);
   audioEngine.update();
   renderer.render(scene, camera);
 
@@ -223,4 +238,6 @@ window.addEventListener('resize', () => {
 // Boot-time HUD
 // ---------------------------------------------------------------------------
 versionEl.textContent = `three.js r${THREE.REVISION} · ES module build`;
+applyReducedMotion();
+setupUI(ctx);
 applyYear(2025);
