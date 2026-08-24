@@ -7,6 +7,8 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { USDZExporter } from 'three/examples/jsm/exporters/USDZExporter.js';
 
 // Scene globals
 let renderer, scene, camera, ambientLight, directionalLight;
@@ -637,7 +639,7 @@ function addCaféGeometry() {
   const posterGeometry = new THREE.PlaneGeometry(1.5, 2);
   const posterMaterial = new THREE.MeshStandardMaterial({ color: 0x2D2D34, transparent: true, opacity: 0.95 });
 
-  // Poster 1: Sustainability & Coffee Culture
+  // Poster 1: Sustainability & Coffee Culture - 1945 style poster 1965 style poster 1985 style poster 2005 style poster
   const poster1 = new THREE.Mesh(posterGeometry, posterMaterial);
   poster1.position.set(0, 1.5, -4.9);
   poster1.rotation.y = Math.PI / 2;
