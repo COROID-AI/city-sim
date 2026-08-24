@@ -52,6 +52,25 @@ export const era2025 = {
   year: 2025,
   hudText: 'Contemporary Café',
   assets: [],
+  metadata: {
+    tint: '#4fc3f7',
+    caption: { name: 'Contemporary Café', vibe: 'Oat-milk flat whites, QR orders, and contactless taps' },
+    inspectables: [
+      { id: 'machine', name: 'Multi-boiler Espresso Machine', object: 'espresso-machine', story: 'Multi-boiler machine — 2025: touchscreen pressure and flow readouts' },
+      { id: 'pos', name: 'iPad POS & Reader', object: 'ipad-pos', story: 'Tap-to-pay reader — 2025: contactless in under a second' },
+      { id: 'speaker', name: 'Smart Speaker', object: 'smart-speaker', story: 'Smart speaker — 2025: the playlist streams from the cloud' },
+      { id: 'brewer', name: 'Batch Brewer', object: 'batch-brewer', story: 'Batch brewer — 2025: a carafe keeps pour-over-adjacent coffee flowing' },
+      { id: 'menu', name: 'Minimal Menu Board', object: 'menu-board', story: 'Menu board — 2025: a flat white $4.50, oat milk +50¢' },
+    ],
+    presets: [
+      { id: 'counter', name: 'Counter & Machine', position: [-3.1, 1.4, 2.2], target: [-2.9, 1.1, 0.6] },
+      { id: 'menu', name: 'Menu Board', position: [-0.3, 1.6, 2.2], target: [-1.0, 1.3, -2.0] },
+      { id: 'music', name: 'Smart Speaker', position: [-3.2, 1.3, 2.1], target: [-3.3, 1.1, -0.8] },
+      { id: 'seating', name: 'Seating Area', position: [0.8, 1.5, 2.2], target: [0.2, 0.9, 0.2] },
+      { id: 'posters', name: 'Posters & Plants', position: [1.0, 1.6, 2.2], target: [0.6, 1.2, -2.0] },
+    ],
+    overview: { position: [3.1, 1.9, 2.3], target: [0, 1.05, -0.3] },
+  },
   build(ctx) {
     const group = new THREE.Group();
     group.name = 'era-2025';

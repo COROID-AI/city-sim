@@ -182,6 +182,25 @@ function makeLights(group) {
 export const era1945 = {
   id: 'postwar-1945', label: '1945 · Post-war Café', year: 1945,
   hudText: 'POST-WAR CAFÉ · WARM TUNGSTEN', assets: [],
+  metadata: {
+    tint: '#e8a64c',
+    caption: { name: 'Post-war Café', vibe: 'Warm tungsten, rationed coffee, big-band radio' },
+    inspectables: [
+      { id: 'cash-register', name: 'Hand-crank Cash Register', object: 'hand-crank cash register', story: 'Hand-crank cash register — 1945: no electricity, prices rung by hand' },
+      { id: 'espresso', name: 'Lever Espresso Machine', object: 'tall manual lever espresso machine', story: 'Lever espresso machine — 1945: steam pressure and a handle pulled by muscle' },
+      { id: 'grinder', name: 'Wall Coffee Grinder', object: 'large wall-mounted coffee grinder', story: 'Wall grinder — 1945: beans cranked fresh by hand each morning' },
+      { id: 'radio', name: 'Valve Wireless Radio', object: 'wooden valve wireless set', story: 'Valve radio — 1945: the café tunes the news and big-band on AM' },
+      { id: 'table', name: 'Heavy Oak Table', object: 'heavy dark oak table', story: 'Oak table — 1945: heavy and sturdy, built to outlast the war' },
+    ],
+    presets: [
+      { id: 'counter', name: 'Counter & Machine', position: [-3.1, 1.5, 2.2], target: [-2.9, 1.1, 0.4] },
+      { id: 'menu', name: 'Menu & Posters', position: [0.4, 1.6, 2.2], target: [0.0, 1.3, -2.0] },
+      { id: 'music', name: 'Valve Radio', position: [-3.0, 1.4, 2.1], target: [-3.2, 1.5, 1.5] },
+      { id: 'seating', name: 'Seating Area', position: [0.0, 1.6, 2.2], target: [0.0, 0.9, 0.2] },
+      { id: 'posters', name: 'Wall Posters', position: [1.4, 1.6, 2.2], target: [0.8, 1.2, -2.0] },
+    ],
+    overview: { position: [3.1, 1.9, 2.3], target: [0, 1.05, -0.3] },
+  },
   build(ctx) {
     const group = new THREE.Group(); group.name = 'postwar-cafe-interior';
     makeFloor(group); makeCounter(group); makeWallDress(group);

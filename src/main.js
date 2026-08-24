@@ -16,6 +16,12 @@ import { registerAllPlaceholderEras } from './eras/placeholder.js';
 import { setAudioMuted, setAudioVolume, isAudioMuted, getAudioVolume } from './world/animation/audio.js';
 import { audioEngine } from './audio/engine.js';
 import { applyRenderPipeline, reportPerformanceBudget } from './world/render.js';
+import { timelapse } from './world/animation/timelapse.js';
+import { createTimeline } from './ui/timeline.js';
+import { createInspection } from './ui/inspection.js';
+import { createCameraFlight } from './ui/cameraFlight.js';
+import { createExploreMenu } from './ui/exploreMenu.js';
+import { createInfoCard } from './ui/infoCard.js';
 
 // ---------------------------------------------------------------------------
 // r160 bundle verification
@@ -38,7 +44,16 @@ console.info(
 // ---------------------------------------------------------------------------
 const app = document.getElementById('app');
 const slider = document.getElementById('timeline-slider');
+const eraRail = document.getElementById('era-rail');
+const eraCaption = document.getElementById('era-caption');
 const yearButtons = Array.from(document.querySelectorAll('#timeline-years .year-btn'));
+const exploreToggle = document.getElementById('explore-toggle');
+const exploreMenu = document.getElementById('explore-menu');
+const infoCardEl = document.getElementById('info-card');
+const infoCloseEl = document.getElementById('info-close');
+const infoNameEl = document.getElementById('info-name');
+const infoStoryEl = document.getElementById('info-story');
+const infoEraEl = document.getElementById('info-era');
 const chipYear = document.querySelector('#era-chip .year');
 const versionEl = document.getElementById('version');
 const audioMute = document.getElementById('audio-mute');
@@ -150,6 +165,9 @@ function applyYear(year) {
   if (statusEl && era) {
     statusEl.textContent = era.hudText || era.label || String(year);
   }
+  infoCard?.close();
+  inspection?.reset();
+  timeline?.sync();
   document.title = `Café — ${year}`;
   console.info(`[cafe] era switched to ${year} (${getActiveYear()})`);
 }
@@ -159,6 +177,36 @@ slider.addEventListener('input', () => {
 });
 yearButtons.forEach((btn) => {
   btn.addEventListener('click', () => applyYear(Number(btn.dataset.year)));
+});
+
+const isTransitioning = () => timelapse.active !== null;
+const cameraFlight = createCameraFlight(ctx);
+const infoCard = createInfoCard({
+  cardEl: document.getElementById('info-card'),
+  closeEl: document.getElementById('info-close'),
+  nameEl: document.getElementById('info-name'),
+  storyEl: document.getElementById('info-story'),
+  eraEl: document.getElementById('info-era'),
+  getActiveEra,
+});
+const inspection = createInspection(ctx, {
+  getActiveEra,
+  isTransitioning,
+  onInspect: (card) => infoCard.open(card),
+});
+createExploreMenu({
+  toggleEl: document.getElementById('explore-toggle'),
+  menuEl: document.getElementById('explore-menu'),
+  getActiveEra,
+  onFlyTo: (preset) => cameraFlight.flyTo(preset),
+  onOverview: (overview) => cameraFlight.flyTo(overview),
+});
+const timeline = createTimeline({
+  sliderEl: slider,
+  railEl: document.getElementById('era-rail'),
+  captionEl: document.getElementById('era-caption'),
+  getActiveEra,
+  onSelect: applyYear,
 });
 
 // ---------------------------------------------------------------------------
@@ -187,12 +235,14 @@ function constrainView() {
 function frame() {
   requestAnimationFrame(frame);
   const now = performance.now();
+  const delta = frame._last !== undefined ? Math.min(0.1, (now - frame._last) / 1000) : 0;
   if (frame._last !== undefined) {
     if (!frame._fpsSamples) frame._fpsSamples = [];
     frame._fpsSamples.push(1000 / Math.max(0.1, now - frame._last));
   }
   frame._last = now;
-  controls.update();
+  const flying = cameraFlight.update(delta);
+  if (!flying) controls.update();
   constrainView();
   audioEngine.update();
   renderer.render(scene, camera);

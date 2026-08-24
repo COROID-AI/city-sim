@@ -87,6 +87,49 @@ function decor(g) { wallSign(g, 'FREE\nWi-Fi', [2.75, 2.02, -2.46], [0.58, 0.56]
 
 function lights(g) { for (const [x, z] of [[-1.4, -0.3], [0.2, 1.2], [2.2, 0]]) { cyl(g, 0.015, 0.55, [x, 2.7, z], mat('pendant cord', 0x292929), 'pendant cord', 8); sphere(g, 0.09, [x, 2.4, z], mat('exposed warm bulb', 0xffc777, { emissive: 0xff9d4d, emissiveIntensity: 2 }), 'exposed bulb pendant'); const l = new THREE.PointLight(0xffbd7d, 3, 6); l.position.set(x, 2.38, z); g.add(l); } box(g, [3.6, 0.04, 0.05], [0.6, 2.72, -0.2], mat('halogen track', C.track, { metalness: 0.7 }), 'halogen track light'); for (let x = -0.8; x < 2.3; x += 0.75) cyl(g, 0.04, 0.12, [x, 2.65, -0.2], mat('halogen lamp', 0xffd9a0, { emissive: 0xffba6a, emissiveIntensity: 1.4 }), 'halogen spot', 10).rotation.z = Math.PI / 2; }
 
-export const era2005 = { id: 'year-2005', label: '2005', year: 2005, hudText: 'Early Wi-Fi Café', assets: [], build() { const g = new THREE.Group(); g.name = 'era-2005-early-wifi-cafe'; box(g, [6.8, 0.02, 4.7], [0, 0.03, 0], mat('warm neutral floor', 0x80664d), 'warm neutral floor'); coffeeCounter(g); iPodDock(g); menu(g); decor(g); lights(g); banquette(g); table(g, -0.8, -0.65); table(g, 1.0, 0.65); person(g, -0.25, -0.15, C.orange, C.hair, 'flip phone'); person(g, 0.75, 0.72, 0x6f8b91, 0x191919, 'laptop'); person(g, 1.75, 0.5, C.teal, 0x7c4f31, 'camera'); person(g, 1.55, -1.2, 0x8e5f77, 0x242424, 'earbuds'); person(g, -0.2, 1.65, 0x5c6d9b, 0x352014, 'earbuds'); g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); return g; }, enter() {}, exit() {} };
+export const era2005 = {
+  id: 'year-2005', label: '2005', year: 2005, hudText: 'Early Wi-Fi Café', assets: [],
+  metadata: {
+    tint: '#d77a42',
+    caption: { name: 'Early Wi-Fi Café', vibe: 'Free Wi-Fi, iPods on docks, and a card swipe reader' },
+    inspectables: [
+      { id: 'espresso', name: 'E61 Espresso Machine', object: 'semi-automatic stainless E61 espresso machine', story: 'E61 espresso machine — 2005: semi-automatic, PID temperature, still steel' },
+      { id: 'pos', name: 'Touchscreen POS', object: 'touchscreen POS with card swipe reader', story: 'Touchscreen POS — 2005: card swipes and a $4.25 sale on the readout' },
+      { id: 'ipod', name: 'iPod Speaker Dock', object: 'white click-wheel iPod in speaker dock with CDs for sale', story: 'iPod dock — 2005: a click wheel spins the café playlist, CDs for sale' },
+      { id: 'wifi', name: 'Free Wi-Fi Sign', object: 'FREE', story: 'Free Wi-Fi — 2005: the café is suddenly a place to bring your laptop' },
+      { id: 'menu', name: 'The Daily Grind Menu', object: 'painted menu wall', story: 'Menu board — 2005: tall, grande and venti, fair trade and organic' },
+    ],
+    presets: [
+      { id: 'counter', name: 'Counter & Machine', position: [-3.1, 1.4, 2.2], target: [-2.9, 1.1, 0.4] },
+      { id: 'menu', name: 'Menu & Wi-Fi', position: [0.2, 1.6, 2.2], target: [-0.4, 1.3, -2.0] },
+      { id: 'music', name: 'iPod Dock', position: [-3.2, 1.3, 2.1], target: [-3.2, 1.1, 1.7] },
+      { id: 'seating', name: 'Seating Area', position: [0.5, 1.5, 2.2], target: [0.2, 0.9, 0.4] },
+      { id: 'posters', name: 'Posters & Board', position: [1.4, 1.6, 2.2], target: [1.0, 1.2, 2.0] },
+    ],
+    overview: { position: [3.1, 1.9, 2.3], target: [0, 1.05, -0.3] },
+  },
+  build() {
+    const g = new THREE.Group();
+    g.name = 'era-2005-early-wifi-cafe';
+    box(g, [6.8, 0.02, 4.7], [0, 0.03, 0], mat('warm neutral floor', 0x80664d), 'warm neutral floor');
+    coffeeCounter(g);
+    iPodDock(g);
+    menu(g);
+    decor(g);
+    lights(g);
+    banquette(g);
+    table(g, -0.8, -0.65);
+    table(g, 1.0, 0.65);
+    person(g, -0.25, -0.15, C.orange, C.hair, 'flip phone');
+    person(g, 0.75, 0.72, 0x6f8b91, 0x191919, 'laptop');
+    person(g, 1.75, 0.5, C.teal, 0x7c4f31, 'camera');
+    person(g, 1.55, -1.2, 0x8e5f77, 0x242424, 'earbuds');
+    person(g, -0.2, 1.65, 0x5c6d9b, 0x352014, 'earbuds');
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    return g;
+  },
+  enter() {},
+  exit() {},
+};
 
 export default era2005;

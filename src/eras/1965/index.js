@@ -39,6 +39,25 @@ export const era1965 = {
   year: 1965,
   hudText: 'Mid-Century Espresso Bar',
   assets: [],
+  metadata: {
+    tint: '#e05a2e',
+    caption: { name: 'Mid-century Espresso Bar', vibe: 'Chrome, jukebox gold, and a nickel for the single' },
+    inspectables: [
+      { id: 'cash-register', name: 'Electric Cash Register', object: 'cash-register', story: 'Electric cash register — 1965: round keys and a printed receipt ring the sale' },
+      { id: 'espresso', name: 'Chrome Espresso Machine', object: 'espresso-machine', story: 'Chrome espresso machine — 1965: steam wands and glass-domed shots' },
+      { id: 'jukebox', name: 'Jukebox', object: 'jukebox', story: 'Jukebox — 1965: a nickel buys the single' },
+      { id: 'menu', name: 'Letterboard Menu', object: 'menu-board', story: 'Letterboard menu — 1965: espresso at 25¢, a sandwich and a shake' },
+      { id: 'neon', name: 'Neon OPEN Sign', object: 'neon-open', story: 'Neon sign — 1965: the café glows OPEN late into the night' },
+    ],
+    presets: [
+      { id: 'counter', name: 'Counter & Machine', position: [-3.1, 1.4, 2.2], target: [-2.9, 1.1, 0.6] },
+      { id: 'menu', name: 'Letterboard Menu', position: [-0.3, 1.6, 2.2], target: [-1.0, 1.3, -2.0] },
+      { id: 'music', name: 'Jukebox', position: [2.6, 1.0, 2.2], target: [2.9, 0.9, 0.2] },
+      { id: 'seating', name: 'Seating Area', position: [-0.4, 1.5, 2.2], target: [-0.2, 0.9, 0.2] },
+      { id: 'posters', name: 'Posters & Clock', position: [1.2, 1.6, 2.2], target: [0.8, 1.2, -2.0] },
+    ],
+    overview: { position: [3.1, 1.9, 2.3], target: [0, 1.05, -0.3] },
+  },
   build(ctx) {
     const group = new THREE.Group();
     group.name = 'era-1965';
