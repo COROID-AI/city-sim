@@ -64,6 +64,12 @@ const yearLabels = {
 
 let currentYear = 1945;
 
+// Scene state (used for acceptance criteria/debugging)
+const sceneState = { currentYear, activeEraYear: null, isInitialized: false };
+if (typeof window !== 'undefined') {
+  window.sceneState = sceneState;
+}
+
 function addLayerContent() {
   const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
   const materials = {
@@ -119,11 +125,12 @@ function fadeLayer(layer, visible) {
 
   if (visible) {
     // Use requestAnimationFrame for smooth fading instead of setInterval
+    layer.visible = true;
+
     fades.forEach(m => {
-      m.opacity = 1;
+      m.opacity = 0;
       m.transparent = true;
     });
-    layer.visible = true;
 
     const fadeIn = () => {
       let opacity = 0;
@@ -150,6 +157,9 @@ function fadeLayer(layer, visible) {
 // Handle year selection
 function handleYearSelect(year) {
   currentYear = year;
+  sceneState.currentYear = year;
+  sceneState.activeEraYear = year;
+  sceneState.isInitialized = true;
 
   // Visual: hide all, then show selected.
   Object.entries(yearLayers).forEach(([y, layer]) => {
@@ -494,7 +504,14 @@ function boot() {
   installYearButtonHandlers();
   armGestureOnce();
 
-  // Default year shown without requiring audio.
+  // Initialize audio so window.setEraMusic / playCoffeeMachineSFX exist immediately.
+  try {
+    initAudioSystem();
+    resumeAudioContextIfNeeded();
+  } catch (_) {
+    // Audio may be gesture-restricted in some browsers; visual flow still works.
+  }
+
   handleYearSelect(currentYear);
 }
 
