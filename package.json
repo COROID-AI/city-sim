@@ -1,0 +1,16 @@
+{
+  "name": "coroid-promo-30s",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Procedural 30-second cinematic promo video renderer for Coroid (coroid.ai). Renders 1920x1080@30fps with numpy + Pillow and encodes via ffmpeg.",
+  "scripts": {
+    "setup": "python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
+    "render": ".venv/bin/python promo/render.py",
+    "smoke": ".venv/bin/python scripts/smoke_render.py",
+    "verify": "node scripts/verify_output.js",
+    "test": ".venv/bin/python scripts/smoke_render.py && node scripts/verify_output.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}
