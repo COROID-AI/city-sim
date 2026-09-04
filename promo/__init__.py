@@ -1,0 +1,1 @@
+"""Coroid 30s promo renderer package."""
