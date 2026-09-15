@@ -1,0 +1,357 @@
+/**
+ * 2005 — paper cups, corrugated takeaway and printed sleeves.
+ *
+ * The takeaway decade: the table service is still stainless and the trays are
+ * melamine, but the drinks arrive in a printed paper cup wrapped in a sleeve, a
+ * corrugated cup goes out of the door in the same sleeve under a plastic lid,
+ * and disposable stirrer-spoons stand in a cup on the pass. Condiments, sugar
+ * and napkins are all printed disposables in a branded caddy. Smoking is still
+ * tolerated in the corner, so a smoked glass ashtray remains on the tables.
+ */
+
+import type { TablewareSpec } from '../TablewareModule';
+import { tablewareRecipe } from '../tablewareTextures';
+
+export const SPEC_2005: TablewareSpec = {
+  year: '2005',
+  label: '2005',
+  name: 'Printed paper and corrugated takeaway',
+  summary:
+    'A printed paper cup in a wrapped sleeve, a corrugated takeaway cup under a plastic lid, disposable stirrers, sachets in a branded caddy and a melamine tray.',
+  paletteName: 'Kraft brown and printed card',
+  materialSetId: 'material-set:2005-kraft-and-card',
+  tags: ['paper-cup', 'corrugated', 'sleeve', 'plastic-lid', 'stirrer', 'sachet', 'melamine'],
+  notes: [
+    'The paper cup, its printed sleeve and its plastic lid are the decade in one object, on the table and at the pass.',
+    'Corrugated cups are the second, cheaper takeaway line: kraft board with fluting that keeps fingers clear of the drink.',
+    'Stirrers are plastic and disposable, supplied in a cup on the counter and in the caddy on every table.',
+    'Condiments and sugar arrive as printed sachets; the tables are cleared into a melamine tray.',
+  ],
+  accentColor: '#8a6b3f',
+
+  vessels: {
+    cup: {
+      kind: 'paper-cup',
+      label: 'Printed paper cup in a sleeve',
+      bodySlot: 'paper',
+      trimSlot: 'paper',
+      printSlot: 'print',
+      mark: 'CAFE',
+      rimDiameter: 0.088,
+      baseDiameter: 0.058,
+      height: 0.125,
+      wall: 0.0016,
+      capacityMl: 400,
+      fillFraction: 0.82,
+      handle: 'none',
+      rest: 'none',
+      lid: 'none',
+      sleeve: 'printed-sleeve',
+      detail: 'Tapered paper body with a rolled rim, the house logo printed around it and a corrugated sleeve.',
+      note: 'A 355 ml paper cup in a printed sleeve: the sit-in cup of 2005 is the takeaway cup of 2025.',
+    },
+    espresso: null,
+    tumbler: null,
+    takeaway: {
+      kind: 'corrugated-cup',
+      label: 'Corrugated takeaway cup with a lid',
+      bodySlot: 'corrugated',
+      trimSlot: 'corrugated',
+      printSlot: null,
+      mark: null,
+      rimDiameter: 0.092,
+      baseDiameter: 0.062,
+      height: 0.132,
+      wall: 0.002,
+      capacityMl: 450,
+      fillFraction: 0.85,
+      handle: 'none',
+      rest: 'none',
+      lid: 'plastic-lid',
+      sleeve: 'printed-sleeve',
+      detail: 'Fluted kraft wall under a rolled rim, closed with a vacuum-formed plastic lid.',
+      note: 'The cup that leaves the shop: kraft corrugated board, a printed sleeve and a plastic sip lid.',
+    },
+    serveMl: 355,
+    note: 'A 355 ml cup for here and a 450 ml corrugated cup to go.',
+  },
+
+  tableService: {
+    cutlery: [
+      {
+        kind: 'knife',
+        label: 'Stamped stainless knife',
+        metalSlot: 'steel',
+        handleSlot: null,
+        length: 0.17,
+        polish: 'Bright stamped stainless',
+        note: 'Thin stamped knife, the cheapest stainless the decade could make.',
+      },
+      {
+        kind: 'fork',
+        label: 'Stamped stainless fork',
+        metalSlot: 'steel',
+        handleSlot: null,
+        length: 0.166,
+        polish: 'Bright stamped stainless',
+        note: 'Stamped four-tined fork with a plain pressed handle.',
+      },
+      {
+        kind: 'spoon',
+        label: 'Stamped stainless spoon',
+        metalSlot: 'steel',
+        handleSlot: null,
+        length: 0.16,
+        polish: 'Bright stamped stainless',
+        note: 'Stamped dessert spoon, thin enough to flex in the hand.',
+      },
+    ],
+    teaspoon: {
+      label: 'Disposable stirrer-spoon',
+      metalSlot: 'plastic',
+      handleSlot: null,
+      length: 0.132,
+      note: 'A moulded disposable stirrer with a spoon bowl, one per cup and a cupful at the pass.',
+    },
+    sugarBowl: {
+      style: 'branded-sachet-pot',
+      label: 'Branded sugar sachet pot',
+      bodySlot: 'plastic',
+      lidSlot: 'plastic',
+      fittingSlot: null,
+      fillFraction: 0.75,
+      capacityMl: 240,
+      note: 'A lidded pot of printed white, brown and sweetener sachets, restocked from a box under the till.',
+    },
+    creamer: {
+      style: 'single-serve-pots',
+      label: 'Tray of single-serve milk pots',
+      bodySlot: 'plastic',
+      trimSlot: 'chrome',
+      capacityMl: 30,
+      note: 'Two 15 ml milk pots in foil-lidded plastic on a small tray: no jug to wash.',
+    },
+    condimentCaddy: {
+      label: 'Printed sachet caddy',
+      traySlot: 'print',
+      bottleSlot: 'plastic',
+      capSlot: 'plastic',
+      bottles: 0,
+      sachets: true,
+      stirrers: 6,
+      note: 'A printed caddy of sauce sachets with a cupful of stirrers standing in its corner.',
+    },
+    napkinHolder: {
+      style: 'paper-dispenser',
+      label: 'Paper napkin dispenser',
+      holderSlot: 'chrome',
+      napkinSlot: 'napkin',
+      napkins: 30,
+      mark: 'CAFE',
+      note: 'Chromed dispenser holding printed paper napkins, wiped over at closing time.',
+    },
+    ashtray: {
+      style: 'smoked-glass',
+      label: 'Smoked glass ashtray',
+      slot: 'tintedGlass',
+      diameter: 0.084,
+      notches: 3,
+      note: 'Smoked glass ashtray on the corner tables, a year or two before the indoor ban.',
+    },
+    tray: {
+      style: 'melamine',
+      label: 'Melamine clearing tray',
+      slot: 'accent',
+      rimSlot: 'plastic',
+      width: 0.29,
+      depth: 0.2,
+      rimHeight: 0.013,
+      note: 'Melamine tray sized for four cups and their sleeves, stacked at the tray run.',
+    },
+    placement:
+      'A paper cup in its sleeve at each chair with a stirrer-spoon beside it, stamped cutlery to the left, and the caddy, sachet pot, milk pots, dispenser and ashtray down the middle.',
+  },
+
+  counterPass: {
+    stacks: [
+      {
+        kind: 'paper-cup-stack',
+        label: 'Stack of paper cups',
+        pieces: 5,
+        note: 'Five printed paper cups nested by the machine, sleeves within reach.',
+      },
+      {
+        kind: 'lid-stack',
+        label: 'Stack of plastic lids',
+        pieces: 6,
+        note: 'Six sip lids stacked beside the cups for the takeaway orders.',
+      },
+      {
+        kind: 'sleeve-stack',
+        label: 'Stack of printed sleeves',
+        pieces: 4,
+        note: 'Four corrugated sleeves stacked flat, ready to wrap a hot cup.',
+      },
+      {
+        kind: 'stirrer-cup',
+        label: 'Cup of disposable stirrers',
+        pieces: 8,
+        note: 'A cup of plastic stirrers standing at the machine.',
+      },
+      {
+        kind: 'tray-stack',
+        label: 'Stack of melamine trays',
+        pieces: 4,
+        note: 'Four clearing trays stacked at the tray run.',
+      },
+      {
+        kind: 'corrugated-cup-stack',
+        label: 'Stack of corrugated takeaway cups',
+        pieces: 4,
+        note: 'Four corrugated cups stacked for the takeaway queue.',
+      },
+    ],
+    arrangement:
+      'Paper cups, lids and sleeves on the tray run for the sit-in orders, stirrers and corrugated takeaway cups with the clearing trays on the handoff side.',
+  },
+
+  surfaces: {
+    china: tablewareRecipe('White china, kept for the trays', 'glaze', '#f1ecdf', '#bdb3a0', 0.34, 0.02, {
+      detail: '#ccc3b1',
+      highlight: '#fffcf5',
+      scale: 3,
+      side: 'double',
+    }),
+    chinaRim: tablewareRecipe('Kraft brown rim band', 'glaze', '#8a6b3f', '#634b2a', 0.3, 0.03, {
+      detail: '#47331b',
+      highlight: '#b89763',
+      scale: 3,
+      side: 'double',
+    }),
+    porcelain: tablewareRecipe('White porcelain', 'glaze', '#f7f3eb', '#c7beac', 0.2, 0.02, {
+      detail: '#d7cfbd',
+      highlight: '#ffffff',
+      scale: 2,
+      side: 'double',
+    }),
+    stoneware: tablewareRecipe('Matte stoneware', 'stoneware', '#a49d92', '#787269', 0.64, 0.04, {
+      detail: '#59544d',
+      highlight: '#ccc6ba',
+      scale: 5,
+      side: 'double',
+    }),
+    glass: tablewareRecipe('Thin clear glass', 'glass', '#e5ebe9', '#bcc4c2', 0.07, 0.02, {
+      detail: '#9fa6a4',
+      highlight: '#fdfefe',
+      scale: 3,
+      transparent: true,
+      opacity: 0.4,
+      side: 'double',
+    }),
+    tintedGlass: tablewareRecipe('Smoked glass', 'glass', '#8c8f92', '#666a6d', 0.08, 0.03, {
+      detail: '#52565a',
+      highlight: '#c9cdd0',
+      scale: 3,
+      transparent: true,
+      opacity: 0.55,
+      side: 'double',
+    }),
+    paper: tablewareRecipe('Poly-coated paper cup stock', 'paper', '#f6f1e6', '#8a6b3f', 0.8, 0, {
+      detail: '#c6bba4',
+      highlight: '#fffdf7',
+      scale: 4,
+      mark: 'CAFE',
+      side: 'double',
+    }),
+    corrugated: tablewareRecipe('Kraft corrugated wall', 'flute', '#c09a6c', '#87653f', 0.88, 0, {
+      detail: '#66502f',
+      highlight: '#dcbc93',
+      scale: 8,
+      side: 'double',
+    }),
+    sleeve: tablewareRecipe('Printed corrugated sleeve', 'card', '#f2ead9', '#8a6b3f', 0.76, 0, {
+      detail: '#b8a88a',
+      highlight: '#fffdf6',
+      scale: 4,
+      mark: 'CAFE',
+      side: 'double',
+    }),
+    plastic: tablewareRecipe('Vacuum-formed lid plastic', 'plastic', '#e8e6e0', '#b6b4ae', 0.4, 0.03, {
+      detail: '#9a988f',
+      highlight: '#fbfaf7',
+      scale: 5,
+      transparent: true,
+      opacity: 0.72,
+      side: 'double',
+    }),
+    steel: tablewareRecipe('Stamped stainless steel', 'steel', '#c4c6c5', '#8c8f8e', 0.34, 0.8, {
+      detail: '#6b6e6d',
+      highlight: '#f0f2f2',
+      scale: 5,
+    }),
+    plated: tablewareRecipe('Plated fittings', 'plated', '#d6d4cc', '#949189', 0.26, 0.86, {
+      detail: '#726f68',
+      highlight: '#faf9f6',
+      scale: 5,
+    }),
+    enamel: tablewareRecipe('Enamelled steel', 'enamel', '#ded8c7', '#2f2e2a', 0.3, 0.12, {
+      detail: '#8e887b',
+      highlight: '#fdfbf4',
+      scale: 3,
+      side: 'double',
+    }),
+    chrome: tablewareRecipe('Chromed dispenser', 'chrome', '#c5c8c7', '#7e8180', 0.18, 0.9, {
+      detail: '#606362',
+      highlight: '#f4f7f7',
+      scale: 4,
+    }),
+    bakelite: tablewareRecipe('Black moulded handle', 'bakelite', '#34312d', '#1b1916', 0.38, 0.06, {
+      detail: '#141210',
+      highlight: '#615c54',
+      scale: 4,
+    }),
+    wood: tablewareRecipe('Birch stirrer wood', 'wood', '#c9a878', '#9a7a4e', 0.72, 0.01, {
+      detail: '#785c38',
+      highlight: '#e6cea0',
+      scale: 6,
+    }),
+    napkin: tablewareRecipe('Printed paper napkin', 'weave', '#f5efdf', '#cec4ae', 0.9, 0, {
+      detail: '#ada388',
+      highlight: '#fffdf6',
+      scale: 5,
+      side: 'double',
+    }),
+    print: tablewareRecipe('Branded sachet print', 'print', '#faf6ec', '#8a6b3f', 0.74, 0, {
+      detail: '#8b8071',
+      highlight: '#ffffff',
+      scale: 3,
+      mark: 'CAFE',
+      side: 'double',
+    }),
+    sugar: tablewareRecipe('Sugar sachet crystals', 'granular', '#faf6ed', '#d5cebd', 0.7, 0, {
+      detail: '#b8b09f',
+      highlight: '#ffffff',
+      scale: 6,
+    }),
+    condiment: tablewareRecipe('Tomato sauce sachet', 'sauce', '#9c2b24', '#c3543f', 0.32, 0.02, {
+      detail: '#6d1a16',
+      highlight: '#d98a76',
+      scale: 3,
+    }),
+    brew: tablewareRecipe('Filter coffee to the sleeve line', 'sauce', '#553318', '#84592b', 0.19, 0.02, {
+      detail: '#341d0c',
+      highlight: '#b07c47',
+      scale: 3,
+    }),
+    rubber: tablewareRecipe('Rubber grip band', 'rubber', '#464440', '#2c2b28', 0.76, 0.02, {
+      detail: '#222120',
+      highlight: '#716e68',
+      scale: 6,
+    }),
+    accent: tablewareRecipe('Kraft melamine tray', 'plastic', '#a8834f', '#7d5f35', 0.42, 0.04, {
+      detail: '#614a28',
+      highlight: '#cba874',
+      scale: 4,
+    }),
+  },
+};
