@@ -1,0 +1,345 @@
+/**
+ * 1965 — narrow-rim ceramics, demitasse sets and slim stainless.
+ *
+ * The espresso bar arrives: a narrow-rim ceramic cup with a fine coloured band,
+ * a matching demitasse set for the new short coffee, slim stainless cutlery with
+ * no ornament, a chromed condiment stand, a chrome napkin stand, an ashtray
+ * turned from stainless sheet and a stainless waitress tray. Sugar comes loose
+ * in an open bowl with its own spoon, and milk in a small ceramic jug.
+ */
+
+import type { TablewareSpec } from '../TablewareModule';
+import { tablewareRecipe } from '../tablewareTextures';
+
+export const SPEC_1965: TablewareSpec = {
+  year: '1965',
+  label: '1965',
+  name: 'Narrow-rim ceramic and demitasse',
+  summary:
+    'Narrow-rim ceramic cups with a fine teal band, a demitasse set for short coffee, slim stainless cutlery and a chromed condiment stand.',
+  paletteName: 'Turquoise band on white ceramic',
+  materialSetId: 'material-set:1965-turquoise-ceramic',
+  tags: ['narrow-rim', 'demitasse', 'stainless', 'chrome', 'formica', 'espresso'],
+  notes: [
+    'The narrow rim is the decade in one detail: a thinner, taller cup that keeps the coffee hotter.',
+    'Demitasse cups and their saucers arrive with the espresso machine, served at 70 ml.',
+    'Cutlery is slim, plain stainless with no ornament at all — the antithesis of the plated 1945 service.',
+    'Sugar stands loose in an open bowl with its own spoon; milk arrives in a small jug, not a pot.',
+  ],
+  accentColor: '#1f6f6b',
+
+  vessels: {
+    cup: {
+      kind: 'narrow-rim-cup',
+      label: 'Narrow-rim ceramic cup',
+      bodySlot: 'porcelain',
+      trimSlot: 'chinaRim',
+      printSlot: null,
+      mark: null,
+      rimDiameter: 0.07,
+      baseDiameter: 0.046,
+      height: 0.058,
+      wall: 0.0038,
+      capacityMl: 170,
+      fillFraction: 0.78,
+      handle: 'small-loop',
+      rest: 'saucer',
+      lid: 'none',
+      sleeve: 'none',
+      detail: 'Thin flared wall, fine teal band under a narrow rim, slim loop handle.',
+      note: 'Poured close to the brim in a narrow-rim cup that keeps the coffee hot to the last mouthful.',
+    },
+    espresso: {
+      kind: 'demitasse-cup',
+      label: 'Demitasse with a teal rim',
+      bodySlot: 'porcelain',
+      trimSlot: 'accent',
+      printSlot: null,
+      mark: null,
+      rimDiameter: 0.058,
+      baseDiameter: 0.038,
+      height: 0.05,
+      wall: 0.0034,
+      capacityMl: 80,
+      fillFraction: 0.72,
+      handle: 'small-loop',
+      rest: 'saucer',
+      lid: 'none',
+      sleeve: 'none',
+      detail: 'Small conical body on a demitasse saucer with a teal hairline at the rim.',
+      note: 'The new short coffee, 70 ml in a demitasse whose saucer is barely wider than the cup.',
+    },
+    tumbler: null,
+    takeaway: null,
+    serveMl: 150,
+    note: 'A 150 ml coffee in the narrow-rim cup and a 70 ml demitasse for a short black.',
+  },
+
+  tableService: {
+    cutlery: [
+      {
+        kind: 'knife',
+        label: 'Slim stainless knife',
+        metalSlot: 'steel',
+        handleSlot: null,
+        length: 0.166,
+        polish: 'Matte brushed stainless',
+        note: 'Narrow stainless knife with a squared handle and no pattern.',
+      },
+      {
+        kind: 'fork',
+        label: 'Slim stainless fork',
+        metalSlot: 'steel',
+        handleSlot: null,
+        length: 0.162,
+        polish: 'Matte brushed stainless',
+        note: 'Slim four-tined fork, the prongs pressed from one sheet.',
+      },
+    ],
+    teaspoon: {
+      label: 'Slim stainless teaspoon',
+      metalSlot: 'steel',
+      handleSlot: null,
+      length: 0.125,
+      note: 'Short, thin teaspoon with a flat handle, tuned to the narrower saucer.',
+    },
+    sugarBowl: {
+      style: 'loose-in-ceramic',
+      label: 'Open sugar bowl with its own spoon',
+      bodySlot: 'porcelain',
+      lidSlot: null,
+      fittingSlot: 'steel',
+      fillFraction: 0.72,
+      capacityMl: 200,
+      note: 'Sugar is served loose and unrationed at last, with a stainless spoon lying across the bowl.',
+    },
+    creamer: {
+      style: 'ceramic-jug',
+      label: 'Ceramic cream jug',
+      bodySlot: 'porcelain',
+      trimSlot: 'accent',
+      capacityMl: 100,
+      note: 'Small ceramic jug with a pinched spout and a teal hairline around the rim.',
+    },
+    condimentCaddy: {
+      label: 'Chromed condiment stand',
+      traySlot: 'chrome',
+      bottleSlot: 'glass',
+      capSlot: 'chrome',
+      bottles: 3,
+      sachets: false,
+      stirrers: 0,
+      note: 'A chromed wire stand holding salt, pepper and a glass mustard pot with chromed lids.',
+    },
+    napkinHolder: {
+      style: 'chrome-stand',
+      label: 'Chrome napkin stand',
+      holderSlot: 'chrome',
+      napkinSlot: 'napkin',
+      napkins: 8,
+      mark: null,
+      note: 'Upright chromed stand with a spring rail clamping a block of paper napkins.',
+    },
+    ashtray: {
+      style: 'stainless',
+      label: 'Stainless ashtray',
+      slot: 'steel',
+      diameter: 0.082,
+      notches: 4,
+      note: 'Pressed stainless ashtray with four rests, kept polished enough to reflect the window.',
+    },
+    tray: {
+      style: 'stainless-waitress',
+      label: 'Stainless waitress tray',
+      slot: 'steel',
+      rimSlot: 'chrome',
+      width: 0.28,
+      depth: 0.19,
+      rimHeight: 0.012,
+      note: 'Oval stainless waitress tray with a rolled rim and a mirror polish.',
+    },
+    placement:
+      'A narrow-rim cup and saucer at each chair with the teaspoon on the saucer, a demitasse set at the top of the cover, slim cutlery to the left, and the chromed stand, sugar bowl, jug and ashtray down the middle.',
+  },
+
+  counterPass: {
+    stacks: [
+      {
+        kind: 'demitasse-stack',
+        label: 'Stack of five demitasse cups',
+        pieces: 5,
+        note: 'Five demitasse cups nested beside the new espresso machine.',
+      },
+      {
+        kind: 'cup-stack',
+        label: 'Stack of five narrow-rim cups',
+        pieces: 5,
+        note: 'Five narrow-rim cups stacked on the pass, handles turned the same way.',
+      },
+      {
+        kind: 'saucer-stack',
+        label: 'Stack of six saucers',
+        pieces: 6,
+        note: 'Six thin saucers stacked and covered with a cloth.',
+      },
+      {
+        kind: 'tray-stack',
+        label: 'Stack of stainless trays',
+        pieces: 2,
+        note: 'Two waitress trays stacked at the handoff, ready for the floor.',
+      },
+      {
+        kind: 'cutlery-caddy',
+        label: 'Stainless cutlery caddy',
+        pieces: 5,
+        note: 'A caddy of slim stainless spoons and forks beside the till.',
+      },
+      {
+        kind: 'napkin-stack',
+        label: 'Napkin stack',
+        pieces: 4,
+        note: 'Paper napkins stacked for the chromed stands.',
+      },
+    ],
+    arrangement:
+      'Cup and demitasse stacks either side of the grinder with saucers under a cloth, trays and the cutlery caddy on the handoff side.',
+  },
+
+  surfaces: {
+    china: tablewareRecipe('White hotel ware', 'glaze', '#f2efe6', '#bfb7a5', 0.32, 0.02, {
+      detail: '#cfc8b8',
+      highlight: '#fffdf7',
+      scale: 3,
+      side: 'double',
+    }),
+    chinaRim: tablewareRecipe('Fine teal hairline band', 'glaze', '#1f6f6b', '#124a48', 0.26, 0.03, {
+      detail: '#0e3836',
+      highlight: '#4fa8a2',
+      scale: 3,
+      side: 'double',
+    }),
+    porcelain: tablewareRecipe('Thin white porcelain', 'glaze', '#f8f6ee', '#c8c1ae', 0.18, 0.02, {
+      detail: '#d8d2c1',
+      highlight: '#ffffff',
+      scale: 2,
+      side: 'double',
+    }),
+    stoneware: tablewareRecipe('Grey matte stoneware', 'stoneware', '#a8a196', '#7c766c', 0.62, 0.03, {
+      detail: '#5f5a52',
+      highlight: '#cdc7bb',
+      scale: 5,
+      side: 'double',
+    }),
+    glass: tablewareRecipe('Clear soda glass', 'glass', '#e4ecea', '#bcc6c4', 0.06, 0.02, {
+      detail: '#9fa9a7',
+      highlight: '#fdfefe',
+      scale: 3,
+      transparent: true,
+      opacity: 0.42,
+      side: 'double',
+    }),
+    tintedGlass: tablewareRecipe('Smoked glassware tint', 'glass', '#9aa1a6', '#71787d', 0.07, 0.03, {
+      detail: '#5b6165',
+      highlight: '#d4dade',
+      scale: 3,
+      transparent: true,
+      opacity: 0.5,
+      side: 'double',
+    }),
+    paper: tablewareRecipe('Bleached paper napkin', 'paper', '#f6f3ea', '#8d8778', 0.88, 0, {
+      detail: '#cbc4b3',
+      highlight: '#fffdf6',
+      scale: 5,
+      mark: 'CAFE',
+      side: 'double',
+    }),
+    corrugated: tablewareRecipe('Pale corrugated board', 'flute', '#dccfae', '#ab9670', 0.9, 0, {
+      detail: '#8c7a58',
+      highlight: '#f2e8cd',
+      scale: 7,
+      side: 'double',
+    }),
+    sleeve: tablewareRecipe('Printed sleeve card', 'card', '#f2ede0', '#1f5d59', 0.78, 0, {
+      detail: '#b8ad95',
+      highlight: '#fffdf7',
+      scale: 4,
+      mark: 'CAFE',
+      side: 'double',
+    }),
+    plastic: tablewareRecipe('Ivory melamine', 'plastic', '#efe8d8', '#c3b9a3', 0.34, 0.02, {
+      detail: '#a79c86',
+      highlight: '#fffdf4',
+      scale: 4,
+    }),
+    steel: tablewareRecipe('Brushed stainless steel', 'steel', '#c2c4c3', '#8a8d8c', 0.28, 0.85, {
+      detail: '#6b6e6d',
+      highlight: '#f2f4f4',
+      scale: 5,
+    }),
+    plated: tablewareRecipe('Polished plated fittings', 'plated', '#dcdad2', '#9a978d', 0.22, 0.9, {
+      detail: '#78756c',
+      highlight: '#fcfbf8',
+      scale: 5,
+    }),
+    enamel: tablewareRecipe('Enamelled tray', 'enamel', '#e6e1d2', '#2e2d29', 0.3, 0.12, {
+      detail: '#938d80',
+      highlight: '#fffdf6',
+      scale: 3,
+      side: 'double',
+    }),
+    chrome: tablewareRecipe('Chromed wire stand', 'chrome', '#c9cccc', '#828584', 0.16, 0.94, {
+      detail: '#636665',
+      highlight: '#f6f9f9',
+      scale: 4,
+    }),
+    bakelite: tablewareRecipe('Black bakelite handle', 'bakelite', '#372f2a', '#1c1714', 0.38, 0.06, {
+      detail: '#15110f',
+      highlight: '#635749',
+      scale: 4,
+    }),
+    wood: tablewareRecipe('Teak caddy', 'wood', '#8d6a42', '#5d4126', 0.66, 0.02, {
+      detail: '#48311c',
+      highlight: '#b8935f',
+      scale: 5,
+    }),
+    napkin: tablewareRecipe('Crisp paper napkin', 'weave', '#f7f2e6', '#d2c9b6', 0.9, 0, {
+      detail: '#b3a993',
+      highlight: '#fffdf7',
+      scale: 5,
+      side: 'double',
+    }),
+    print: tablewareRecipe('Teal print on white card', 'print', '#fbf8f0', '#1f5d59', 0.84, 0, {
+      detail: '#8d877a',
+      highlight: '#ffffff',
+      scale: 3,
+      mark: 'CAFE',
+      side: 'double',
+    }),
+    sugar: tablewareRecipe('Loose white sugar', 'granular', '#fbf7ee', '#d6cfbe', 0.68, 0, {
+      detail: '#b9b1a0',
+      highlight: '#ffffff',
+      scale: 6,
+    }),
+    condiment: tablewareRecipe('Mustard', 'sauce', '#a07419', '#c99c33', 0.34, 0.02, {
+      detail: '#6d4d0e',
+      highlight: '#e0bf63',
+      scale: 3,
+    }),
+    brew: tablewareRecipe('Black coffee at the brim', 'sauce', '#4a2c14', '#7a4d24', 0.2, 0.02, {
+      detail: '#2d1a0b',
+      highlight: '#a97442',
+      scale: 3,
+    }),
+    rubber: tablewareRecipe('Rubber grip', 'rubber', '#3f4240', '#282a29', 0.78, 0.02, {
+      detail: '#1f2120',
+      highlight: '#6b6f6d',
+      scale: 6,
+    }),
+    accent: tablewareRecipe('Turquoise band and trim', 'glaze', '#2f8f88', '#1c5a56', 0.24, 0.06, {
+      detail: '#14413e',
+      highlight: '#6fc4bc',
+      scale: 3,
+      side: 'double',
+    }),
+  },
+};

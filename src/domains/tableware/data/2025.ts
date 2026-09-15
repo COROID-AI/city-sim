@@ -1,0 +1,357 @@
+/**
+ * 2025 — reusables, double-walled glass and lidded cups.
+ *
+ * The reduced-waste decade. A reusable cup with a silicone band and a reusable
+ * sip lid is the everyday table vessel, a double-walled glass keeps a cold brew
+ * cold, and a refillable lidded cup is what leaves the shop. Cutlery is stainless
+ * with timber handles that are washed rather than thrown away, sugar arrives in a
+ * glass jar with tongs, condiments stand in refillable glass bottles on a timber
+ * caddy, and there is no ashtray left anywhere: the café is smoke-free.
+ */
+
+import type { TablewareSpec } from '../TablewareModule';
+import { tablewareRecipe } from '../tablewareTextures';
+
+export const SPEC_2025: TablewareSpec = {
+  year: '2025',
+  label: '2025',
+  name: 'Reusable cup and double-walled glass',
+  summary:
+    'A reusable cup with a silicone band and reusable lid, a double-walled glass, stainless cutlery with timber handles and refillable condiments — no sachets, no lids to bin, no ashtrays.',
+  paletteName: 'Recycled green and natural timber',
+  materialSetId: 'material-set:2025-recycled-green',
+  tags: ['reusable', 'double-walled', 'reduced-waste', 'timber', 'refillable', 'smoke-free'],
+  notes: [
+    'Everything on the table is meant to be washed: a reusable cup with a band, a reusable lid and a glass, not paper.',
+    'The double-walled glass is the decade technique — two walls and an air gap in place of a disposable sleeve.',
+    'Condiments are refillable glass bottles on a timber caddy; the sachets and stirrers of 2005 are gone.',
+    'There is no ashtray on any table: the café has been smoke-free for a generation.',
+  ],
+  accentColor: '#4f7a5a',
+
+  vessels: {
+    cup: {
+      kind: 'reusable-cup',
+      label: 'Reusable cup with a silicone band',
+      bodySlot: 'accent',
+      trimSlot: 'rubber',
+      printSlot: 'print',
+      mark: 'CAFE',
+      rimDiameter: 0.09,
+      baseDiameter: 0.07,
+      height: 0.118,
+      wall: 0.0035,
+      capacityMl: 380,
+      fillFraction: 0.88,
+      handle: 'none',
+      rest: 'coaster',
+      lid: 'reusable-lid',
+      sleeve: 'silicone-band',
+      detail: 'Double-skinned moulded body, silicone grip band, printed logo and a screw-fit reusable lid.',
+      note: 'A 340 ml reusable cup, poured to the band: washed, stacked and refilled all day.',
+    },
+    espresso: null,
+    tumbler: {
+      kind: 'double-walled-glass',
+      label: 'Double-walled glass',
+      bodySlot: 'glass',
+      trimSlot: null,
+      printSlot: null,
+      mark: null,
+      rimDiameter: 0.076,
+      baseDiameter: 0.06,
+      height: 0.11,
+      wall: 0.0028,
+      capacityMl: 280,
+      fillFraction: 0.7,
+      handle: 'none',
+      rest: 'none',
+      lid: 'none',
+      sleeve: 'none',
+      detail: 'Two thin borosilicate walls with an air gap between them under a fused rim.',
+      note: 'Cold brew in a double-walled glass: the air gap does the sleeve’s job and stays on the table.',
+    },
+    takeaway: {
+      kind: 'lidded-cup',
+      label: 'Refillable lidded cup',
+      bodySlot: 'accent',
+      trimSlot: 'rubber',
+      printSlot: 'print',
+      mark: 'CAFE',
+      rimDiameter: 0.088,
+      baseDiameter: 0.068,
+      height: 0.13,
+      wall: 0.0032,
+      capacityMl: 420,
+      fillFraction: 0.85,
+      handle: 'none',
+      rest: 'none',
+      lid: 'reusable-lid',
+      sleeve: 'silicone-band',
+      detail: 'Refillable body, silicone grip and a clip-lock reusable lid with a sip spout.',
+      note: 'The cup that goes out and comes back: the café takes €0.30 off for a returned one.',
+    },
+    serveMl: 340,
+    note: 'A 340 ml reusable cup for here and a 420 ml refillable lidded cup to go.',
+  },
+
+  tableService: {
+    cutlery: [
+      {
+        kind: 'knife',
+        label: 'Stainless knife with a timber handle',
+        metalSlot: 'steel',
+        handleSlot: 'wood',
+        length: 0.17,
+        polish: 'Brushed stainless, oiled timber',
+        note: 'One-piece stainless blade riveted into a timber handle that is washed with the rest.',
+      },
+      {
+        kind: 'fork',
+        label: 'Stainless fork with a timber handle',
+        metalSlot: 'steel',
+        handleSlot: 'wood',
+        length: 0.166,
+        polish: 'Brushed stainless, oiled timber',
+        note: 'Four-tined fork with the same timber handle, binned only when it is worn out.',
+      },
+    ],
+    teaspoon: {
+      label: 'Stainless teaspoon with a timber handle',
+      metalSlot: 'steel',
+      handleSlot: 'wood',
+      length: 0.138,
+      note: 'A washed tablespoon in place of the disposable stirrer that 2005 left in every cup.',
+    },
+    sugarBowl: {
+      style: 'glass-jar-with-tongs',
+      label: 'Glass sugar jar with tongs',
+      bodySlot: 'glass',
+      lidSlot: 'wood',
+      fittingSlot: 'steel',
+      fillFraction: 0.66,
+      capacityMl: 250,
+      note: 'Loose sugar in a lidded glass jar with steel tongs: no sachets, no wrappers.',
+    },
+    creamer: {
+      style: 'glass-jug',
+      label: 'Glass milk jug',
+      bodySlot: 'glass',
+      trimSlot: 'wood',
+      capacityMl: 110,
+      note: 'Glass jug of milk, refilled from a returnable bottle kept in the back room.',
+    },
+    condimentCaddy: {
+      label: 'Refillable condiment caddy',
+      traySlot: 'wood',
+      bottleSlot: 'glass',
+      capSlot: 'wood',
+      bottles: 3,
+      sachets: false,
+      stirrers: 0,
+      note: 'A timber caddy of refillable glass sauce bottles, tops wiped between tables.',
+    },
+    napkinHolder: {
+      style: 'timber-stack',
+      label: 'Timber napkin stack',
+      holderSlot: 'wood',
+      napkinSlot: 'napkin',
+      napkins: 12,
+      mark: null,
+      note: 'Unbleached recycled-paper napkins stacked between two timber slats.',
+    },
+    ashtray: null,
+    tray: {
+      style: 'recycled-plastic',
+      label: 'Recycled plastic tray',
+      slot: 'accent',
+      rimSlot: 'rubber',
+      width: 0.28,
+      depth: 0.19,
+      rimHeight: 0.013,
+      note: 'A tray moulded from collected cup lids, with a rubber non-slip edge.',
+    },
+    placement:
+      'A reusable cup on its coaster at each chair with the tablespoon beside it, a double-walled glass at the outer cover, timber-handled cutlery to the left, and the jar, jug, caddy and napkin stack down the middle.',
+  },
+
+  counterPass: {
+    stacks: [
+      {
+        kind: 'reusable-cup-stack',
+        label: 'Stack of reusable cups',
+        pieces: 4,
+        note: 'Four reusable cups nested by the machine, lids washed and stacked beside them.',
+      },
+      {
+        kind: 'glass-rack',
+        label: 'Rack of double-walled glasses',
+        pieces: 4,
+        note: 'A timber rack of double-walled glasses drying mouth-down on the pass.',
+      },
+      {
+        kind: 'lid-stack',
+        label: 'Stack of reusable lids',
+        pieces: 6,
+        note: 'Six reusable lids stacked, dripping dry after the wash.',
+      },
+      {
+        kind: 'cutlery-caddy',
+        label: 'Timber cutlery caddy',
+        pieces: 6,
+        note: 'A timber caddy of washed teaspoons and forks for the tables.',
+      },
+      {
+        kind: 'tray-stack',
+        label: 'Stack of recycled trays',
+        pieces: 3,
+        note: 'Three recycled trays stacked at the tray run.',
+      },
+      {
+        kind: 'napkin-stack',
+        label: 'Napkin stack',
+        pieces: 6,
+        note: 'Recycled-paper napkins stacked for the table holders.',
+      },
+    ],
+    arrangement:
+      'Reusable cups, lids and the glass rack fill the tray run; the timber caddy, trays and napkin refills sit on the handoff side.',
+  },
+
+  surfaces: {
+    china: tablewareRecipe('Cream porcelain', 'glaze', '#f3efe4', '#bfb6a2', 0.32, 0.02, {
+      detail: '#cec6b3',
+      highlight: '#fffdf6',
+      scale: 3,
+      side: 'double',
+    }),
+    chinaRim: tablewareRecipe('Recycled green rim line', 'glaze', '#4f7a5a', '#365a41', 0.3, 0.03, {
+      detail: '#27412e',
+      highlight: '#84b291',
+      scale: 3,
+      side: 'double',
+    }),
+    porcelain: tablewareRecipe('Fine white porcelain', 'glaze', '#f8f5ee', '#c8c0ad', 0.18, 0.02, {
+      detail: '#d8d1bf',
+      highlight: '#ffffff',
+      scale: 2,
+      side: 'double',
+    }),
+    stoneware: tablewareRecipe('Speckled recycled stoneware', 'stoneware', '#b6ac9b', '#8b8272', 0.6, 0.05, {
+      detail: '#6a6255',
+      highlight: '#dcd4c4',
+      scale: 6,
+      side: 'double',
+    }),
+    glass: tablewareRecipe('Borosilicate double wall', 'glass', '#e8efec', '#c0c8c4', 0.05, 0.02, {
+      detail: '#a4aba7',
+      highlight: '#ffffff',
+      scale: 3,
+      transparent: true,
+      opacity: 0.34,
+      side: 'double',
+    }),
+    tintedGlass: tablewareRecipe('Cold brew in the glass', 'glass', '#8a5a34', '#613e22', 0.07, 0.03, {
+      detail: '#4a2e18',
+      highlight: '#c39a6d',
+      scale: 3,
+      transparent: true,
+      opacity: 0.52,
+      side: 'double',
+    }),
+    paper: tablewareRecipe('Recycled unbleached paper', 'paper', '#e6dcc8', '#7f6f52', 0.88, 0, {
+      detail: '#bcae93',
+      highlight: '#f7f1e3',
+      scale: 5,
+      mark: 'CAFE',
+      side: 'double',
+    }),
+    corrugated: tablewareRecipe('Recycled corrugated board', 'flute', '#c3a87e', '#8c7452', 0.9, 0, {
+      detail: '#6b583c',
+      highlight: '#dcc7a3',
+      scale: 8,
+      side: 'double',
+    }),
+    sleeve: tablewareRecipe('Recycled sleeve card', 'card', '#e9dfc9', '#4f7a5a', 0.78, 0, {
+      detail: '#b3a488',
+      highlight: '#f8f2e3',
+      scale: 4,
+      mark: 'CAFE',
+      side: 'double',
+    }),
+    plastic: tablewareRecipe('Recycled moulded plastic', 'plastic', '#cfd6cd', '#a3aaa1', 0.42, 0.03, {
+      detail: '#878e86',
+      highlight: '#eef3ed',
+      scale: 5,
+    }),
+    steel: tablewareRecipe('Brushed stainless steel', 'steel', '#c6c8c6', '#8e918f', 0.3, 0.84, {
+      detail: '#6d706e',
+      highlight: '#f2f4f3',
+      scale: 5,
+    }),
+    plated: tablewareRecipe('Plated bar fittings', 'plated', '#d8d6ce', '#96938b', 0.24, 0.88, {
+      detail: '#74716a',
+      highlight: '#fbfaf7',
+      scale: 5,
+    }),
+    enamel: tablewareRecipe('Enamelled steel', 'enamel', '#dfd9c9', '#302f2b', 0.3, 0.12, {
+      detail: '#8f8a7d',
+      highlight: '#fdfbf5',
+      scale: 3,
+      side: 'double',
+    }),
+    chrome: tablewareRecipe('Brushed chrome', 'chrome', '#c8cbc9', '#828583', 0.26, 0.88, {
+      detail: '#646765',
+      highlight: '#f5f8f7',
+      scale: 4,
+    }),
+    bakelite: tablewareRecipe('Dark composite handle', 'bakelite', '#3b3833', '#22201c', 0.44, 0.05, {
+      detail: '#181612',
+      highlight: '#66625a',
+      scale: 4,
+    }),
+    wood: tablewareRecipe('Oiled ash and bamboo', 'wood', '#c19a63', '#8e6c3f', 0.66, 0.02, {
+      detail: '#6c502c',
+      highlight: '#e0c99a',
+      scale: 5,
+    }),
+    napkin: tablewareRecipe('Recycled paper napkin', 'weave', '#e9e0cd', '#c3b89f', 0.92, 0, {
+      detail: '#a3987e',
+      highlight: '#f7f2e6',
+      scale: 5,
+      side: 'double',
+    }),
+    print: tablewareRecipe('Printed logo on recycled card', 'print', '#f2ecdd', '#3f6350', 0.76, 0, {
+      detail: '#837a68',
+      highlight: '#fdfaf2',
+      scale: 3,
+      mark: 'CAFE',
+      side: 'double',
+    }),
+    sugar: tablewareRecipe('Loose sugar in the jar', 'granular', '#f3ece0', '#cdc4b1', 0.7, 0, {
+      detail: '#aea595',
+      highlight: '#fdfaf3',
+      scale: 6,
+    }),
+    condiment: tablewareRecipe('Refillable brown sauce', 'sauce', '#5c3818', '#8b5c2c', 0.3, 0.02, {
+      detail: '#3b2210',
+      highlight: '#ad7c46',
+      scale: 3,
+    }),
+    brew: tablewareRecipe('Filter coffee to the band', 'sauce', '#583619', '#875c2d', 0.18, 0.02, {
+      detail: '#371f0d',
+      highlight: '#b4804a',
+      scale: 3,
+    }),
+    rubber: tablewareRecipe('Silicone grip band', 'rubber', '#3f6b4d', '#2b4a35', 0.7, 0.02, {
+      detail: '#203629',
+      highlight: '#77a884',
+      scale: 6,
+    }),
+    accent: tablewareRecipe('Recycled green cup body', 'plastic', '#5f8a67', '#456b4d', 0.46, 0.04, {
+      detail: '#33513a',
+      highlight: '#8fbb96',
+      scale: 4,
+    }),
+  },
+};
