@@ -36,6 +36,8 @@ import {
   DOMAIN_IDS,
   DOMAIN_REGISTRATIONS,
   PERIOD_REGISTRY,
+  PERIOD_REGISTRY_ID,
+  PERIOD_REGISTRY_INTERFACE,
   PERIOD_YEARS,
   EraRegistryError,
   assembleEraDefinitions,
@@ -157,6 +159,11 @@ describe('period registry lookup', () => {
     expect(() => domainSpec('1985', 'nope' as DomainId)).toThrow(/nope/);
   });
 
+  it('publishes the declared cafe-period-registry shared interface', () => {
+    expect(PERIOD_REGISTRY_INTERFACE).toBe('cafe-period-registry');
+    expect(PERIOD_REGISTRY_ID).toBe('cafe-period-registry');
+  });
+
   it('is plain frozen data, so importing the registry has no runtime side effects', () => {
     expect(Object.isFrozen(PERIOD_REGISTRY)).toBe(true);
     for (const year of YEAR_IDS) {
@@ -232,7 +239,10 @@ describe('registry assembly', () => {
 /* -------------------------------------------------------------------------- */
 
 describe('headless composition across the five eras', () => {
-  it('builds, applies and disposes all ten domain modules for every year', () => {
+  // Fifty module builds (five eras x ten domains) of procedural three.js
+  // geometry: real work, so the suite states its own budget instead of relying
+  // on vitest's 5 s default.
+  it('builds, applies and disposes all ten domain modules for every year', { timeout: 120_000 }, () => {
     for (const year of YEAR_IDS) {
       const kernel = headlessKernel();
       const period = resolvePeriod(year);

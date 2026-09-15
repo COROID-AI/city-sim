@@ -92,6 +92,25 @@ import {
 } from '../domains/music/MusicSourceModule';
 
 /* -------------------------------------------------------------------------- */
+/* Identity                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Stable identifier of the registry module, used by diagnostics and by the
+ * composition root when it reports which era source it bound.
+ */
+export const PERIOD_REGISTRY_ID = 'cafe-period-registry';
+
+/**
+ * Outline shared interface this module publishes (`cafe-period-registry`).
+ *
+ * Later consumers (the transition engine, the composition root) resolve eras
+ * through this module without reaching into a domain module directly; the
+ * constant names that contract so it can be asserted at the seam.
+ */
+export const PERIOD_REGISTRY_INTERFACE = 'cafe-period-registry';
+
+/* -------------------------------------------------------------------------- */
 /* Domains                                                                    */
 /* -------------------------------------------------------------------------- */
 
