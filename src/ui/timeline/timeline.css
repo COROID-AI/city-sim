@@ -1,0 +1,288 @@
+/**
+ * Timeline slider chrome — the authoring source for the styles the control
+ * injects inline.
+ *
+ * `TimelineSlider.ts` imports this file with `?raw` and appends it to the host
+ * document once, so the rules ship inside the bundle: the page never requests a
+ * stylesheet over the network, and the type is a plain system font stack (no
+ * `@font-face`, no `url(...)`, no icon font).
+ *
+ * Layout: a dark glass panel pinned to the top edge of the stage, readable over
+ * the 3D canvas in every era. Only the panel takes pointer input
+ * (`pointer-events: auto`); the surrounding frame stays transparent, so camera
+ * navigation above the room — and everywhere beneath the panel — keeps working.
+ */
+
+.cafe-timeline {
+  --cafe-timeline-ink: #f6eddd;
+  --cafe-timeline-muted: rgba(246, 237, 221, 0.68);
+  --cafe-timeline-faint: rgba(246, 237, 221, 0.42);
+  --cafe-timeline-accent: #f0b27a;
+  --cafe-timeline-surface: rgba(21, 15, 11, 0.86);
+  --cafe-timeline-border: rgba(246, 237, 221, 0.18);
+  --cafe-timeline-rail: rgba(246, 237, 221, 0.26);
+  --cafe-timeline-motion: 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  padding: 0 12px;
+  pointer-events: none;
+  color: var(--cafe-timeline-ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.2;
+  text-align: center;
+  -webkit-font-smoothing: antialiased;
+}
+
+.cafe-timeline__panel {
+  pointer-events: auto;
+  width: min(960px, 100%);
+  padding: 10px 20px 12px;
+  border: 1px solid var(--cafe-timeline-border);
+  border-top: none;
+  border-radius: 0 0 18px 18px;
+  background: linear-gradient(180deg, rgba(16, 11, 8, 0.94), var(--cafe-timeline-surface));
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.cafe-timeline__readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cafe-timeline__active-year {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+}
+
+.cafe-timeline__active-year-value {
+  font-size: 1.65rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  color: #fffdf8;
+}
+
+.cafe-timeline__active-year-caption {
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cafe-timeline-muted);
+}
+
+.cafe-timeline__hint {
+  /* Readable instruction copy: 14px, tight tracking (it is a sentence, not a label). */
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: var(--cafe-timeline-faint);
+  white-space: nowrap;
+}
+
+.cafe-timeline__track-area {
+  position: relative;
+  margin: 2px 56px 0;
+  height: 64px;
+}
+
+.cafe-timeline__rail {
+  position: absolute;
+  top: -6px;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  border-radius: 12px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.cafe-timeline[data-dragging="true"] .cafe-timeline__rail {
+  cursor: grabbing;
+}
+
+.cafe-timeline__track {
+  position: absolute;
+  top: 12px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--cafe-timeline-rail);
+}
+
+.cafe-timeline__progress {
+  position: absolute;
+  top: 12px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(240, 178, 122, 0.35), var(--cafe-timeline-accent));
+  /* Compositor-only animation: the fill scales, it never re-lays out. */
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform var(--cafe-timeline-motion);
+}
+
+.cafe-timeline__thumb {
+  position: absolute;
+  top: 12px;
+  left: 0;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border: 2px solid var(--cafe-timeline-accent);
+  border-radius: 50%;
+  background: #fff8ef;
+  box-shadow: 0 0 0 5px rgba(240, 178, 122, 0.18), 0 2px 8px rgba(0, 0, 0, 0.55);
+  transition: left var(--cafe-timeline-motion);
+}
+
+.cafe-timeline__stops {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cafe-timeline__tick {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+}
+
+.cafe-timeline__stop {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 3px 8px 5px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--cafe-timeline-muted);
+  font: inherit;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: color var(--cafe-timeline-motion), background var(--cafe-timeline-motion);
+}
+
+.cafe-timeline__stop:hover {
+  color: var(--cafe-timeline-ink);
+  background: rgba(246, 237, 221, 0.07);
+}
+
+.cafe-timeline__stop[data-active="true"] {
+  color: #fffdf8;
+}
+
+.cafe-timeline__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(246, 237, 221, 0.5);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.28);
+  transition:
+    background var(--cafe-timeline-motion),
+    transform var(--cafe-timeline-motion),
+    box-shadow var(--cafe-timeline-motion);
+}
+
+.cafe-timeline__stop[data-active="true"] .cafe-timeline__dot {
+  background: var(--cafe-timeline-accent);
+  transform: scale(1.35);
+  box-shadow: 0 0 0 4px rgba(240, 178, 122, 0.24);
+}
+
+.cafe-timeline__stop-label {
+  font-size: 0.98rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.cafe-timeline__stop-caption {
+  /* 11.5px: tick captions are functional labels, not decorative micro-copy. */
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(246, 237, 221, 0.45);
+  white-space: nowrap;
+}
+
+.cafe-timeline__stop:focus-visible,
+.cafe-timeline__rail:focus-visible {
+  outline: 2px solid var(--cafe-timeline-accent);
+}
+
+.cafe-timeline__stop:focus-visible {
+  outline-offset: 2px;
+}
+
+.cafe-timeline__rail:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The animation is decorative: with reduced motion the selection is instant. */
+.cafe-timeline[data-reduced-motion="true"] .cafe-timeline__thumb,
+.cafe-timeline[data-reduced-motion="true"] .cafe-timeline__progress,
+.cafe-timeline[data-reduced-motion="true"] .cafe-timeline__dot,
+.cafe-timeline[data-reduced-motion="true"] .cafe-timeline__stop {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cafe-timeline__thumb,
+  .cafe-timeline__progress,
+  .cafe-timeline__dot,
+  .cafe-timeline__stop {
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .cafe-timeline__panel {
+    padding: 8px 10px 10px;
+  }
+
+  .cafe-timeline__track-area {
+    margin: 2px 30px 0;
+  }
+
+  .cafe-timeline__hint {
+    display: none;
+  }
+
+  .cafe-timeline__stop-label {
+    font-size: 0.86rem;
+  }
+
+  .cafe-timeline__stop-caption {
+    max-width: 66px;
+    font-size: 11px;
+    letter-spacing: 0;
+    line-height: 1.15;
+    white-space: normal;
+  }
+
+  .cafe-timeline__active-year-value {
+    font-size: 1.3rem;
+  }
+}

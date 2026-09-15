@@ -11,6 +11,11 @@ import { defineConfig } from 'vitest/config';
  * Both projects are self contained (`extends: false`) so their `include`
  * patterns never merge with each other: the kernel/contracts suites must not be
  * re-run inside jsdom.
+ *
+ * The DOM project enables CSS processing so `src/ui/timeline/TimelineSlider.ts`
+ * can import `timeline.css?raw`: that source text is what the control injects
+ * inline, which keeps the browser and jsdom behaviour identical and costs the
+ * page no extra request.
  */
 export default defineConfig({
   test: {
@@ -36,6 +41,7 @@ export default defineConfig({
         test: {
           name: 'dom',
           environment: 'jsdom',
+          css: true,
           globals: false,
           restoreMocks: true,
           include: [
