@@ -1,0 +1,226 @@
+{
+  "generatedAt": "2026-09-15T10:46:49.272Z",
+  "records": [
+    {
+      "year": "1945",
+      "capturedAt": "2026-09-15T10:38:34.942Z",
+      "url": "http://localhost:5173/",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "settledYear": "1945",
+      "transitionStatus": "settled",
+      "headless": false,
+      "renderer": true,
+      "musicDeviceNodes": [
+        "music:1945:wireless-1945"
+      ],
+      "scene": {
+        "nodes": 1973,
+        "drawCalls": 2352,
+        "triangles": 150564,
+        "geometries": 1285,
+        "materials": 201,
+        "textures": 132
+      },
+      "files": {
+        "default": "default.png",
+        "closeup-menu": "closeup-menu.png",
+        "closeup-music": "closeup-music.png",
+        "closeup-counter": "closeup-counter.png"
+      },
+      "closeUps": [
+        {
+          "id": "anchor-menu-board",
+          "label": "menu board"
+        },
+        {
+          "id": "anchor-music-source",
+          "label": "music source"
+        },
+        {
+          "id": "anchor-service-counter",
+          "label": "service counter"
+        }
+      ]
+    },
+    {
+      "year": "1965",
+      "capturedAt": "2026-09-15T10:40:15.524Z",
+      "url": "http://localhost:5173/",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "settledYear": "1965",
+      "transitionStatus": "settled",
+      "headless": false,
+      "renderer": true,
+      "musicDeviceNodes": [
+        "music:1965:jukebox-1965"
+      ],
+      "scene": {
+        "nodes": 2112,
+        "drawCalls": 2464,
+        "triangles": 156170,
+        "geometries": 1417,
+        "materials": 193,
+        "textures": 131
+      },
+      "files": {
+        "default": "default.png",
+        "closeup-menu": "closeup-menu.png",
+        "closeup-music": "closeup-music.png",
+        "closeup-counter": "closeup-counter.png"
+      },
+      "closeUps": [
+        {
+          "id": "anchor-menu-board",
+          "label": "menu board"
+        },
+        {
+          "id": "anchor-music-source",
+          "label": "music source"
+        },
+        {
+          "id": "anchor-service-counter",
+          "label": "service counter"
+        }
+      ]
+    },
+    {
+      "year": "1985",
+      "capturedAt": "2026-09-15T10:41:52.187Z",
+      "url": "http://localhost:5173/",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "settledYear": "1985",
+      "transitionStatus": "settled",
+      "headless": false,
+      "renderer": true,
+      "musicDeviceNodes": [
+        "music:1985:boombox-1985"
+      ],
+      "scene": {
+        "nodes": 1997,
+        "drawCalls": 2361,
+        "triangles": 123290,
+        "geometries": 1258,
+        "materials": 197,
+        "textures": 130
+      },
+      "files": {
+        "default": "default.png",
+        "closeup-menu": "closeup-menu.png",
+        "closeup-music": "closeup-music.png",
+        "closeup-counter": "closeup-counter.png"
+      },
+      "closeUps": [
+        {
+          "id": "anchor-menu-board",
+          "label": "menu board"
+        },
+        {
+          "id": "anchor-music-source",
+          "label": "music source"
+        },
+        {
+          "id": "anchor-service-counter",
+          "label": "service counter"
+        }
+      ]
+    },
+    {
+      "year": "2005",
+      "capturedAt": "2026-09-15T10:44:08.052Z",
+      "url": "http://localhost:5173/",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "settledYear": "2005",
+      "transitionStatus": "settled",
+      "headless": false,
+      "renderer": true,
+      "musicDeviceNodes": [
+        "music:2005:ipod-dock-2005"
+      ],
+      "scene": {
+        "nodes": 1791,
+        "drawCalls": 2084,
+        "triangles": 106634,
+        "geometries": 1075,
+        "materials": 198,
+        "textures": 135
+      },
+      "files": {
+        "default": "default.png",
+        "closeup-menu": "closeup-menu.png",
+        "closeup-music": "closeup-music.png",
+        "closeup-counter": "closeup-counter.png"
+      },
+      "closeUps": [
+        {
+          "id": "anchor-menu-board",
+          "label": "menu board"
+        },
+        {
+          "id": "anchor-music-source",
+          "label": "music source"
+        },
+        {
+          "id": "anchor-service-counter",
+          "label": "service counter"
+        }
+      ]
+    },
+    {
+      "year": "2025",
+      "capturedAt": "2026-09-15T10:46:49.272Z",
+      "url": "http://localhost:5173/",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "settledYear": "2025",
+      "transitionStatus": "settled",
+      "headless": false,
+      "renderer": true,
+      "musicDeviceNodes": [
+        "music:2025:phone-speaker-2025"
+      ],
+      "scene": {
+        "nodes": 1899,
+        "drawCalls": 2381,
+        "triangles": 131308,
+        "geometries": 1156,
+        "materials": 197,
+        "textures": 131
+      },
+      "files": {
+        "default": "default.png",
+        "closeup-menu": "closeup-menu.png",
+        "closeup-music": "closeup-music.png",
+        "closeup-counter": "closeup-counter.png"
+      },
+      "closeUps": [
+        {
+          "id": "anchor-menu-board",
+          "label": "menu board"
+        },
+        {
+          "id": "anchor-music-source",
+          "label": "music source"
+        },
+        {
+          "id": "anchor-service-counter",
+          "label": "service counter"
+        }
+      ]
+    }
+  ],
+  "pageErrors": []
+}
