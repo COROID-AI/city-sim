@@ -34,9 +34,11 @@
  *    fixed delta schedule twice yields identical progress, ordering and end
  *    state.
  *  - **Interruptible** — a year selection issued mid-flight supersedes the
- *    pending choreography and re-plans from each module's current era and the
- *    current blend value, ending at the newly selected era with no orphaned or
- *    duplicated nodes.
+ *    pending choreography and re-plans from the state the scene has actually
+ *    reached: every module's current era and blend value, the lighting colour
+ *    and intensity the ramp had arrived at, and the framing the camera
+ *    micro-move was holding. It ends at the newly selected era with no orphaned
+ *    or duplicated nodes.
  *  - **Reduced motion** — `prefers-reduced-motion: reduce` (or an explicit
  *    option) resolves a selection to an immediate swap that still applies the
  *    full target period state and audio programme.
@@ -537,6 +539,18 @@ interface LightBaseline {
   readonly kind: string;
 }
 
+/**
+ * A light's live colour and intensity at the moment a plan captured them.
+ *
+ * A plan that supersedes an in-flight one ramps from these values rather than
+ * from the pre-transition {@link LightBaseline}, so an interrupted switch keeps
+ * the lighting it had reached instead of snapping back to the era it is leaving.
+ */
+interface LightOrigin {
+  readonly color: THREE.Color;
+  readonly intensity: number;
+}
+
 interface MaterialBaseline {
   readonly opacity: number;
   readonly transparent: boolean;
@@ -563,6 +577,10 @@ interface TransitionPlan {
   readonly captionAt: number;
   /** Palette-derived intensity tilt between the two eras (`1` disables it). */
   readonly exposure: number;
+  /** Live light values at plan creation: the start of this plan's colour/intensity ramp. */
+  readonly lightOrigins: ReadonlyMap<THREE.Light, LightOrigin>;
+  /** Camera offset the viewer held at plan creation, decayed across this plan's micro-move. */
+  readonly cameraCarry: THREE.Vector3;
   elapsed: number;
   audioApplied: boolean;
   audioSweepDone: boolean;
@@ -871,17 +889,22 @@ export function createPeriodTransition(options: PeriodTransitionOptions): Period
       const light = lights[index];
       if (light === undefined) continue;
       const baseline = ensureLightBaseline(light);
+      // A light a module re-created during its swap has no captured origin, so it
+      // ramps from the baseline the engine captured when it first saw it.
+      const origin = current.lightOrigins.get(light);
+      const fromColor = origin?.color ?? baseline.color;
+      const fromIntensity = origin?.intensity ?? baseline.intensity;
       const targetIntensity = targetIntensityFor(baseline, current, scratchRecipe);
       if (t >= current.lightingStart || final) {
-        light.color.copy(baseline.color).lerp(scratchRecipe, ramp);
-        light.intensity = lerp(baseline.intensity, targetIntensity, ramp);
+        light.color.copy(fromColor).lerp(scratchRecipe, ramp);
+        light.intensity = lerp(fromIntensity, targetIntensity, ramp);
       }
       views.push({
         id: `${light.name || light.type}#${index}`,
         kind: baseline.kind,
         color: toHex(light.color),
         intensity: light.intensity,
-        sourceIntensity: baseline.intensity,
+        sourceIntensity: fromIntensity,
         targetIntensity,
       });
     }
@@ -922,16 +945,27 @@ export function createPeriodTransition(options: PeriodTransitionOptions): Period
   function applyCamera(current: TransitionPlan, t: number): void {
     const baseline = ensureCameraBaseline();
     const amount = cameraMicroMove * cameraEnvelope(current, t);
-    if (amount <= 0) {
+    // Framing a superseded plan left behind decays across this plan's micro-move,
+    // so an interrupted switch keeps the view it held and settles back to the
+    // viewer's prior framing instead of snapping to it.
+    const recovery =
+      1 -
+      smoothstep(
+        clamp01((t - current.cameraStart) / Math.max(current.duration - current.cameraStart, 1e-6)),
+      );
+    const carryX = current.cameraCarry.x * recovery;
+    const carryY = current.cameraCarry.y * recovery;
+    const carryZ = current.cameraCarry.z * recovery;
+    if (amount <= 0 && carryX === 0 && carryY === 0 && carryZ === 0) {
       host.camera.position.copy(baseline);
       return;
     }
     host.camera.updateWorldMatrix(true, false);
     host.camera.getWorldDirection(scratchDirection);
     host.camera.position.set(
-      baseline.x + scratchDirection.x * amount,
-      baseline.y + scratchDirection.y * amount + amount * 0.35,
-      baseline.z + scratchDirection.z * amount,
+      baseline.x + carryX + scratchDirection.x * amount,
+      baseline.y + carryY + scratchDirection.y * amount + amount * 0.35,
+      baseline.z + carryZ + scratchDirection.z * amount,
     );
   }
 
@@ -1190,6 +1224,19 @@ export function createPeriodTransition(options: PeriodTransitionOptions): Period
       };
     });
 
+    // Capture the *live* lighting and framing into the new plan. Starting from
+    // the values the scene holds right now — rather than from the pre-transition
+    // baselines — is what makes an interrupted switch re-target from the current
+    // interpolated state instead of snapping back to the era it is leaving.
+    const lightOrigins = new Map<THREE.Light, LightOrigin>();
+    for (const light of collectLights()) {
+      lightOrigins.set(light, { color: light.color.clone(), intensity: light.intensity });
+    }
+    const cameraCarry =
+      cameraBaseline === null
+        ? new THREE.Vector3()
+        : host.camera.position.clone().sub(cameraBaseline);
+
     plan = {
       from,
       target,
@@ -1206,6 +1253,8 @@ export function createPeriodTransition(options: PeriodTransitionOptions): Period
       cameraPeak: captionAt,
       captionAt,
       exposure: computeExposure(targetPeriod, sourcePeriod),
+      lightOrigins,
+      cameraCarry,
       elapsed: 0,
       audioApplied: false,
       audioSweepDone: false,

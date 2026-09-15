@@ -32,6 +32,7 @@ import {
 } from '../contracts/period';
 import { createKernel, createManualFrameScheduler, type Kernel } from './kernel';
 import {
+  DEFAULT_CAMERA_MICRO_MOVE_METRES,
   PERIOD_TRANSITION_ID,
   createMusicEraAudioProvider,
   createPeriodTransition,
@@ -605,6 +606,64 @@ describe('period transition choreography', () => {
     await directCompletion;
     expect(directStubs.map((stub) => stub.applied)).toEqual([['1985'], ['1985'], ['1985']]);
     expect(kernel.world.children.length).toBe(directKernel.world.children.length);
+  });
+
+  it('re-targets the lighting ramp from the current interpolated state, not the source era', () => {
+    const kernel = headlessKernel();
+    const stubs = buildStubs(kernel);
+    const engine = harness(kernel, stubs);
+    const lamp = stubs[0]!.lamp;
+    const sourceIntensity = lamp.intensity;
+
+    void engine.requestYear('2025');
+    stepUntil(engine, () => engine.getSnapshot().progress >= 0.5);
+    const midpoint = lamp.intensity;
+    // The ramp really has travelled away from the era the scene is leaving.
+    expect(midpoint).toBeGreaterThan(sourceIntensity + 0.5);
+
+    // Re-target while the colour/intensity ramp is halfway through.
+    void engine.requestYear('1985');
+    const samples: number[] = [];
+    while (engine.isTransitioning) {
+      engine.update(STEP);
+      samples.push(lamp.intensity);
+    }
+
+    // The ramp resumes from where the interrupted plan left it: it never falls
+    // back to the level the 1945 recipe started from.
+    expect(samples.length).toBeGreaterThan(10);
+    expect(Math.min(...samples)).toBeGreaterThan((sourceIntensity + midpoint) / 2);
+    const view = engine.getSnapshot().lights.find((entry) => entry.kind === 'PointLight');
+    expect(view).toBeDefined();
+    expect(view!.sourceIntensity).toBeCloseTo(midpoint, 10);
+    expect(lamp.intensity).toBeCloseTo(view!.targetIntensity, 6);
+  });
+
+  it('carries the camera micro-move of an interrupted switch into the new framing', () => {
+    const kernel = headlessKernel();
+    const stubs = buildStubs(kernel);
+    const engine = harness(kernel, stubs);
+    const framing = kernel.camera.position.clone();
+
+    void engine.requestYear('2025');
+    stepUntil(engine, () => engine.getSnapshot().progress >= 0.8);
+    const held = kernel.camera.position.clone();
+    expect(held.distanceTo(framing)).toBeGreaterThan(0.01);
+
+    // Re-target while the micro-move is near its arrival peak.
+    void engine.requestYear('1985');
+    let previous = kernel.camera.position.clone();
+    let largestStep = 0;
+    while (engine.isTransitioning) {
+      engine.update(STEP);
+      largestStep = Math.max(largestStep, kernel.camera.position.distanceTo(previous));
+      previous = kernel.camera.position.clone();
+    }
+
+    // No frame jumps back to the prior framing mid-flight, and the arrival still
+    // settles on it exactly.
+    expect(largestStep).toBeLessThan(DEFAULT_CAMERA_MICRO_MOVE_METRES / 4);
+    expect(kernel.camera.position.distanceTo(framing)).toBe(0);
   });
 
   it('reduced motion resolves to an immediate swap that still applies the full target state', async () => {
