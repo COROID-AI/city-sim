@@ -917,6 +917,46 @@ describe('counter placement and the structural anchors', () => {
     }
     module.dispose();
   });
+
+  it('raises each era machine and accessory at the anchor it was planned on', () => {
+    const kernel = headlessKernel();
+    const module = createBrewingModule();
+    const counterY = STRUCTURAL_LAYOUT.counter.surfaceHeight;
+
+    for (const year of YEAR_IDS) {
+      applyYear(kernel, module, year);
+      module.root?.updateMatrixWorld(true);
+      const machine = module.machinePlan!;
+      const group = module.root?.getObjectByName(machine.id);
+      expect(group, `${year} machine node`).toBeDefined();
+      // The plan is not just data: the raised machine stands on the counter
+      // surface, centred on its bay instead of at the world origin.
+      expect(group!.position.x).toBeCloseTo(machine.position.x, 6);
+      expect(group!.position.y).toBeCloseTo(counterY, 6);
+      expect(group!.position.z).toBeCloseTo(machine.position.z, 6);
+      expect(group!.userData['machineId']).toBe(machine.id);
+
+      const box = new THREE.Box3().setFromObject(group!);
+      expect(box.min.y, `${year} machine floor`).toBeGreaterThan(counterY - 1e-6);
+      // ...and it really is machine sized: it reaches its own height.
+      expect(box.max.y - counterY).toBeGreaterThan(machine.dimensions.height * 0.8);
+      expect(box.max.y - counterY).toBeLessThan(machine.dimensions.height + 0.4);
+
+      for (const entry of module.accessoryPlan) {
+        const accessory = module.root?.getObjectByName(entry.id);
+        expect(accessory, `${entry.id} node`).toBeDefined();
+        expect(accessory!.position.x).toBeCloseTo(entry.position.x, 6);
+        expect(accessory!.position.y).toBeCloseTo(entry.position.y, 6);
+        expect(accessory!.position.z).toBeCloseTo(entry.position.z, 6);
+        expect(
+          new THREE.Box3().setFromObject(accessory!).min.y,
+          `${entry.id} rests on its anchor`,
+        ).toBeGreaterThan(entry.position.y - 0.01);
+      }
+    }
+
+    module.dispose();
+  });
 });
 
 /* -------------------------------------------------------------------------- */
