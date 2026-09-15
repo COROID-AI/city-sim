@@ -1,0 +1,28 @@
+{
+  "name": "cafe-timelapse",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Browser-based 3D cafe interior timelapse across the years 1945, 1965, 1985, 2005 and 2025.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "dependencies": {
+    "three": "^0.186.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "jsdom": "^30.0.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.0"
+  }
+}
