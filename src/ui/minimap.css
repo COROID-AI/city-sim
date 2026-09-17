@@ -1,0 +1,65 @@
+/* Styling for the city minimap: the compact overview canvas that always shows
+   the whole city plus the rectangle of the area the browser window is looking
+   at.
+
+   `src/ui/minimap.ts` owns the canvas' logical size (220x165 by default) and
+   sets it inline, so this sheet is about placement and chrome: the minimap sits
+   in the bottom-right corner of the app shell, above the city canvas and below
+   the HUD, and it must never scroll the page or select text while the user drags
+   the viewport rectangle around. */
+
+:root {
+  --minimap-gap: 0.75rem;
+  --minimap-panel: rgba(10, 16, 28, 0.72);
+  --minimap-border: rgba(232, 238, 251, 0.18);
+  --minimap-shadow: 0 0.5rem 1.5rem rgba(2, 6, 16, 0.45);
+  --minimap-radius: 0.5rem;
+}
+
+/* Overlay slot: a positioned box the canvas (or a caption) lives in. */
+.minimap {
+  position: absolute;
+  right: var(--minimap-gap);
+  bottom: var(--minimap-gap);
+  z-index: 2; /* above the city canvas, below the HUD bar */
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--minimap-border);
+  border-radius: var(--minimap-radius);
+  background: var(--minimap-panel);
+  box-shadow: var(--minimap-shadow);
+  pointer-events: auto;
+}
+
+/* The overview canvas. `touch-action: none` lets a pointer drag steer the
+   camera on touch devices instead of scrolling or pinch-zooming the page, and
+   `user-select: none` keeps a drag from selecting surrounding text. */
+.minimap__canvas {
+  display: block;
+  border-radius: calc(var(--minimap-radius) - 0.125rem);
+  background: #0a1120;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* While the user is steering: show the drag affordance and outline the frame. */
+.minimap__canvas:active {
+  cursor: grabbing;
+}
+
+.minimap__canvas:focus-visible {
+  outline: 2px solid rgba(248, 251, 255, 0.65);
+  outline-offset: 2px;
+}
+
+/* Optional caption hosts may add under the canvas (e.g. "220x165 · live"). */
+.minimap__label {
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(232, 238, 251, 0.62);
+}
