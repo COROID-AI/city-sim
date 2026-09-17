@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#04070f" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23040a12'/%3E%3Ccircle cx='16' cy='16' r='7' stroke='%2359ff9b' stroke-width='2.2' fill='none'/%3E%3C/svg%3E"
+    />
+    <title>Coroid — Lane Comets, Gate Rings &amp; Quality Constellation</title>
+    <meta
+      name="description"
+      content="Coroid dev preview: agent lane comets streaming dependency conduits, verification gate rings with pending, passed and failed-with-repair states, and the floating quality constellation."
+    />
+    <style>
+      /*
+       * Page-local chrome only. Canvas and the runtime HUD are styled by
+       * src/styles/base.css, which this page imports from its module.
+       */
+      #lane-view {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        background: radial-gradient(
+          circle at 50% 18%,
+          #0a1526 0%,
+          var(--coroid-deep) 45%,
+          var(--coroid-void) 100%
+        );
+      }
+
+      .lane-view__title {
+        position: absolute;
+        top: 0.9rem;
+        right: 1rem;
+        z-index: 2;
+        display: grid;
+        gap: 0.2rem;
+        justify-items: end;
+        text-align: right;
+        pointer-events: none;
+        user-select: none;
+      }
+
+      .lane-view__title strong {
+        font-size: 1.15rem;
+        font-weight: 400;
+        letter-spacing: 0.34em;
+        color: var(--coroid-ink);
+      }
+
+      .lane-view__title span {
+        font-family: var(--coroid-font-mono);
+        font-size: 0.8rem;
+        color: var(--coroid-muted);
+      }
+
+      .lane-view__legend {
+        position: absolute;
+        right: 1rem;
+        bottom: 1rem;
+        z-index: 3;
+        display: grid;
+        gap: 0.45rem;
+        max-width: 23rem;
+        margin: 0;
+        padding: 0.7rem 0.85rem;
+        border: 1px solid rgba(184, 233, 245, 0.22);
+        border-radius: 0.45rem;
+        background: rgba(4, 7, 15, 0.66);
+        backdrop-filter: blur(6px);
+        font-family: var(--coroid-font-mono);
+        font-size: 0.8rem;
+        line-height: 1.5;
+        color: rgba(223, 246, 255, 0.82);
+        pointer-events: none;
+        user-select: none;
+      }
+
+      .lane-view__legend h2 {
+        margin: 0 0 0.1rem;
+        font-family: var(--coroid-font-display);
+        font-size: 0.8rem;
+        font-weight: 500;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--coroid-muted);
+      }
+
+      .lane-view__legend dl {
+        display: grid;
+        grid-template-columns: 5.4rem 1fr;
+        gap: 0.25rem 0.6rem;
+        margin: 0;
+      }
+
+      .lane-view__legend dt {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        min-width: 0;
+        color: var(--coroid-signal);
+      }
+
+      .lane-view__legend dd {
+        margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
+        color: rgba(223, 246, 255, 0.72);
+      }
+
+      .swatch {
+        display: inline-block;
+        width: 0.6rem;
+        height: 0.6rem;
+        border-radius: 50%;
+        flex: none;
+      }
+
+      /* Pending: a dim, broken outline — nothing settled yet. */
+      .swatch--pending {
+        border: 1px dashed #2f6f86;
+      }
+
+      /* Passed: a solid spring-green disc. */
+      .swatch--passed {
+        background: #59ff9b;
+      }
+
+      /* Failed with repair: a thick, broken magenta-red ring. */
+      .swatch--failed {
+        border: 2px dashed #ff2d6f;
+      }
+
+      /* Milestone: a small cyan disc. */
+      .swatch--milestone {
+        background: #35f0ff;
+      }
+
+      /* Final invariant: a bright diamond, echoing the octahedron. */
+      .swatch--invariant {
+        border-radius: 0.08rem;
+        background: #eaffff;
+        transform: rotate(45deg);
+      }
+
+      /* Superseded: a hollow ring kept as history. */
+      .swatch--superseded {
+        border: 1px solid #3f6272;
+      }
+
+      .lane-view__scenarios {
+        position: absolute;
+        left: 50%;
+        bottom: 1rem;
+        z-index: 4;
+        display: flex;
+        gap: 0.5rem;
+        transform: translateX(-50%);
+      }
+
+      .lane-view__scenarios button {
+        padding: 0.45rem 0.8rem;
+        border: 1px solid rgba(184, 233, 245, 0.34);
+        border-radius: 0.35rem;
+        background: rgba(4, 7, 15, 0.72);
+        color: var(--coroid-ink);
+        font-family: var(--coroid-font-mono);
+        font-size: 0.8rem;
+        line-height: 1.2;
+        cursor: pointer;
+      }
+
+      .lane-view__scenarios button:hover {
+        border-color: var(--coroid-cyan);
+      }
+
+      .lane-view__scenarios button:focus-visible {
+        outline: 2px solid var(--coroid-cyan);
+        outline-offset: 2px;
+      }
+
+      .lane-view__ticker {
+        position: absolute;
+        left: 1rem;
+        bottom: 1rem;
+        display: grid;
+        gap: 0.15rem;
+        margin: 0;
+        padding: 0.65rem 0.8rem;
+        border: 1px solid rgba(184, 233, 245, 0.22);
+        border-radius: 0.45rem;
+        background: rgba(4, 7, 15, 0.66);
+        backdrop-filter: blur(6px);
+        font-family: var(--coroid-font-mono);
+        font-size: 0.8rem;
+        line-height: 1.5;
+        color: rgba(223, 246, 255, 0.88);
+        white-space: pre;
+        pointer-events: none;
+        user-select: none;
+      }
+
+      @media (max-width: 720px) {
+        .lane-view__legend {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- The harness mounts the WebGL canvas and the runtime HUD in here. -->
+    <div id="lane-view" class="lane-view">
+      <div class="lane-view__title">
+        <strong>COROID</strong>
+        <span>lane agents · verification gates · quality constellation</span>
+      </div>
+      <aside class="lane-view__legend">
+        <h2>Reading the hologram</h2>
+        <dl>
+          <dt><span class="swatch swatch--milestone"></span>comet</dt>
+          <dd>an agent riding a dependency conduit into the node it builds</dd>
+          <dt><span class="swatch swatch--pending"></span>pending</dt>
+          <dd>gate ring drawn as four dim dashes — nothing settled yet</dd>
+          <dt><span class="swatch swatch--passed"></span>passed</dt>
+          <dd>unbroken ring plus a filled core, spring-green swell</dd>
+          <dt><span class="swatch swatch--failed"></span>repair</dt>
+          <dd>broken arcs with a spare repair arc, magenta-red alarm pulse</dd>
+          <dt><span class="swatch swatch--invariant"></span>invariant</dt>
+          <dd>bright octahedron with a halo — must hold before shipping</dd>
+          <dt><span class="swatch swatch--superseded"></span>history</dt>
+          <dd>dim wireframe tetra linked to the criterion that replaced it</dd>
+          <dt>scenarios</dt>
+          <dd>the buttons below force a gate alarm or settle every gate on demand</dd>
+        </dl>
+      </aside>
+      <div class="lane-view__scenarios">
+        <button type="button" id="lane-view-scenario-alarm" data-coroid-scenario="gate-alarm">
+          Fail a gate
+        </button>
+        <button type="button" id="lane-view-scenario-repair" data-coroid-scenario="gate-repair">
+          Repair gates
+        </button>
+      </div>
+      <div id="lane-view-ticker" class="lane-view__ticker" role="status" aria-live="off"></div>
+    </div>
+    <noscript>
+      Coroid renders a live holographic factory floor and needs JavaScript and WebGL enabled.
+    </noscript>
+    <script type="module" src="/dev-preview/lane-view.ts"></script>
+  </body>
+</html>
