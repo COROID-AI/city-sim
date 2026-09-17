@@ -1,0 +1,119 @@
+/*
+ * Top HUD overlay.
+ *
+ * A single compact row pinned to the top of the canvas. The row never wraps:
+ * it keeps every readout on one line, uses lining tabular figures and fixed
+ * minimum widths, so a live value update can never reflow or shift the bar.
+ * The panel is translucent and the wrapper ignores pointer events, so the city
+ * stays visible and interactive behind it.
+ */
+
+.hud {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.hud > .hud__bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0.875rem;
+  padding: 0.4rem 0.75rem;
+  overflow: hidden;
+  white-space: nowrap;
+  background: var(--city-panel, rgba(10, 16, 28, 0.72));
+  border-bottom: 1px solid var(--city-border, rgba(232, 238, 251, 0.18));
+  backdrop-filter: blur(6px);
+}
+
+.hud__bar .hud__item {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.hud__bar .hud__value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  /* Lining tabular figures: every digit occupies the same width, so live
+     updates cannot move the neighbouring readouts. */
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+}
+
+/* Fixed minimums reserve the widest plausible value up front. */
+.hud__num {
+  min-width: 5.5ch;
+  text-align: right;
+}
+
+.hud__clock {
+  min-width: 5ch;
+}
+
+.hud__money {
+  min-width: 10ch;
+}
+
+.hud__delta {
+  min-width: 8.5ch;
+  text-align: right;
+  color: var(--city-muted, rgba(232, 238, 251, 0.62));
+}
+
+.hud__spacer {
+  flex: 1 1 auto;
+}
+
+.hud__item--secondary {
+  opacity: 0.82;
+}
+
+.hud__item--secondary .hud__value {
+  font-size: 0.8125rem;
+}
+
+/* Day/night indicator: the glyph and the colour both follow the day phase. */
+.hud__phase {
+  min-width: 8ch;
+}
+
+.hud__phase[data-phase='night'] {
+  color: #b9c6ff;
+}
+
+.hud__phase[data-phase='dawn'],
+.hud__phase[data-phase='evening'] {
+  color: #f0b27a;
+}
+
+.hud__phase[data-phase='morning'],
+.hud__phase[data-phase='day'] {
+  color: #ffd479;
+}
+
+.hud__delta[data-trend='up'] {
+  color: #7ee0a8;
+}
+
+.hud__delta[data-trend='down'] {
+  color: #ff9a8a;
+}
+
+.hud__delta[data-trend='flat'] {
+  color: var(--city-muted, rgba(232, 238, 251, 0.62));
+}
+
+/* Narrow windows: drop the secondary figures so the required four stay legible
+   on a single row instead of wrapping. */
+@media (max-width: 760px) {
+  .hud__bar .hud__item--secondary {
+    display: none;
+  }
+}
