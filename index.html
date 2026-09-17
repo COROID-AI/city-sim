@@ -8,10 +8,28 @@
     <title>Live City Simulation</title>
   </head>
   <body>
+    <!--
+      The app shell: every slot the composition root mounts into.
+
+      - `#city-canvas`   the city canvas the renderer draws into
+      - `#minimap`       overlay slot the minimap canvas is mounted into
+      - `#app`           positioned host for the HUD, the inspector and the
+                         minimap slot, so all overlays share one coordinate space
+
+      Loading the module below composes the simulation and starts it: there is no
+      start button, and the first frame is drawn on load.
+    -->
     <div id="app">
       <canvas id="city-canvas" aria-label="Live city simulation"></canvas>
+      <div id="minimap" class="minimap"></div>
+      <p class="city-controls" role="note" aria-label="Controls">
+        <span class="city-controls__item">Drag to pan</span>
+        <span class="city-controls__item">Wheel to zoom</span>
+        <span class="city-controls__item">Click to inspect</span>
+        <span class="city-controls__item">Space to pause</span>
+        <span class="city-controls__item">1/2/3 for speed</span>
+      </p>
     </div>
-    <!-- Loaded as a module: the simulation boots and starts by itself, with no start button. -->
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
