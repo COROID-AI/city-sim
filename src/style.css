@@ -1,0 +1,137 @@
+/* Base styling for the city simulation shell: a full-bleed canvas plus the
+   overlay slots that the HUD/minimap layers will fill in later tasks. */
+
+:root {
+  color-scheme: dark;
+  --city-font: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --city-bg: #05070f;
+  --city-fg: #e8eefb;
+  --city-muted: rgba(232, 238, 251, 0.62);
+  --city-panel: rgba(10, 16, 28, 0.72);
+  --city-border: rgba(232, 238, 251, 0.18);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--city-bg);
+  color: var(--city-fg);
+  font-family: var(--city-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#city-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--city-bg);
+  touch-action: none;
+}
+
+/* Overlay scaffolding: the HUD and minimap tasks position their own children. */
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hud__bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--city-panel);
+  border-bottom: 1px solid var(--city-border);
+}
+
+.hud__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--city-muted);
+}
+
+.hud__value {
+  font-size: 1rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--city-fg);
+}
+
+button {
+  font: inherit;
+}
+
+/* Minimap slot: the canvas the minimap creates carries no class of its own, so
+   the shell styles it by id. `touch-action: none` keeps a drag steering the
+   camera instead of scrolling the page on touch devices. */
+#minimap {
+  z-index: 3;
+}
+
+#minimap-canvas {
+  display: block;
+  border-radius: 0.375rem;
+  background: #0a1120;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Static control legend: it documents the keyboard/pointer gestures without
+   adding a single button, and never steals a gesture from the canvas. */
+.city-controls {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  max-width: min(30rem, calc(100% - 1.5rem));
+  margin: 0;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--city-muted);
+  background: var(--city-panel);
+  border: 1px solid var(--city-border);
+  border-radius: 0.375rem;
+  pointer-events: none;
+}
+
+/* One short hint per line group, so the legend never becomes a long text run. */
+.city-controls__item {
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
