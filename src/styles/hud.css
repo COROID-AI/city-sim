@@ -304,6 +304,9 @@
   background-image: var(--hud-scan);
   backdrop-filter: blur(8px);
   box-shadow: var(--hud-shadow);
+  /* Read-only status surface: it overlaps the overlay's action row on short
+     viewports, so it must never swallow a click aimed at the controls beneath. */
+  pointer-events: none;
 }
 
 .hud-banner__eyebrow {

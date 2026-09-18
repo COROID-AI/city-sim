@@ -23,6 +23,8 @@ A defect found here is reported as a failed criterion in
 | Typecheck | `npx tsc --noEmit` | The acceptance suite and the shipped game compile. |
 | Headless acceptance | `npx vitest run tests/acceptance-headless.test.ts` | The nine scripted scenarios in §3: playthrough, deterministic replay, six-mission campaign, seeded failure and repair, keyboard-only, reduced motion, `aria-live`, quality-tier stress, palette/motion contract. |
 | Serve the game | `npm run dev -- --port 4173 --strictPort` | The composed game is served at `http://localhost:4173/` for the browser matrix in §5. |
+| Guided lifecycle | load `http://localhost:4173/?guided=1` (or click *Guided replay*) | The human-gated arc plus the inspection rig of §5: each lifecycle phase can be held, stepped and captured deterministically. |
+| Inspection rig (headless) | `npx vitest run tests/inspection.test.ts` | The rig's own suite: the fidelity self-test, the phase holds and the one-step control, the motion preference and its teardown. |
 | Browser matrix | executed by the browser verification provider against the served origin | Screenshots, keyboard-only and reduced-motion passes, stress toggle, contrast capture (§5). |
 
 The browser half is *not* a Vitest file: the toolchain has no Vitest browser
@@ -151,31 +153,50 @@ back inside it.
 
 Served game: `http://localhost:4173/` (`npm run dev -- --port 4173 --strictPort`).
 Mission one auto-starts and auto-approves on the first fixed step, so **the whole
-mission plays in ≈1.4 s of wall clock at speed 1** (86 fixed steps at 60 Hz). Two
-consequences drive the matrix:
+mission plays in ≈1.4 s of wall clock at speed 1** (86 fixed steps at 60 Hz), and
+several phases last a single fixed step. Two routes reach the lifecycle screens:
 
-* poll `[data-hud="live"]` at ≤ 50 ms: it holds the *last* announcement, so each
-  `Mission phase → …` line persists until the next phase change and is a stable
-  capture trigger;
-* press Space to pause as soon as the state you want is on screen — a paused page
-  holds it indefinitely, and `1`/`2`/`4` select the playback speed (`1` is the
-  slowest shipped speed).
+* **Guided route — deterministic, used by B1–B6 and B11.** Load `/?guided=1`, or
+  click `[data-hud="guided-link"]` (*Guided replay*) on the shipped page. The
+  mission is then composed with `autoStart`/`autoApprove` off, so it waits on the
+  brief, and the inspection rig (`[data-hud="inspection"]`, pinned bottom-right)
+  holds it at every phase:
+  * `[data-hud="lifecycle-phase"]` — the held phase as text (`Phase repair`) and
+    as `data-phase`, plus `[data-hud="lifecycle-state"]` (`Run state paused`);
+  * `[data-hud="inspection-next-phase"]` (*Next phase*) — acknowledge the brief,
+    run to the next phase change and pause there;
+  * `[data-hud="inspection-approve"]` (*Approve plan*) — clear the human gate;
+  * `[data-hud="inspection-step"]` (*Step one step*) — advance exactly one fixed
+    simulation step and pause again, which is what makes a one-step phase (the
+    seeded repair windows at steps 28/38/59) capturable;
+  * `[data-hud="inspection-play"]` (*Play mission*) — release every hold and run
+    the shipped arc to the release, holding there.
+* **Auto route — used by B7–B10.** The shipped default page plays the arc itself:
+  poll `[data-hud="live"]` at ≤ 50 ms (it holds the *last* announcement, so each
+  `Mission phase → …` line persists until the next phase change), and press Space
+  to pause as soon as the state you want is on screen (`1`/`2`/`4` select the
+  playback speed).
 
 `[data-hud]` is the only interface contract used. No DOM internals, class names or
-layout assumptions.
+layout assumptions. The rig's controls are real buttons in the accessibility tree
+(labelled *Next phase*, *Step one step*, *Play mission*, *Approve plan*, *Hold
+phases*, *Reduce motion*, *Run budget check*), so they can be driven by role and
+name; while a modal panel is open its backdrop owns the pointer, so close the
+panel (Escape) before driving the rig.
 
 | # | Scenario | Seed | Steps (hooks and keys only) | Expected observation | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| B1 | **Brief** | 20260919 | Load `/`; capture before the first fixed step (a `Page.addInitScript` that holds `requestAnimationFrame` makes this deterministic, otherwise screenshot right after `DOMContentLoaded`). | `[data-hud="mission-status"]` = `bootstrapping`; `[data-hud="objective"]` = the mission objective sentence; `[data-hud="mission-progress-label"]` = `0% shipped`; `#boot-splash` still present; no `[data-hud="lane"]` chips. | `01-brief.png`, `01-brief-canvas.png` |
-| B2 | **Plan** | 20260919 | Click `[data-hud="action-outline"]` (or press `o`). | `[data-hud="panel-outline"]` with `[data-hud="outline-phase"]` groups and one `[data-hud="outline-row"]` per task, each row carrying `data-task-id`; `[data-hud="mission-progress"]` `aria-valuenow` advancing. | `02-plan.png` |
-| B3 | **Execute** | 20260919 | Wait for `[data-hud="live"]` = `Mission phase → dispatch` (step 1). | ≥1 `[data-hud="lane"]` chip with `data-busy="true"` and `data-kind` set; `[data-hud="lane-occupancy"]` `data-busy`/`data-total` populated; canvas shows the plan graph, lane comets and the holo floor. | `03-execute.png` |
-| B4 | **Verify** | 20260919 | Wait for `Mission phase → verify` (step 84 of 86); press Space; click `[data-hud="action-report"]`. | `[data-hud="panel-report"]` with the pass-rate / quality-score / invariants / context / credits / reputation / clock / lanes facts and one `[data-hud="report-gate"]` card per gate. | `04-verify.png` |
-| B5 | **Repair** (seeded failure) | 20260919 | Wait for `Mission phase → repair` (first at step 28, ≈0.47 s after load; further waves at 38 and 59); press Space to hold it. | `[data-hud="event-log"]` contains `Gate … → failed · 0% coverage` (`data-source="verification/run"`, `data-provenance="repository_observation"`) and `Task "Repair "…" after it …" registered on …` (`data-source="plan/task-registered"`); a `[data-hud="report-gate"]` card whose `[data-hud="gate-status"]` chip is `data-status="failed"`; a lane chip is busy; the canvas shows the magenta-red gate ring and the fix-up arc (§5 canvas encoding). For the inspector, click `[data-hud="action-outline"]` and step the cursor (`.`/`,`) or click outline rows until `[data-hud="panel-inspector"]` (`[data-hud="inspector-task-id"]`) is the task the fix-up repairs — its contract carries a `[data-hud="check-status"][data-status="failed"]` chip and a `[data-hud="criterion-lifecycle"][data-lifecycle="superseded"]` chip for the commitment the repair replaced. | `05-repair-log.png`, `05-repair-report.png`, `05-repair-inspector.png`, `05-repair-canvas.png` |
-| B6 | **Release** | 20260919 | Wait for `Mission phase → release` (step 86); press Space; click `[data-hud="action-report"]`. | `[data-hud="mission-status"]` = `delivered`; `[data-hud="mission-progress-label"]` = `100% shipped`; `[data-hud="mission-progress"]` `aria-valuenow=100`; every `[data-hud="gate-status"]` = `passed`; `[data-hud="report-pass-rate"]` = `100%`; `[data-hud="report-invariants"]` = `NN/MM hold`; `[data-hud="report-quality-score"]` ≈ `0.91`; `[data-hud="metric-state"]` chips carry `data-lifecycle` (`final_invariant` / `milestone`); the terminal's `[data-hud="log-line"]`s carry `data-provenance`. | `06-release.png`, `06-release-report.png`, `06-release-log.png` |
+| B1 | **Brief** | 20260919 | Load `/?guided=1` (or click `[data-hud="guided-link"]`). No further input: the mission waits on the brief. | `[data-hud="lifecycle-phase"]` = `Phase brief` (`data-phase="brief"`); `[data-hud="mission-status"]` = `bootstrapping`; `[data-hud="objective"]` = the mission objective sentence; `[data-hud="mission-progress-label"]` = `0% shipped`; no `[data-hud="lane"]` chip with `data-busy="true"`. | `01-brief.png`, `01-brief-canvas.png` |
+| B2 | **Plan** | 20260919 | Click `[data-hud="inspection-next-phase"]` (*Next phase*): the request decomposes into the plan and the mission is held at the approval gate. Then click `[data-hud="action-outline"]` (or press `o`). | `[data-hud="lifecycle-phase"]` = `Phase approve` with the plan registered; `[data-hud="panel-outline"]` with `[data-hud="outline-phase"]` groups and one `[data-hud="outline-row"]` per task, each row carrying `data-task-id`; the camera frames the plan shot. | `02-plan.png` |
+| B3 | **Execute** | 20260919 | Click `[data-hud="inspection-approve"]` (*Approve plan*). | `[data-hud="lifecycle-phase"]` = `Phase dispatch`, held paused; ≥1 `[data-hud="lane"]` chip with `data-busy="true"` and `data-kind` set; `[data-hud="lane-occupancy"]` `data-busy`/`data-total` populated; canvas shows the plan graph, lane comets and the holo floor. | `03-execute.png` |
+| B4 | **Verify** | 20260919 | Click `[data-hud="inspection-next-phase"]` until `[data-hud="lifecycle-phase"]` = `Phase verify` (mission one passes through three repair waves first); click `[data-hud="action-report"]`. | `[data-hud="panel-report"]` with the pass-rate / quality-score / invariants / context / credits / reputation / clock / lanes facts and one `[data-hud="report-gate"]` card per gate — every chip `passed`. | `04-verify.png` |
+| B5 | **Repair** (seeded failure) | 20260919 | Click `[data-hud="inspection-next-phase"]` until `[data-hud="lifecycle-phase"]` = `Phase repair` (first at step 28, ≈0.47 s of mission clock; further waves at 38 and 59). Use `[data-hud="inspection-step"]` to move inside the one-step window. | `[data-hud="event-log"]` contains `Gate … → failed · 0% coverage` (`data-source="verification/run"`, `data-provenance="repository_observation"`) and the fix-up registration on a lane (`data-source="plan/task-registered"`); `[data-hud="live"]` = `Verification alarm: N gates failing` and/or `Mission phase → repair`; a `[data-hud="lane"]` chip is busy; clicking `[data-hud="action-report"]` shows a `[data-hud="report-gate"]` card whose `[data-hud="gate-status"]` chip is `data-status="failed"`; the inspector shows a `[data-hud="check-status"][data-status="failed"]` chip. The canvas shows the magenta-red gate ring and the fix-up arc (§5 canvas encoding). | `05-repair-log.png`, `05-repair-report.png`, `05-repair-inspector.png`, `05-repair-canvas.png` |
+| B6 | **Release** | 20260919 | Click `[data-hud="inspection-play"]` (*Play mission*) and wait for `[data-hud="mission-status"]` = `delivered` — the rig holds the release screen. Then click `[data-hud="action-report"]`. | `[data-hud="mission-progress-label"]` = `100% shipped`; `[data-hud="mission-progress"]` `aria-valuenow=100`; every `[data-hud="gate-status"]` = `passed`; `[data-hud="report-pass-rate"]` = `100%`; `[data-hud="report-invariants"]` = `NN/MM hold`; `[data-hud="report-quality-score"]` ≈ `0.91`; `[data-hud="metric-state"]` chips carry `data-lifecycle` (`final_invariant` / `milestone`); the terminal's `[data-hud="log-line"]`s carry `data-provenance`. | `06-release.png`, `06-release-report.png`, `06-release-log.png` |
 | B7 | **Keyboard-only mission one** | 20260919 | Reload and use **no pointer input**: `4` (speed), Space (pause/resume), `a`, `a` (approve), `.` / `Enter` (focus/select), `d` (dispatch), `v` / `Escape` (report), `i` / `Escape` (inspector), arrow keys (camera). | Reaches the B6 release state; `[data-hud="live"]` has `aria-live="polite"`, `role="status"`, `aria-atomic="true"` and cycles `Mission phase → …`, `Invariant settled: N of M hold`, `Objective updated: …`, `Mission delivered`. | `07-keyboard-release.png`, `07-keyboard-live.png` |
-| B8 | **Reduced motion** | 20260919 | Emulate `prefers-reduced-motion: reduce` **before** navigation, repeat the B6/B7 pass, and take two canvas screenshots ≈1 s apart while paused with no input. | Framing identical between the two paused frames (no camera drift); HUD behaviour unchanged and complete; panel opening runs no entry animation (`src/styles/hud.css` reduced-motion block). | `08-reduced-motion-a.png`, `08-reduced-motion-b.png`, `08-reduced-motion-report.png` |
+| B8 | **Reduced motion** | 20260919 | From `/?guided=1` (or any run), click `[data-hud="reduced-motion-toggle"]` (*Reduce motion*); take two screenshots ≈1 s apart with no input; read `[data-hud="camera-pose"]`. | `[data-hud="motion-state"]` = `Motion reduced` with `data-reduced-motion="true"`; the toggle reads `aria-pressed="true"`; the `data-pose` value is identical between the two reads (the first two numbers are azimuth/polar, the drifted axes); `document.documentElement` carries `data-coroid-motion="reduced"`, which stops CSS animation (`src/styles/hud.css`'s reduced-motion block still covers the media-query case). Clicking it again restores `Motion full`. | `08-reduced-motion-a.png`, `08-reduced-motion-b.png`, `08-reduced-motion-report.png` |
 | B9 | **Quality-tier stress** | n/a (measured) | Click `[data-hud="stress-toggle"]`; wait ~3 s; read the badge. | `aria-pressed="true"` and `data-stress="on"`; `[data-hud="perf-badge"][data-tier]` steps down the ladder (`boosted` → `calm` → `minimal` under the shipped stress rig) and `[data-hud="perf-tier"]` follows; `[data-hud="perf-budget"]` reads `OVER BUDGET` while the frame is over and `INSIDE BUDGET` once the cheaper tier holds; `[data-hud="perf-mode"]` = `AUTO`; `[data-hud="perf-median"]` / `[data-hud="perf-p95"]` end inside the displayed budget. | `09-stress-over.png`, `09-stress-downgraded.png`, `09-stress-badge.png` |
 | B10 | **Contrast** | 20260919 | Capture computed text/background colours on the HUD, the report panel and the perf badge (release state). | The documented palette ratios hold: `--hud-ink #e8f7ff` 17.5:1, `--hud-muted #9fbdcd` 9.7:1, `--hud-cyan #35f0ff` 13.7:1, `--hud-amber #ffc15c` 11.9:1, `--hud-magenta #ff4fd8` 6.7:1, `--hud-ok #59ff9b` 14.8:1, `--hud-alarm #ff5c7a` 6.4:1 (`src/styles/hud.css`); body text ≥ 4.5:1, large text and panel borders ≥ 3:1. | `10-contrast-hud.png`, `10-contrast-report.png`, `10-contrast-perf.png` |
+| B11 | **Frame budget under the mission load** | n/a (modelled) | Click `[data-hud="budget-check"]` (*Run budget check*) and read the readout. | `[data-hud="budget-check-verdict"]` = `Frame budget held` with `data-verdict="pass"`; `[data-hud="budget-check-tier"]` = `minimal` (the governor shed the calm tier under the load); `[data-hud="budget-check-median"]`'s `data-median-ms` ≤ its `data-budget-ms` and `[data-hud="budget-check-p95"]`'s `data-p95-ms` ≤ its `data-ceiling-ms` (the tier's own 2× ceiling). The numbers come from the shipped governor driven by the §4 cost model, so they are independent of the host's GPU: B9 still covers the *measured* ladder and the badge on real frames. | `11-budget-check.png` |
 
 ### Hooks used by the matrix
 
@@ -200,6 +221,15 @@ layout assumptions.
 *Fidelity*: `perf-badge` (`data-tier`), `perf-fps`, `perf-tier`, `perf-median`,
 `perf-p95`, `perf-budget` (`data-verdict`), `perf-mode` (`data-hold`),
 `stress-toggle` (`data-stress`, `aria-pressed`).
+
+*Inspection rig* (`src/game/inspection.ts`): `inspection`, `lifecycle-phase`
+(`data-phase`), `lifecycle-state` (`data-paused`), `inspection-next-phase`,
+`inspection-step`, `inspection-play`, `inspection-approve`, `inspection-hold`
+(`data-hold`, `aria-pressed`), `guided-link`, `reduced-motion-toggle`
+(`aria-pressed`), `motion-state` (`data-reduced-motion`), `camera-pose`
+(`data-pose`), `budget-check`, `budget-check-verdict` (`data-verdict`),
+`budget-check-tier` (`data-tier`), `budget-check-median` (`data-median-ms`,
+`data-budget-ms`), `budget-check-p95` (`data-p95-ms`, `data-ceiling-ms`).
 
 *Stage*: `canvas[data-coroid-canvas]`.
 
@@ -283,17 +313,16 @@ holding its 33.3 ms median budget and 66.7 ms p95 ceiling for the rest of the ru
 
 Reported, not patched (this task owns only the two acceptance files).
 
-1. **`plan` and `approve` are not observable as lifecycle phases in the browser.**
-   With the shipped defaults the first fixed step runs `flow.start()` (brief → plan
-   → approve) and `flow.approve()` (approve → dispatch) inside one `advance()`, so
-   the live region's phase announcements begin at `dispatch`, and
-   `[data-hud="mission-status"]` only distinguishes `bootstrapping` / `running` /
-   `delivering` / `delivered`. The *Brief* screen is therefore capturable only
-   before the first fixed step, and the *Plan* screen is captured from its own
-   surface (the plan outline panel, B2) rather than from a phase announcement. Both
-   phases are provably reached headlessly (§3.1), and their screens are captured in
-   the browser; a first-class hook (a `data-hud` lifecycle-phase readout or a
-   pre-start splash) would make the two states independently capturable.
+1. **`plan` is never a *resting* phase, on either route.** With the shipped
+   defaults the first fixed step runs `flow.start()` (brief → plan → approve) and
+   `flow.approve()` (approve → dispatch) inside one `advance()`; on the guided
+   route `flow.start()` likewise lands on the approval gate in one call. The
+   lifecycle readout (`[data-hud="lifecycle-phase"]`) makes every phase it *does*
+   rest on observable — `brief` before the plan, then `approve`, `dispatch`,
+   `verify`, `repair` and `release` — and `approve` frames the plan shot, but
+   `plan` itself is always passed through inside a single call. The *Plan* screen
+   is therefore captured from its own surface (the plan outline panel plus the
+   plan camera framing, B2); the phase itself is proven headlessly (§3.1).
 2. **No delivery-manifest surface.** The release manifest (`entries`,
    `coverageRatio`, `provenanceRatio`, per-entry evidence checks and criteria) is
    only reachable through the flow API. The browser's *Release* screen shows the
@@ -302,20 +331,23 @@ Reported, not patched (this task owns only the two acceptance files).
    inspector's `superseded` chips) and provenance-tagged terminal lines — but not a
    manifest list. Criterion 7 is therefore proven headlessly and *supported* rather
    than literally rendered in the browser.
-3. **The `Verification alarm` announcement is not observable.** The HUD writes
-   `Verification alarm: N gates failing` into the live region on the step after a
-   gate fails, and the mission's own `Mission phase → repair` announcement
-   overwrites it in the same step. The failing-gate evidence in the browser is the
-   terminal's `→ failed` lines, the report's failed gate card and the inspector's
-   failed check chip (B5); the alarm text is asserted indirectly by the headless
-   scenario (failed-gate count + `aria-live` phase announcement).
+3. **The `Verification alarm` announcement survives only on the guided route.** On
+   the auto route the HUD writes `Verification alarm: N gates failing` into the
+   live region on the step after a gate fails and the mission's own
+   `Mission phase → repair` announcement overwrites it in the same step. Held at
+   the repair phase (B5) the alarm text is the last announcement and is directly
+   observable; the failing-gate evidence is otherwise the terminal's `→ failed`
+   lines, the report's failed gate card and the inspector's failed check chip.
 4. **No camera shake exists in the shipped game.** The reduced-motion pass
    verifies what the product actually animates: the camera rig's idle drift, the
-   audio bus's motion voices (filter sweeps and glissandi) and the CSS animations.
-   The word "shake" in the acceptance criteria has no corresponding shipped
-   surface, so criterion 5's reduced-motion clause is verified against those motion
-   layers.
+   audio bus's motion voices (filter sweeps and glissandi) and the CSS animations
+   (the rig's toggle sets `data-coroid-motion="reduced"`, and the stylesheet's
+   media-query block still covers the host preference). The word "shake" in the
+   acceptance criteria has no corresponding shipped surface, so criterion 5's
+   reduced-motion clause is verified against those motion layers.
 5. **Mission pacing is fast at the shipped defaults.** Mission one completes in
-   ≈1.4 s of wall clock (86 fixed steps). Intermediate states are holdable (Space
-   pauses; `[data-hud="live"]` is the phase trigger), but the matrix must poll at
-   ≤ 50 ms to catch the repair window; there is no shipped "slow" speed below 1×.
+   ≈1.4 s of wall clock (86 fixed steps). On the auto route the matrix must poll
+   `[data-hud="live"]` at ≤ 50 ms to catch the one-step repair window, and there is
+   no shipped "slow" speed below 1×. The guided route removes the constraint: the
+   rig holds each phase and `[data-hud="inspection-step"]` advances a single fixed
+   step, so the repair window is caught whatever the host's frame rate.

@@ -30,7 +30,8 @@ import './styles/base.css';
 
 import { mountGamePreview, type PreviewAdapterPreference, type PreviewHarness } from '../dev-preview/harness';
 import type { GameFrame } from './game/Game';
-import type { GameSystem } from './game/systems';
+import { createInspectionSystem } from './game/inspection';
+import { createMissionInitialState, createSystems, type GameSystem } from './game/systems';
 import { disposeRenderResources } from './render/renderer';
 import type { GameState } from './sim/state';
 
@@ -261,6 +262,42 @@ export interface BootOptions {
   overlay?: boolean;
 }
 
+/**
+ * Whether the served page should boot the human-gated *inspection* arc.
+ *
+ * `/?guided=1` (or a bare `?guided`) composes mission one with `autoStart` and
+ * `autoApprove` off and hands the lifecycle to the inspection rig, so every
+ * phase can be held and observed instead of racing past in one 1.4 s arc. The
+ * default page keeps the shipped auto-playing arc.
+ */
+export function wantsGuidedRun(search: string): boolean {
+  const query = search.startsWith('?') ? search.slice(1) : search;
+  const value = new URLSearchParams(query).get('guided');
+  return value === '' || value === '1' || value === 'true';
+}
+
+/**
+ * Compose the systems the served page boots.
+ *
+ * The shipped registry plus the inspection rig: the registry itself is
+ * untouched (it composes the mission, the world and the interfaces), and the rig
+ * only reads them through ports. The served game runs mission one's *own*
+ * document — the same state the acceptance suite asserts — so the HUD reports
+ * the mission it is actually playing (100% shipped, every gate green at the
+ * release) instead of a sample floor with the mission's events merged into it.
+ */
+export function composeServedGame(guided: boolean): GameSystem[] {
+  const bundle = createSystems(guided ? { autoStart: false, autoApprove: false } : {});
+  const inspection = createInspectionSystem({
+    mission: () => bundle.mission,
+    camera: () => bundle.cameraRig.rig,
+    audio: () => bundle.audio.bus,
+    quality: () => bundle.quality,
+    guided,
+  });
+  return [...bundle.list, inspection];
+}
+
 export interface BootResult {
   harness: PreviewHarness;
   scene: BootSceneHandle;
@@ -336,7 +373,12 @@ function autoboot(): void {
   if (!host || host.dataset.coroidBooted === 'true') return;
   host.dataset.coroidBooted = 'true';
   try {
-    bootGame({ host });
+    const guided = typeof window === 'undefined' ? false : wantsGuidedRun(window.location.search);
+    bootGame({
+      host,
+      state: createMissionInitialState(),
+      systems: composeServedGame(guided),
+    });
   } catch (error) {
     console.error('[coroid] failed to boot the factory floor', error);
     const status = document.getElementById('boot-status');
