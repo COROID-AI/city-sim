@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#04070f" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23040a12'/%3E%3Cpath d='M16 5l10 6v10l-10 6-10-6V11z' stroke='%2335f0ff' stroke-width='2.2' fill='none'/%3E%3C/svg%3E"
+    />
+    <title>Coroid — Plan Graph: Task Nodes, Phase Tiers &amp; Dependency Conduits</title>
+    <meta
+      name="description"
+      content="Coroid dev preview: instanced status-coded task polyhedra on phase tier platforms, dependency conduits that light as their upstream task completes, and raycast node picking for the inspector."
+    />
+    <style>
+      /*
+       * Page-local chrome only. Canvas and the runtime HUD are styled by
+       * src/styles/base.css, which this page imports from its module.
+       *
+       * Everything on this page sits on one four-step type ramp, each step at
+       * least 1.3x the one below it and none below the 11px legibility floor:
+       * label 0.72rem (11.5px), panel body 0.95rem (15.2px),
+       * hint and headline 1.5rem (24px), wordmark 1.9rem (30.4px).
+       */
+      body {
+        font-size: 0.95rem;
+      }
+
+      #plan-graph {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        background: radial-gradient(
+          circle at 50% 24%,
+          #0b1830 0%,
+          var(--coroid-deep) 45%,
+          var(--coroid-void) 100%
+        );
+      }
+
+      .plan-graph__title {
+        position: absolute;
+        top: 0.9rem;
+        right: 1rem;
+        z-index: 2;
+        display: grid;
+        gap: 0.2rem;
+        justify-items: end;
+        text-align: right;
+        pointer-events: none;
+        user-select: none;
+      }
+
+      .plan-graph__title strong {
+        font-size: 1.9rem;
+        font-weight: 400;
+        letter-spacing: 0.34em;
+        color: var(--coroid-ink);
+      }
+
+      .plan-graph__title span {
+        font-family: var(--coroid-font-mono);
+        font-size: 0.95rem;
+        color: var(--coroid-muted);
+      }
+
+      .plan-graph__panel {
+        position: absolute;
+        z-index: 3;
+        margin: 0;
+        padding: 0.7rem 0.85rem;
+        border: 1px solid rgba(184, 233, 245, 0.22);
+        border-radius: 0.45rem;
+        background: rgba(4, 7, 15, 0.68);
+        backdrop-filter: blur(6px);
+        font-family: var(--coroid-font-mono);
+        font-size: 0.95rem;
+        line-height: 1.5;
+        color: rgba(223, 246, 255, 0.86);
+        white-space: pre;
+        user-select: none;
+      }
+
+      .plan-graph__panel h2 {
+        margin: 0 0 0.35rem;
+        font-family: var(--coroid-font-display);
+        font-size: 0.72rem;
+        font-weight: 500;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--coroid-muted);
+        white-space: normal;
+      }
+
+      .plan-graph__ticker {
+        left: 1rem;
+        bottom: 1rem;
+        pointer-events: none;
+      }
+
+      .plan-graph__inspector {
+        top: 1rem;
+        left: 1rem;
+        min-width: 19rem;
+        max-width: 24rem;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        pointer-events: none;
+      }
+
+      .plan-graph__inspector-key {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-size: 1.5rem;
+        font-weight: 400;
+        letter-spacing: 0.06em;
+        color: var(--coroid-ink);
+        overflow-wrap: anywhere;
+      }
+
+      .plan-graph__inspector-detail {
+        display: block;
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        color: rgba(223, 246, 255, 0.82);
+      }
+
+      .plan-graph__legend {
+        right: 1rem;
+        bottom: 1rem;
+        max-width: 22rem;
+        pointer-events: none;
+      }
+
+      .plan-graph__legend dl {
+        display: grid;
+        grid-template-columns: 1.1rem 1fr;
+        gap: 0.3rem 0.6rem;
+        margin: 0;
+        white-space: normal;
+      }
+
+      .plan-graph__legend dt {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .plan-graph__legend dd {
+        margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
+        color: rgba(223, 246, 255, 0.74);
+      }
+
+      .plan-graph__legend strong {
+        color: var(--coroid-signal);
+        font-weight: 500;
+      }
+
+      /* One silhouette per status, so the legend is colour-blind readable too. */
+      .shape {
+        display: block;
+        width: 0.85rem;
+        height: 0.85rem;
+      }
+
+      .shape--queued {
+        background: #5c7f9e;
+        clip-path: polygon(50% 4%, 96% 96%, 4% 96%);
+      }
+
+      .shape--running {
+        background: #35f0ff;
+        clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+      }
+
+      .shape--verifying {
+        background: #ffc15c;
+        border-radius: 28%;
+      }
+
+      .shape--passed {
+        background: #59ff9b;
+        border-radius: 50%;
+      }
+
+      .shape--failed {
+        background: #ff2d6f;
+        clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+      }
+
+      .shape--superseded {
+        background: #6f5a9c;
+        clip-path: polygon(0 6%, 100% 6%, 50% 100%);
+      }
+
+      .plan-graph__scenarios {
+        position: absolute;
+        left: 50%;
+        bottom: 1rem;
+        z-index: 4;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: center;
+        max-width: min(46rem, calc(100vw - 2rem));
+        transform: translateX(-50%);
+      }
+
+      .plan-graph__scenarios button {
+        padding: 0.45rem 0.8rem;
+        border: 1px solid rgba(184, 233, 245, 0.34);
+        border-radius: 0.35rem;
+        background: rgba(4, 7, 15, 0.72);
+        color: var(--coroid-ink);
+        font-family: var(--coroid-font-mono);
+        font-size: 0.95rem;
+        line-height: 1.2;
+        cursor: pointer;
+      }
+
+      .plan-graph__scenarios button:hover {
+        border-color: var(--coroid-cyan);
+      }
+
+      .plan-graph__scenarios button:focus-visible {
+        outline: 2px solid var(--coroid-cyan);
+        outline-offset: 2px;
+      }
+
+      .plan-graph__hint {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        z-index: 2;
+        transform: translate(-50%, -50%);
+        font-family: var(--coroid-font-mono);
+        font-size: 1.5rem;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: rgba(223, 246, 255, 0.45);
+        pointer-events: none;
+        user-select: none;
+      }
+
+      @media (max-width: 900px) {
+        .plan-graph__legend {
+          display: none;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .plan-graph__inspector {
+          min-width: 0;
+          max-width: 62vw;
+        }
+
+        .plan-graph__ticker {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- The harness mounts the WebGL canvas and the runtime HUD in here. -->
+    <div id="plan-graph" class="plan-graph">
+      <div class="plan-graph__title">
+        <strong>COROID</strong>
+        <span>plan graph · task nodes · phase tiers · conduit picking</span>
+      </div>
+
+      <aside id="plan-graph-inspector" class="plan-graph__panel plan-graph__inspector" role="status">
+        <strong
+          class="plan-graph__inspector-key"
+          data-coroid-inspector-key
+        >NO TASK SELECTED</strong>
+        <span class="plan-graph__inspector-detail" data-coroid-inspector-detail>click any task node to inspect it</span>
+      </aside>
+
+      <div id="plan-graph-ticker" class="plan-graph__panel plan-graph__ticker" role="status" aria-live="off"></div>
+
+      <aside class="plan-graph__panel plan-graph__legend">
+        <h2>Reading the floor</h2>
+        <dl>
+          <dt><span class="shape shape--queued"></span></dt>
+          <dd><strong>queued</strong>: cool slate tetrahedron with a seed pip, waiting on upstream work</dd>
+          <dt><span class="shape shape--running"></span></dt>
+          <dd><strong>running</strong>: cyan octahedron with a spinning ring, a lane is building it</dd>
+          <dt><span class="shape shape--verifying"></span></dt>
+          <dd><strong>verifying</strong>: amber dodecahedron with a diamond badge, a gate is measuring it</dd>
+          <dt><span class="shape shape--passed"></span></dt>
+          <dd><strong>passed</strong>: spring-green icosahedron with a settled coin, its conduits light up</dd>
+          <dt><span class="shape shape--failed"></span></dt>
+          <dd><strong>failed</strong>: magenta-red hex prism with a halt bar, dependent work goes dark</dd>
+          <dt><span class="shape shape--superseded"></span></dt>
+          <dd><strong>superseded</strong>: dim violet pyramid with a struck bar, kept as history</dd>
+        </dl>
+      </aside>
+
+      <div class="plan-graph__scenarios">
+        <button type="button" data-coroid-scenario="fail-task">Fail a running task</button>
+        <button type="button" data-coroid-scenario="repair-tasks">Repair the lanes</button>
+        <button type="button" data-coroid-scenario="supersede-task">Supersede a task</button>
+        <button type="button" data-coroid-scenario="restore-tasks">Restore history</button>
+      </div>
+
+      <p class="plan-graph__hint">click a node to inspect it</p>
+    </div>
+    <noscript>
+      Coroid renders a live holographic plan graph and needs JavaScript and WebGL enabled.
+    </noscript>
+    <script type="module" src="/dev-preview/plan-graph.ts"></script>
+  </body>
+</html>
