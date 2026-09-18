@@ -45,7 +45,15 @@ const MISSION_KEY = 'request-to-plan';
 /** Fixed simulation step the runtime and the mission share. */
 const STEP_MS = 1000 / 60;
 
-/** Attachment order the registry promises. */
+/**
+ * Attachment order the registry promises.
+ *
+ * The ten module systems of phase 2 and 3 come first, in this order; the
+ * fidelity governor (`render/quality-tiers`) and its readout (`ui/perf-badge`)
+ * are appended after them, because the governor reads the adapter, the composed
+ * scene and the world's post chain, and the badge mounts on the HUD overlay
+ * anchor. See the composition contract in `src/game/systems.ts`.
+ */
 const EXPECTED_ORDER = [
   'camera-rig',
   'world',
@@ -57,6 +65,8 @@ const EXPECTED_ORDER = [
   'audio/bus',
   'mission/flow',
   'input/router',
+  'render/quality-tiers',
+  'ui/perf-badge',
 ] as const;
 
 /**

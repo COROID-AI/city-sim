@@ -20,7 +20,8 @@
  * them in attachment order:
  *
  *   camera-rig → world → plan graph → lane agents → quality graph →
- *   HUD → panels → audio bus → mission flow → input router
+ *   HUD → panels → audio bus → mission flow → input router →
+ *   adaptive quality tiers → perf badge
  *
  *  - the camera rig attaches before the world because the world's post chain
  *    places its screen pass on the camera pose the rig has just damped (both
@@ -35,6 +36,11 @@
  *  - the input router attaches last, so it binds to the canvas, the mounted
  *    interface, the camera rig, the plan graph and the audio bus that all exist
  *    by then.
+ *
+ * The fidelity governor is appended **after** every module system: the adaptive
+ * quality tiers attach once the adapter, the world's post chain and the composed
+ * scene all exist, and the perf badge attaches once the HUD overlay anchor is in
+ * the document. Both are additive — every registration above is untouched.
  *
  * Nothing here re-implements module behaviour. Each entry either delegates to a
  * module's own `GameSystem` factory or is a thin adapter that instantiates one
@@ -79,8 +85,14 @@ import type { PostQualityPreset } from '../render/effects';
 import { createPlanGraphSystem, type PlanGraphSystem, type PlanGraphView } from '../render/nodes';
 import { createLaneAgentsSystem } from '../render/laneAgents';
 import { createQualityGraphSystem } from '../render/qualityGraph';
+import {
+  createQualityTierSystem,
+  type QualityTier,
+  type QualityTierSystem,
+} from '../render/qualityTiers';
 import { createWorldSystem, type WorldSystem } from '../render/scene';
 import type { RenderAdapter } from '../render/renderer';
+import { createPerfBadgeSystem, type PerfBadgeSystem } from '../ui/perfBadge';
 
 /** Everything an attached system may touch while it lives. */
 export interface SystemContext {
@@ -210,6 +222,10 @@ export interface GameSystems {
   readonly audio: AudioSystem;
   readonly mission: MissionSystem;
   readonly input: InputSystem;
+  /** Adaptive quality governor; the last writer to the presentation. */
+  readonly quality: QualityTierSystem;
+  /** Live FPS / tier readout on the HUD overlay anchor. */
+  readonly perfBadge: PerfBadgeSystem;
   /** Every system in attachment order; what `createGame` attaches. */
   readonly list: readonly GameSystem[];
 }
@@ -239,6 +255,12 @@ export interface GameSystemsOptions {
   readonly agent?: MissionFlowOptions['agent'];
   /** Post-processing tier for the world. Defaults to the module's `high`. */
   readonly quality?: PostQualityPreset;
+  /**
+   * Starting adaptive quality tier. Defaults to the device-derived start
+   * (`calm` for every host that has not asked for less work); `boosted` is
+   * reached by measured headroom, never by configuration.
+   */
+  readonly qualityTier?: QualityTier;
   /** Gesture surface. Defaults to the adapter canvas, then `document.body`. */
   readonly canvas?: HTMLElement | null;
   /** Mount point for the HUD and panel layers. Defaults to `#boot`, then body. */
@@ -437,6 +459,22 @@ export function createSystems(options: GameSystemsOptions = {}): GameSystems {
     mission,
   });
 
+  /* ------------------------------------------------------- fidelity governor */
+
+  /**
+   * The adaptive quality tiers attach last: they read the adapter, the composed
+   * scene and the world's post chain, and they are the only writer to the
+   * presentation after every module system has had its say. They never touch
+   * simulation state — the governor is a presentation resource, not a system.
+   */
+  const quality = createQualityTierSystem({
+    ...(options.qualityTier ? { tier: options.qualityTier } : {}),
+    world: () => world.world,
+  });
+
+  /** The badge reads the governor and mounts on the HUD's own overlay anchor. */
+  const perfBadge = createPerfBadgeSystem({ quality });
+
   const list: readonly GameSystem[] = [
     cameraRig,
     world,
@@ -448,9 +486,25 @@ export function createSystems(options: GameSystemsOptions = {}): GameSystems {
     audio,
     mission,
     input,
+    quality,
+    perfBadge,
   ];
 
-  return { cameraRig, world, planGraph, laneAgents, qualityGraph, hud, panels, audio, mission, input, list };
+  return {
+    cameraRig,
+    world,
+    planGraph,
+    laneAgents,
+    qualityGraph,
+    hud,
+    panels,
+    audio,
+    mission,
+    input,
+    quality,
+    perfBadge,
+    list,
+  };
 }
 
 /**

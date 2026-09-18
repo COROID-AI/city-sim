@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#04070f" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23040a12'/%3E%3Cpath d='M6 22h5v-8h5v8h5V10h5' stroke='%2335f0ff' stroke-width='2.2' fill='none'/%3E%3C/svg%3E"
+    />
+    <title>Coroid — Frame Budget Preview</title>
+    <meta
+      name="description"
+      content="Coroid dev preview: the composed game under the adaptive quality governor — rolling frame-time statistics, calm/boosted/minimal tiers, the stress rig and the HUD performance badge."
+    />
+    <style>
+      /*
+       * Page-local chrome only. The 3D floor, the interface layer and the perf
+       * badge are styled by their own modules (base.css, hud.css and the badge's
+       * injected stylesheet).
+       */
+      #perf {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        background: radial-gradient(
+          circle at 50% 14%,
+          #0a1728 0%,
+          var(--coroid-deep) 48%,
+          var(--coroid-void) 100%
+        );
+      }
+
+      .perf__title {
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        z-index: 3;
+        display: grid;
+        gap: 0.15rem;
+        font-size: 0.82rem;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--coroid-muted);
+        pointer-events: none;
+        user-select: none;
+      }
+
+      .perf__title strong {
+        font-size: 1rem;
+        font-weight: 400;
+        letter-spacing: 0.42em;
+        color: var(--coroid-ink);
+      }
+
+      .perf__panel {
+        border: 1px solid rgba(53, 240, 255, 0.24);
+        border-radius: 0.5rem;
+        background: rgba(7, 16, 32, 0.78);
+        backdrop-filter: blur(7px);
+      }
+
+      .perf__readout {
+        position: absolute;
+        left: 1rem;
+        bottom: 8.6rem;
+        z-index: 3;
+        display: grid;
+        gap: 0.2rem;
+        min-width: 24rem;
+        margin: 0;
+        padding: 0.65rem 0.8rem;
+        font-family: var(--coroid-font-mono);
+        font-size: 0.8rem;
+        line-height: 1.45;
+        color: rgba(223, 246, 255, 0.88);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .perf__chart {
+        position: absolute;
+        left: 1rem;
+        bottom: 1rem;
+        z-index: 3;
+        width: 34rem;
+        height: 7rem;
+        border: 1px solid rgba(53, 240, 255, 0.24);
+        border-radius: 0.5rem;
+        background: rgba(4, 10, 20, 0.72);
+      }
+
+      .perf__legend {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        z-index: 3;
+        display: grid;
+        gap: 0.4rem;
+        max-width: 22rem;
+        margin: 0;
+        padding: 0.7rem 0.85rem;
+        font-size: 0.78rem;
+        line-height: 1.5;
+        color: var(--coroid-ink);
+      }
+
+      .perf__legend h2 {
+        margin: 0;
+        font-size: 0.68rem;
+        font-weight: 500;
+        letter-spacing: 0.26em;
+        text-transform: uppercase;
+        color: var(--coroid-muted);
+      }
+
+      .perf__legend dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.2rem 0.6rem;
+        margin: 0;
+        font-family: var(--coroid-font-mono);
+        font-size: 0.76rem;
+      }
+
+      .perf__legend dt {
+        color: var(--coroid-cyan);
+      }
+
+      .perf__legend dd {
+        margin: 0;
+        color: rgba(223, 246, 255, 0.82);
+      }
+
+      .perf__controls {
+        position: absolute;
+        bottom: 1rem;
+        right: 1rem;
+        z-index: 3;
+        display: grid;
+        gap: 0.5rem;
+        justify-items: end;
+      }
+
+      .perf__controls fieldset {
+        display: flex;
+        gap: 0.4rem;
+        margin: 0;
+        padding: 0.45rem 0.6rem 0.55rem;
+        border: 1px solid rgba(184, 233, 245, 0.24);
+        border-radius: 0.5rem;
+        background: rgba(7, 16, 32, 0.78);
+      }
+
+      .perf__controls legend {
+        padding: 0 0.3rem;
+        font-size: 0.66rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--coroid-muted);
+      }
+
+      .perf__controls button {
+        padding: 0.3rem 0.6rem;
+        border: 1px solid rgba(184, 233, 245, 0.34);
+        border-radius: 0.35rem;
+        background: rgba(4, 10, 20, 0.72);
+        color: var(--coroid-ink);
+        font-family: var(--coroid-font-mono);
+        font-size: 0.78rem;
+        cursor: pointer;
+      }
+
+      .perf__controls button:hover {
+        border-color: var(--coroid-cyan);
+      }
+
+      .perf__controls button[aria-pressed='true'] {
+        border-color: var(--coroid-magenta);
+        color: var(--coroid-magenta);
+      }
+
+      .perf__hint {
+        position: absolute;
+        left: 1rem;
+        bottom: 12.4rem;
+        z-index: 3;
+        margin: 0;
+        max-width: 34rem;
+        font-size: 0.74rem;
+        line-height: 1.5;
+        color: rgba(223, 246, 255, 0.6);
+        pointer-events: none;
+      }
+
+      @media (max-width: 1100px) {
+        .perf__legend,
+        .perf__hint {
+          display: none;
+        }
+
+        .perf__readout {
+          min-width: 0;
+          max-width: calc(100vw - 2rem);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- The harness mounts the WebGL canvas here and falls back to headless. -->
+    <div id="perf" class="perf">
+      <div class="perf__title">
+        <strong>COROID</strong>
+        <span>frame budget · adaptive tiers · stress rig</span>
+      </div>
+
+      <div id="perf-readout" class="perf__panel perf__readout" role="status" aria-live="off">
+        waiting for the first frame…
+      </div>
+
+      <p class="perf__hint">
+        The governor measures every frame at the fixed-step boundary and spends the budget it finds.
+        The tier buttons pin a tier so its presentation can be inspected on a machine that cannot
+        hold it adaptively — the readout keeps measuring either way. Engage the stress rig to force
+        sustained over-budget windows: the pin releases, the tier sheds load by itself, and the
+        median returns inside the selected tier's budget.
+      </p>
+
+      <canvas
+        id="perf-chart"
+        class="perf__chart"
+        width="1088"
+        height="224"
+        aria-label="Frame time history against the active tier budget"
+      ></canvas>
+
+      <aside class="perf__panel perf__legend">
+        <h2>What this page shows</h2>
+        <dl>
+          <dt>calm</dt>
+          <dd>60 fps target — 16.7 ms median, 33.4 ms p95; bloom, god rays and shadows on</dd>
+          <dt>boosted</dt>
+          <dd>90 fps target, reached only with four windows of measured headroom; ultra preset, 2× pixel ratio</dd>
+          <dt>minimal</dt>
+          <dd>30 fps rescue — sheds the post chain, halves the instance budget, 0.75× pixel ratio</dd>
+          <dt>stress</dt>
+          <dd>a calibrated CPU + instanced load that forces over-budget windows on any host</dd>
+        </dl>
+      </aside>
+
+      <div class="perf__controls">
+        <fieldset>
+          <legend>Pin tier</legend>
+          <button type="button" data-coroid-tier="minimal" aria-pressed="false">Minimal</button>
+          <button type="button" data-coroid-tier="calm" aria-pressed="false">Calm</button>
+          <button type="button" data-coroid-tier="boosted" aria-pressed="false">Boosted</button>
+          <button type="button" data-coroid-tier-hold="auto" aria-pressed="true">Auto</button>
+        </fieldset>
+        <button type="button" data-coroid-stress-toggle="true" aria-pressed="false">
+          Stress rig: off
+        </button>
+      </div>
+    </div>
+    <noscript>
+      Coroid renders a live holographic factory floor and needs JavaScript and WebGL enabled.
+    </noscript>
+    <script type="module" src="/dev-preview/perf.ts"></script>
+  </body>
+</html>
