@@ -1,0 +1,1003 @@
+/*
+ * Coroid holographic interface styles.
+ *
+ * Extends src/styles/base.css (which owns the page shell, the colour accents and
+ * the font stacks) with the interface layer: top overlay, objective banner,
+ * event-log terminal and the modal panels from src/ui/panels.ts.
+ *
+ * Art direction: translucent holographic panels, cyan / amber / magenta accents
+ * over the indigo void, emitter-scan lines, and counters set in tabular
+ * monospaced digits so numbers never jitter as they change.
+ *
+ * Accessibility defaults (all unconditional — no media query needed):
+ *  - every text colour below is at least 4.5:1 against `--hud-panel-solid`, the
+ *    opaque composite of a translucent panel over the backdrop, and the ratio is
+ *    asserted by tests/hud.test.ts;
+ *  - provenance is never colour alone: every chip always shows its text label;
+ *  - focus rings use a 2px cyan outline with an offset, plus a white inner ring
+ *    so the ring survives a bright backdrop.
+ * `prefers-contrast: more` and `forced-colors: active` strengthen the defaults
+ * further, and `prefers-reduced-motion` stops every animation.
+ */
+
+:root {
+  /* Panel surfaces. `--hud-panel-solid` is the flattened equivalent of the
+     translucent panel over the indigo backdrop: it is the background every text
+     colour is contrast-checked against. */
+  --hud-panel: rgba(7, 16, 32, 0.86);
+  --hud-panel-strong: rgba(5, 12, 24, 0.94);
+  --hud-panel-solid: #070f1e;
+  --hud-panel-line: rgba(53, 240, 255, 0.3);
+  --hud-panel-line-strong: rgba(53, 240, 255, 0.55);
+
+  /* Text colours (contrast against --hud-panel-solid in comments). */
+  --hud-ink: #e8f7ff; /* 17.5:1 */
+  --hud-muted: #9fbdcd; /* 9.7:1 */
+  --hud-cyan: #35f0ff; /* 13.7:1 */
+  --hud-amber: #ffc15c; /* 11.9:1 */
+  --hud-magenta: #ff4fd8; /* 6.7:1 */
+  --hud-ok: #59ff9b; /* 14.8:1 */
+  --hud-alarm: #ff5c7a; /* 6.4:1 */
+
+  --hud-radius: 0.55rem;
+  --hud-gap: 0.6rem;
+  --hud-shadow: 0 1.1rem 2.6rem rgba(2, 6, 14, 0.55);
+  --hud-scan: repeating-linear-gradient(
+    180deg,
+    rgba(53, 240, 255, 0.05) 0,
+    rgba(53, 240, 255, 0.05) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Interface layer                                                            */
+/* -------------------------------------------------------------------------- */
+
+.hud-root {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: block;
+  pointer-events: none;
+  font-family: var(--coroid-font-display);
+  color: var(--hud-ink);
+}
+
+.hud-root > * {
+  pointer-events: auto;
+}
+
+/* Readable without sight: the single aria-live channel of the interface. */
+.hud-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Counters: monospaced, tabular digits so values do not shift as they tick. */
+.hud-num {
+  font-family: var(--coroid-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: 0.01em;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Top overlay                                                                */
+/* -------------------------------------------------------------------------- */
+
+.hud-overlay {
+  position: absolute;
+  top: 0.85rem;
+  left: 50%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--hud-gap) 1.4rem;
+  width: min(78rem, calc(100vw - 2rem));
+  padding: 0.7rem 1rem;
+  transform: translateX(-50%);
+  border: 1px solid var(--hud-panel-line);
+  border-radius: var(--hud-radius);
+  background: var(--hud-panel);
+  background-image: var(--hud-scan);
+  backdrop-filter: blur(9px) saturate(1.15);
+  box-shadow: var(--hud-shadow), inset 0 0 2.4rem rgba(53, 240, 255, 0.06);
+}
+
+.hud-overlay__brand {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 9rem;
+}
+
+.hud-brand__mark {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 400;
+  letter-spacing: 0.42em;
+  color: var(--hud-ink);
+}
+
+.hud-brand__meta {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--coroid-font-mono);
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--hud-muted);
+}
+
+.hud-brand__codename {
+  color: var(--hud-cyan);
+  overflow-wrap: anywhere;
+}
+
+.hud-brand__sep {
+  color: var(--hud-muted);
+}
+
+.hud-overlay__readouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.6rem, 1fr));
+  gap: 0.45rem 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hud-readout {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  padding-left: 0.6rem;
+  border-left: 1px solid rgba(53, 240, 255, 0.22);
+}
+
+.hud-readout__key {
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--hud-muted);
+}
+
+.hud-readout__value {
+  font-size: 0.95rem;
+  line-height: 1.25;
+  color: var(--hud-ink);
+}
+
+.hud-readout__meta {
+  font-size: 0.72rem;
+  color: var(--hud-muted);
+}
+
+/* Depletion / progress bars. */
+.hud-meter {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 4.4rem;
+  height: 0.3rem;
+  margin-top: 0.15rem;
+  overflow: hidden;
+  border: 1px solid rgba(53, 240, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(3, 9, 18, 0.85);
+}
+
+.hud-meter--wide {
+  margin-top: 0.45rem;
+}
+
+.hud-meter__fill {
+  display: block;
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--hud-cyan), var(--hud-ok));
+  box-shadow: 0 0 0.6rem rgba(53, 240, 255, 0.55);
+}
+
+.hud-readout[data-hud='readout-context'] .hud-meter__fill {
+  background: linear-gradient(90deg, var(--hud-magenta), var(--hud-cyan));
+}
+
+/* Lane occupancy strip. */
+.hud-overlay__lanes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.hud-lane {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid rgba(53, 240, 255, 0.2);
+  border-radius: 999px;
+  background: rgba(4, 10, 20, 0.7);
+  font-family: var(--coroid-font-mono);
+  font-size: 0.74rem;
+  color: var(--hud-muted);
+}
+
+.hud-lane__name {
+  letter-spacing: 0.08em;
+}
+
+.hud-lane__count {
+  color: var(--hud-ink);
+}
+
+.hud-lane[data-busy='true'] {
+  border-color: var(--hud-panel-line-strong);
+  background: rgba(53, 240, 255, 0.12);
+}
+
+.hud-lane[data-busy='true'] .hud-lane__name {
+  color: var(--hud-cyan);
+}
+
+/* Overlay actions. */
+.hud-overlay__actions {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.hud-button {
+  padding: 0.32rem 0.6rem;
+  border: 1px solid rgba(184, 233, 245, 0.34);
+  border-radius: 0.35rem;
+  background: rgba(4, 10, 20, 0.72);
+  color: var(--hud-ink);
+  font-family: var(--coroid-font-mono);
+  font-size: 0.8rem;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.hud-button:hover {
+  border-color: var(--hud-cyan);
+  background: rgba(53, 240, 255, 0.14);
+}
+
+.hud-button:focus-visible {
+  outline: 2px solid var(--hud-cyan);
+  outline-offset: 2px;
+  box-shadow: inset 0 0 0 1px var(--hud-ink);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Objective banner                                                           */
+/* -------------------------------------------------------------------------- */
+
+.hud-banner {
+  position: absolute;
+  top: 7.6rem;
+  left: 50%;
+  display: grid;
+  gap: 0.3rem;
+  justify-items: center;
+  width: min(52rem, calc(100vw - 3rem));
+  padding: 0.65rem 1.1rem 0.7rem;
+  transform: translateX(-50%);
+  text-align: center;
+  border: 1px solid var(--hud-panel-line);
+  border-top: 2px solid var(--hud-cyan);
+  border-radius: var(--hud-radius);
+  background: var(--hud-panel);
+  background-image: var(--hud-scan);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--hud-shadow);
+}
+
+.hud-banner__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.hud-banner__kicker {
+  font-size: 0.72rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--hud-muted);
+}
+
+.hud-status {
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--hud-panel-line-strong);
+  border-radius: 999px;
+  background: rgba(53, 240, 255, 0.12);
+  color: var(--hud-cyan);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.hud-status[data-status='blocked'] {
+  border-color: rgba(255, 92, 122, 0.6);
+  background: rgba(255, 92, 122, 0.14);
+  color: var(--hud-alarm);
+}
+
+.hud-status[data-status='delivered'] {
+  border-color: rgba(89, 255, 155, 0.6);
+  background: rgba(89, 255, 155, 0.14);
+  color: var(--hud-ok);
+}
+
+.hud-banner__objective {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 0.94rem;
+  line-height: 1.55;
+  color: var(--hud-ink);
+}
+
+.hud-progress-label {
+  font-size: 0.76rem;
+  color: var(--hud-muted);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Event-log terminal                                                         */
+/* -------------------------------------------------------------------------- */
+
+.hud-log {
+  position: absolute;
+  left: 1.1rem;
+  bottom: 1.1rem;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(34rem, calc(50vw - 2rem));
+  max-height: min(17rem, 34vh);
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--hud-panel-line);
+  border-radius: var(--hud-radius);
+  background: var(--hud-panel-strong);
+  background-image: var(--hud-scan);
+  backdrop-filter: blur(9px);
+  box-shadow: var(--hud-shadow);
+  scroll-behavior: smooth;
+}
+
+.hud-log__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0.7rem;
+  border-bottom: 1px solid rgba(53, 240, 255, 0.22);
+  background: rgba(53, 240, 255, 0.06);
+}
+
+.hud-log__title {
+  font-size: 0.74rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--hud-muted);
+}
+
+.hud-log__count {
+  font-size: 0.76rem;
+  color: var(--hud-cyan);
+}
+
+.hud-log__lines {
+  display: grid;
+  gap: 0.12rem;
+  margin: 0;
+  padding: 0.45rem 0.7rem 0.55rem;
+  list-style: none;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(53, 240, 255, 0.4) transparent;
+}
+
+.hud-log__lines::-webkit-scrollbar {
+  width: 0.4rem;
+}
+
+.hud-log__lines::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(53, 240, 255, 0.35);
+}
+
+.hud-log__line {
+  display: grid;
+  grid-template-columns: 3.4rem auto 1fr;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.12rem 0.2rem;
+  border-left: 2px solid transparent;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.hud-log__line.is-latest {
+  border-left-color: var(--hud-cyan);
+  background: rgba(53, 240, 255, 0.08);
+}
+
+.hud-log__line[data-provenance='user_requirement'] {
+  border-left-color: rgba(255, 193, 92, 0.5);
+}
+
+.hud-log__line[data-provenance='repository_observation'] {
+  border-left-color: rgba(53, 240, 255, 0.5);
+}
+
+.hud-log__line[data-provenance='architect_choice'] {
+  border-left-color: rgba(255, 79, 216, 0.5);
+}
+
+.hud-log__line.is-latest[data-provenance='user_requirement'] {
+  border-left-color: var(--hud-amber);
+}
+
+.hud-log__line.is-latest[data-provenance='repository_observation'] {
+  border-left-color: var(--hud-cyan);
+}
+
+.hud-log__line.is-latest[data-provenance='architect_choice'] {
+  border-left-color: var(--hud-magenta);
+}
+
+.hud-log__time {
+  font-size: 0.74rem;
+  color: var(--hud-muted);
+}
+
+.hud-log__text {
+  color: var(--hud-ink);
+  overflow-wrap: anywhere;
+}
+
+.hud-log__empty {
+  padding: 0.2rem;
+  font-size: 0.76rem;
+  color: var(--hud-muted);
+}
+
+/* Provenance chips: colour *plus* the readable label, always. */
+.hud-provenance {
+  display: inline-block;
+  padding: 0 0.35rem;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  background: rgba(4, 10, 20, 0.6);
+  font-family: var(--coroid-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.hud-provenance[data-provenance='user_requirement'] {
+  color: var(--hud-amber);
+}
+
+.hud-provenance[data-provenance='repository_observation'] {
+  color: var(--hud-cyan);
+}
+
+.hud-provenance[data-provenance='architect_choice'] {
+  color: var(--hud-magenta);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Modal panels (inspector, plan outline, verification report, codex)          */
+/* -------------------------------------------------------------------------- */
+
+.hud-panel-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.hud-panel-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(2, 6, 14, 0.6);
+  backdrop-filter: blur(2px);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.hud-panel-backdrop[hidden] {
+  display: none;
+}
+
+.hud-panel {
+  position: absolute;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(30rem, calc(100vw - 2rem));
+  max-height: min(76vh, 44rem);
+  overflow: hidden;
+  pointer-events: auto;
+  border: 1px solid var(--hud-panel-line-strong);
+  border-radius: var(--hud-radius);
+  background: var(--hud-panel-strong);
+  background-image: var(--hud-scan);
+  backdrop-filter: blur(11px);
+  box-shadow: var(--hud-shadow), 0 0 2.2rem rgba(53, 240, 255, 0.12);
+  animation: hud-panel-in 180ms ease-out;
+}
+
+.hud-panel[hidden] {
+  display: none;
+}
+
+.hud-panel--outline {
+  top: 9.2rem;
+  left: 1.1rem;
+}
+
+.hud-panel--inspector {
+  top: 9.2rem;
+  right: 1.1rem;
+}
+
+.hud-panel--report {
+  right: 1.1rem;
+  bottom: 1.1rem;
+}
+
+.hud-panel--codex {
+  top: 50%;
+  left: 50%;
+  width: min(40rem, calc(100vw - 2rem));
+  transform: translate(-50%, -50%);
+}
+
+.hud-panel__header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid rgba(53, 240, 255, 0.26);
+  background: rgba(53, 240, 255, 0.07);
+}
+
+.hud-panel__titles {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.hud-panel__kicker {
+  font-size: 0.72rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--hud-muted);
+}
+
+.hud-panel__title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--hud-ink);
+  overflow-wrap: anywhere;
+}
+
+.hud-panel__subtitle {
+  margin: 0;
+  font-family: var(--coroid-font-mono);
+  font-size: 0.76rem;
+  color: var(--hud-muted);
+  overflow-wrap: anywhere;
+}
+
+.hud-panel__close {
+  align-self: start;
+}
+
+.hud-panel__body {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.8rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(53, 240, 255, 0.4) transparent;
+}
+
+.hud-panel__body::-webkit-scrollbar {
+  width: 0.4rem;
+}
+
+.hud-panel__body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(53, 240, 255, 0.35);
+}
+
+.hud-panel__section-title {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--hud-muted);
+}
+
+.hud-panel__section {
+  display: grid;
+  gap: 0.3rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(53, 240, 255, 0.16);
+}
+
+.hud-panel__empty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--hud-muted);
+}
+
+.hud-panel :focus-visible {
+  outline: 2px solid var(--hud-cyan);
+  outline-offset: 2px;
+  box-shadow: inset 0 0 0 1px var(--hud-ink);
+}
+
+/* Fact rows: label + value, shared by inspector and report. */
+.hud-facts {
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
+  gap: 0.2rem 0.7rem;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.hud-facts dt {
+  color: var(--hud-muted);
+}
+
+.hud-facts dd {
+  margin: 0;
+  color: var(--hud-ink);
+  overflow-wrap: anywhere;
+}
+
+.hud-list {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--coroid-font-mono);
+  font-size: 0.8rem;
+}
+
+.hud-list li {
+  padding: 0.15rem 0.35rem;
+  border-left: 2px solid rgba(53, 240, 255, 0.28);
+  background: rgba(4, 10, 20, 0.45);
+  color: var(--hud-ink);
+  overflow-wrap: anywhere;
+}
+
+.hud-chip {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border: 1px solid currentColor;
+  border-radius: 0.25rem;
+  font-family: var(--coroid-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hud-muted);
+}
+
+.hud-chip[data-status='passed'],
+.hud-chip[data-lifecycle='final_invariant'] {
+  color: var(--hud-ok);
+}
+
+.hud-chip[data-status='running'],
+.hud-chip[data-lifecycle='milestone'] {
+  color: var(--hud-cyan);
+}
+
+.hud-chip[data-status='failed'],
+.hud-chip[data-severity='high'],
+.hud-chip[data-severity='critical'] {
+  color: var(--hud-alarm);
+}
+
+.hud-chip[data-status='blocked'],
+.hud-chip[data-severity='medium'] {
+  color: var(--hud-amber);
+}
+
+.hud-chip[data-status='pending'],
+.hud-chip[data-lifecycle='superseded'] {
+  color: var(--hud-muted);
+}
+
+/* Inspector cards: checks, criteria, claims, findings. */
+.hud-card {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgba(53, 240, 255, 0.18);
+  border-radius: 0.35rem;
+  background: rgba(4, 10, 20, 0.5);
+  font-size: 0.8rem;
+}
+
+.hud-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hud-card__title {
+  margin: 0;
+  font-family: var(--coroid-font-mono);
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--hud-ink);
+  overflow-wrap: anywhere;
+}
+
+.hud-card__note {
+  margin: 0;
+  color: var(--hud-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Plan outline: phases and task rows. */
+.hud-phase {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.hud-phase__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.74rem;
+  color: var(--hud-muted);
+}
+
+.hud-outline__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.3rem 0.5rem;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid rgba(53, 240, 255, 0.16);
+  border-radius: 0.35rem;
+  background: rgba(4, 10, 20, 0.45);
+  color: var(--hud-ink);
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hud-outline__row:hover {
+  border-color: var(--hud-cyan);
+  background: rgba(53, 240, 255, 0.1);
+}
+
+.hud-outline__row[aria-current='true'] {
+  border-color: var(--hud-cyan);
+  box-shadow: inset 0 0 0 1px rgba(53, 240, 255, 0.4);
+}
+
+.hud-outline__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--coroid-font-mono);
+  font-size: 0.72rem;
+  color: var(--hud-muted);
+}
+
+/* Codex entries. */
+.hud-codex__entry {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgba(53, 240, 255, 0.16);
+  border-radius: 0.35rem;
+  background: rgba(4, 10, 20, 0.45);
+}
+
+.hud-codex__entry:focus-visible {
+  border-color: var(--hud-cyan);
+}
+
+.hud-codex__term {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--hud-ink);
+}
+
+.hud-codex__definition {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--hud-muted);
+}
+
+.hud-codex__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+@keyframes hud-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hud-panel--codex {
+  animation-name: hud-panel-center-in;
+}
+
+@keyframes hud-panel-center-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% - 0.4rem));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Narrow viewports                                                           */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .hud-overlay {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem 0.8rem;
+  }
+
+  .hud-overlay__brand {
+    grid-column: 1 / -1;
+  }
+
+  .hud-banner {
+    top: 10.5rem;
+  }
+
+  .hud-log {
+    width: min(28rem, calc(100vw - 2.2rem));
+  }
+
+  .hud-panel--outline,
+  .hud-panel--inspector,
+  .hud-panel--report {
+    top: auto;
+    right: 0.6rem;
+    bottom: 0.6rem;
+    left: 0.6rem;
+    width: auto;
+    max-height: 62vh;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Preference overrides                                                       */
+/* -------------------------------------------------------------------------- */
+
+/* Stronger surfaces and heavier borders for players who ask for more contrast. */
+@media (prefers-contrast: more) {
+  :root {
+    --hud-panel: rgba(2, 6, 14, 0.97);
+    --hud-panel-strong: rgba(2, 6, 14, 1);
+    --hud-panel-solid: #02060e;
+    --hud-panel-line: rgba(232, 247, 255, 0.7);
+    --hud-panel-line-strong: #e8f7ff;
+    --hud-muted: #d6e9f4;
+  }
+
+  .hud-overlay,
+  .hud-banner,
+  .hud-log,
+  .hud-panel {
+    border-width: 2px;
+    backdrop-filter: none;
+    background-image: none;
+  }
+
+  .hud-log__line.is-latest {
+    background: rgba(53, 240, 255, 0.22);
+  }
+}
+
+/* Forced-colours (Windows high contrast et al.): hand the palette to the OS and
+   keep every state readable through borders and text instead of colour. */
+@media (forced-colors: active) {
+  .hud-overlay,
+  .hud-banner,
+  .hud-log,
+  .hud-panel,
+  .hud-card,
+  .hud-outline__row,
+  .hud-codex__entry,
+  .hud-button {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    backdrop-filter: none;
+    background-image: none;
+    box-shadow: none;
+  }
+
+  .hud-status,
+  .hud-provenance,
+  .hud-chip,
+  .hud-lane {
+    border: 1px solid CanvasText;
+    color: CanvasText;
+  }
+
+  .hud-meter {
+    border-color: CanvasText;
+    background: Canvas;
+  }
+
+  .hud-meter__fill {
+    background: Highlight;
+  }
+
+  .hud-log__line.is-latest {
+    border-left-color: Highlight;
+    background: Canvas;
+  }
+
+  .hud-panel :focus-visible,
+  .hud-button:focus-visible {
+    outline: 3px solid Highlight;
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-panel,
+  .hud-panel--codex {
+    animation: none;
+  }
+
+  .hud-log {
+    scroll-behavior: auto;
+  }
+}
