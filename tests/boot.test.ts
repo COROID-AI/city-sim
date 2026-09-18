@@ -144,9 +144,12 @@ describe('headless render adapter', () => {
 });
 
 describe('createGame runtime', () => {
-  it('keeps the shipped system registry empty and drives whatever it contains', () => {
-    expect(systemRegistry).toHaveLength(0);
-    expect(getRegisteredSystems()).toHaveLength(0);
+  it('attaches the shipped composed registry plus anything registered later, in order', () => {
+    // The registry ships composed (see `tests/integration.test.ts`); this test
+    // only proves the runtime drives whatever it contains, in array order.
+    const shipped = systemRegistry.map((entry) => entry.id);
+    expect(shipped.length).toBeGreaterThan(0);
+    expect(getRegisteredSystems()).toBe(systemRegistry);
 
     const { system, record } = createRecordingSystem('registered-probe');
     registerSystem(system);
@@ -155,8 +158,8 @@ describe('createGame runtime', () => {
       const game = createGame({ adapter, stepMs: STEP_MS });
       openGames.push(game);
 
-      expect(getRegisteredSystems()).toHaveLength(1);
-      expect(game.systems.map((entry) => entry.id)).toEqual(['registered-probe']);
+      expect(getRegisteredSystems()).toHaveLength(shipped.length + 1);
+      expect(game.systems.map((entry) => entry.id)).toEqual([...shipped, 'registered-probe']);
       expect(record.attach).toBe(1);
 
       game.advance(STEP_MS);
@@ -455,8 +458,9 @@ describe('boot scene', () => {
     expect(harness.adapter.kind).toBe('headless');
     expect(harness.usedHeadlessFallback).toBe(true);
 
-    // The floor exists, is named, and is empty of gameplay: the shipped registry
-    // contributes no systems, so the boot scene is all there is.
+    // The floor exists, is named, and is empty of gameplay of its own: the boot
+    // scene contributes no systems, it is the backdrop the registry composes
+    // the world, the plan graph and the interface onto.
     expect(scene.root.name).toBe(BOOT_SCENE_NAMES.root);
     expect(scene.root.parent).toBe(harness.adapter.scene);
     expect(scene.floorSize).toBe(FLOOR_SIZE);
@@ -473,8 +477,13 @@ describe('boot scene', () => {
     ]) {
       expect(scene.root.getObjectByName(name), name).toBeTruthy();
     }
-    expect(systemRegistry).toHaveLength(0);
-    expect(harness.game.systems).toHaveLength(0);
+    // The boot scene is its own named subtree under the adapter scene, next to
+    // the composed systems' subtrees; the shipped registry (not empty) is what
+    // the harness mounted alongside it.
+    expect(systemRegistry.length).toBeGreaterThan(0);
+    expect(harness.game.systems.map((entry) => entry.id)).toEqual(
+      systemRegistry.map((entry) => entry.id),
+    );
 
     // The HUD reports the run, and the shell is marked live after frame one.
     expect(harness.overlay?.element.textContent).toContain('COROID');
