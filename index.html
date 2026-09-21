@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light only">
+<meta name="launch-status" content="phase=boot">
+<title>Rocket Launch Scene</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #86bdec; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { position: fixed; inset: 0; }
+  canvas { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<script type="module">
+/* ============================================================================
+ * ROCKET LAUNCH SCENE - single-file scaffold (index.html)
+ * ----------------------------------------------------------------------------
+ * One self-contained HTML file. Three.js is resolved exclusively through the
+ * pinned CDN importmap above (build/three.module.js and examples/jsm/), so the
+ * file runs directly from disk with no build step and no other external asset.
+ *
+ * The renderer owns the whole viewport edge to edge; the <body> holds nothing
+ * but this script tag, so no text, HUD, caption, menu, button or border is ever
+ * rendered over the scene. All diagnostics travel through the non-rendered
+ * head meta element "launch-status".
+ *
+ * SECTION MARKERS - append-only extension points, kept in file order:
+ *   SECTION: boot            core runtime (renderer, scene, camera, registry,
+ *                            shared state, quality tier, frame loop, status)
+ *   SECTION: world           sky, sun, ground, clouds, terrain
+ *   SECTION: launch-complex  pad, flame trench, tower, ground equipment
+ *   SECTION: rocket          vehicle geometry, materials, staging
+ *   SECTION: exhaust         engine plume and flame
+ *   SECTION: particles       sparks, smoke, dust, debris
+ *   SECTION: reactive        dynamic lighting, shockwave, camera-facing FX
+ *   SECTION: director        launch timeline, phases, thrust/altitude
+ *   SECTION: camera          cinematic rig, shots, shake
+ *   SECTION: perf            quality tier, fps sampling, launch-status channel
+ * A later phase appends exactly one subsystem inside its own marker without
+ * reordering existing code, e.g.
+ *     runtime.register('rocket', { init(ctx) {}, update(dt, state) {}, dispose() {} });
+ *
+ * PUBLISHED RUNTIME CONTRACT - window.LAUNCH_SCENE
+ *   register(name, { init, update, dispose })  ordered subsystem registry
+ *        init(ctx)          ctx = { THREE, scene, camera, renderer, state,
+ *                                   quality, runtime, api }
+ *        update(dt, state)  called every frame in registration order,
+ *                           dt in seconds, clamped and paused-tab safe
+ *        dispose(ctx)       releases GPU + scene resources on unregister
+ *        onQualityChange(quality, state)  optional, on setQuality()
+ *   unregister(name) / get(name) / has(name) / subsystems (ordered entry list)
+ *   onFrame(fn) / offFrame(fn)      extra per-frame hooks, after subsystems
+ *   start() / stop() / isRunning()  the loop auto-starts on load
+ *   state        shared director state (see the literal below)
+ *   quality      active quality tier { id, pixelRatioCap, shadowMapSize, ... }
+ *   setQuality(id) / setPhase(id)   hooks for the perf and director phases
+ *   cameraRig / director / perf     scaffold stubs, replaced by later phases
+ *   renderer / scene / camera / THREE
+ * ========================================================================== */
+
+import * as THREE from 'three';
+
+/* ============================================================================
+ * SECTION: boot - core runtime
+ * ========================================================================== */
+
+const MAX_DELTA = 1 / 15;      // seconds; clamps dt so a stalled tab cannot jump
+const STATUS_INTERVAL = 0.25;  // seconds; launch-status refreshes <= 4x/second
+
+const SECTION_MARKERS = [
+  'boot', 'world', 'launch-complex', 'rocket', 'exhaust', 'particles',
+  'reactive', 'director', 'camera', 'perf'
+];
+
+/* Quality tiers. The perf phase may add adaptive switching; the scaffold only
+ * detects a starting tier and honours explicit LAUNCH_SCENE.setQuality() calls. */
+const QUALITY_TIERS = {
+  high:   { id: 'high',   pixelRatioCap: 2,   shadowMapSize: 2048, shadows: true,  antialias: true,  cloudPuffs: 14 },
+  medium: { id: 'medium', pixelRatioCap: 1.5, shadowMapSize: 1024, shadows: true,  antialias: true,  cloudPuffs: 9 },
+  low:    { id: 'low',    pixelRatioCap: 1,   shadowMapSize: 512,  shadows: false, antialias: false, cloudPuffs: 5 }
+};
+
+/* Starting tier from the live framebuffer load; the perf phase owns any later
+ * adaptive switching through LAUNCH_SCENE.setQuality(). */
+function detectQualityTier() {
+  const dpr = Number(window.devicePixelRatio) || 1;
+  const cores = Number(navigator.hardwareConcurrency) || 4;
+  const memory = Number(navigator.deviceMemory) || 4;
+  const pixels = Math.max(1, window.innerWidth) * Math.max(1, window.innerHeight) * dpr * dpr;
+  if (pixels <= 2.2e6 && cores >= 2 && memory >= 4) return 'high';
+  if (pixels <= 8.0e6 && cores >= 2 && memory >= 2) return 'medium';
+  return 'low';
+}
+
+function clamp01(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.min(1, Math.max(0, number));
+}
+
+/* Shared director state: the single vocabulary every subsystem reads/writes. */
+const state = {
+  phase: 'prelaunch',    // director phase id (see LAUNCH_PHASES)
+  phaseElapsed: 0,       // seconds inside the current phase
+  elapsed: 0,            // seconds since the loop started
+  missionTime: 0,        // seconds relative to ignition (negative = countdown)
+  frame: 0,              // rendered frames
+  dt: 0,                 // last clamped delta time in seconds
+  fps: 0,                // rounded 0.5 s fps average, published by the perf phase
+  paused: false,         // freezes simulation time but keeps rendering
+  hidden: false,         // document visibility, used for paused-tab safety
+  thrust: 0,             // 0..1 normalised engine thrust
+  altitude: 0,           // metres above the pad
+  velocity: 0,           // m/s vertical speed
+  quality: 'high',       // active quality tier id
+  camera: { mode: 'cinematic', shot: 'pad-establish', shake: 0 },
+  errors: []             // { source, message, at } caught subsystem failures
+};
+
+const quality = { ...QUALITY_TIERS[detectQualityTier()], devicePixelRatio: window.devicePixelRatio || 1 };
+quality.maxPixelRatio = quality.pixelRatioCap;
+state.quality = quality.id;
+
+/* Scene, camera and the ACES-tonemapped, soft-shadowed renderer. */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8ec8f7);
+scene.fog = new THREE.Fog(0xd8ecff, 900, 5200);
+
+const camera = new THREE.PerspectiveCamera(52, 1, 0.5, 6000);
+camera.position.set(58, 22, 78);
+camera.lookAt(0, 14, 0);
+
+let renderer = null;
+try {
+  renderer = new THREE.WebGLRenderer({
+    antialias: quality.antialias,
+    alpha: false,
+    stencil: false,
+    powerPreference: 'high-performance'
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio));
+  renderer.setSize(Math.max(1, window.innerWidth), Math.max(1, window.innerHeight), false);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.shadowMap.enabled = quality.shadows;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.domElement.id = 'launch-canvas';
+  renderer.domElement.style.cssText =
+    'display:block;position:fixed;top:0;left:0;width:100%;height:100%;';
+  document.body.appendChild(renderer.domElement);
+} catch (error) {
+  renderer = null;
+  console.error('[LAUNCH_SCENE] WebGL renderer unavailable:', error);
+}
+
+function currentPixelRatio() {
+  return Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio);
+}
+
+const entries = [];
+const frameHooks = [];
+
+let rafId = 0;
+let lastTime = performance.now();
+let lastPublish = -Infinity;
+
+function subsystemContext() {
+  return { THREE, scene, camera, renderer, state, quality, runtime, api: runtime };
+}
+
+function recordError(source, error) {
+  const message = error && error.message ? error.message : String(error);
+  state.errors.push({ source, message, at: state.elapsed });
+  if (state.errors.length > 25) state.errors.shift();
+  console.error('[LAUNCH_SCENE] ' + source + ':', error);
+}
+
+function publishStatus(force) {
+  const meta = runtime.status.meta;
+  if (!meta) return;
+  const now = performance.now();
+  if (!force && now - lastPublish < STATUS_INTERVAL * 1000) return;
+  lastPublish = now;
+  meta.setAttribute('content',
+    'phase=' + state.phase +
+    ' subsystems=' + entries.map(function (entry) { return entry.name; }).join(',') +
+    ' frames=' + state.frame +
+    ' thrust=' + state.thrust.toFixed(3) +
+    ' alt=' + state.altitude.toFixed(1) +
+    ' quality=' + state.quality);
+}
+
+function initEntry(entry) {
+  if (entry.started) return entry;
+  entry.started = true;
+  if (typeof entry.impl.init === 'function') {
+    try {
+      entry.impl.init(subsystemContext());
+    } catch (error) {
+      recordError(entry.name + '.init', error);
+    }
+  }
+  return entry;
+}
+
+function disposeEntry(entry) {
+  if (!entry.started) return entry;
+  entry.started = false;
+  if (typeof entry.impl.dispose === 'function') {
+    try {
+      entry.impl.dispose(subsystemContext());
+    } catch (error) {
+      recordError(entry.name + '.dispose', error);
+    }
+  }
+  return entry;
+}
+
+function register(name, subsystem) {
+  if (typeof name !== 'string' || name.trim() === '') {
+    throw new TypeError('LAUNCH_SCENE.register(name, subsystem): name must be a non-empty string');
+  }
+  const impl = subsystem && typeof subsystem === 'object' ? subsystem : {};
+  const existing = entries.findIndex(function (entry) { return entry.name === name; });
+  if (existing !== -1) {
+    console.warn('[LAUNCH_SCENE] subsystem "' + name + '" re-registered; previous instance disposed.');
+    disposeEntry(entries[existing]);
+  }
+  const entry = { name: name, impl: impl, updates: 0, failures: 0, started: false };
+  if (existing !== -1) entries[existing] = entry;
+  else entries.push(entry);
+  if (runtime.ready) initEntry(entry);
+  publishStatus(true);
+  return entry;
+}
+
+function unregister(name) {
+  const index = entries.findIndex(function (entry) { return entry.name === name; });
+  if (index === -1) return false;
+  disposeEntry(entries[index]);
+  entries.splice(index, 1);
+  publishStatus(true);
+  return true;
+}
+
+function getSubsystem(name) {
+  const entry = entries.find(function (candidate) { return candidate.name === name; });
+  return entry ? entry.impl : null;
+}
+
+function hasSubsystem(name) {
+  return entries.some(function (entry) { return entry.name === name; });
+}
+
+function onFrame(hook) {
+  if (typeof hook !== 'function') throw new TypeError('LAUNCH_SCENE.onFrame(hook): hook must be a function');
+  if (frameHooks.indexOf(hook) === -1) frameHooks.push(hook);
+  return hook;
+}
+
+function offFrame(hook) {
+  const index = frameHooks.indexOf(hook);
+  if (index !== -1) frameHooks.splice(index, 1);
+  return hook;
+}
+
+function setQuality(tierId) {
+  const tier = QUALITY_TIERS[tierId];
+  if (!tier) throw new RangeError('LAUNCH_SCENE.setQuality: unknown tier "' + tierId + '"');
+  quality.id = tier.id;
+  quality.pixelRatioCap = tier.pixelRatioCap;
+  quality.maxPixelRatio = tier.pixelRatioCap;
+  quality.shadowMapSize = tier.shadowMapSize;
+  quality.shadows = tier.shadows;
+  quality.antialias = tier.antialias;
+  quality.cloudPuffs = tier.cloudPuffs;
+  state.quality = tier.id;
+  if (renderer) {
+    renderer.shadowMap.enabled = quality.shadows;
+    renderer.setPixelRatio(currentPixelRatio());
+    renderer.setSize(Math.max(1, window.innerWidth), Math.max(1, window.innerHeight), false);
+  }
+  entries.forEach(function (entry) {
+    if (entry.started && typeof entry.impl.onQualityChange === 'function') {
+      try {
+        entry.impl.onQualityChange(quality, state);
+      } catch (error) {
+        recordError(entry.name + '.onQualityChange', error);
+      }
+    }
+  });
+  publishStatus(true);
+  return quality.id;
+}
+
+function setPhase(phaseId) {
+  const next = String(phaseId);
+  if (state.phase === next) return state.phase;
+  state.phase = next;
+  state.phaseElapsed = 0;
+  publishStatus(true);
+  return state.phase;
+}
+
+function handleResize() {
+  const width = Math.max(1, window.innerWidth);
+  const height = Math.max(1, window.innerHeight);
+  if (renderer) {
+    renderer.setPixelRatio(currentPixelRatio());
+    renderer.setSize(width, height, false); // CSS keeps the canvas at 100% x 100%
+  }
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  quality.devicePixelRatio = window.devicePixelRatio || 1;
+  state.quality = quality.id;
+  publishStatus(true);
+}
+
+window.addEventListener('resize', handleResize, { passive: true });
+window.addEventListener('orientationchange', handleResize, { passive: true });
+document.addEventListener('visibilitychange', function () {
+  state.hidden = document.hidden;
+  lastTime = performance.now(); // resume without a catch-up delta spike
+});
+
+function step(dt) {
+  const delta = state.paused ? 0 : dt;
+  state.dt = delta;
+  state.elapsed += delta;
+  state.frame += 1;
+
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    if (!entry.started || typeof entry.impl.update !== 'function') continue;
+    try {
+      entry.impl.update(delta, state, subsystemContext());
+      entry.updates += 1;
+    } catch (error) {
+      entry.failures += 1;
+      recordError(entry.name + '.update', error);
+    }
+  }
+
+  const hooks = frameHooks.slice();
+  for (let i = 0; i < hooks.length; i += 1) {
+    try {
+      hooks[i](delta, state);
+    } catch (error) {
+      recordError('frameHook', error);
+    }
+  }
+
+  if (renderer) renderer.render(scene, camera);
+}
+
+function tick(timestamp) {
+  if (!runtime.running) return;
+  rafId = requestAnimationFrame(tick);
+  const now = typeof timestamp === 'number' ? timestamp : performance.now();
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+  if (!Number.isFinite(dt) || dt < 0) dt = 0;
+  step(Math.min(dt, MAX_DELTA));
+}
+
+function start() {
+  if (runtime.running) return runtime;
+  runtime.ready = true;
+  for (let i = 0; i < entries.length; i += 1) initEntry(entries[i]);
+  runtime.running = true;
+  handleResize();
+  lastTime = performance.now();
+  publishStatus(true);
+  rafId = requestAnimationFrame(tick);
+  return runtime;
+}
+
+function stop() {
+  if (!runtime.running) return runtime;
+  runtime.running = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = 0;
+  publishStatus(true);
+  return runtime;
+}
+
+/* The single shared interface every later phase consumes. */
+const runtime = {
+  version: '0.1.0-scaffold',
+  THREE: THREE,
+  renderer: renderer,
+  scene: scene,
+  camera: camera,
+  quality: quality,
+  state: state,
+  sections: SECTION_MARKERS,
+  subsystems: entries,
+  status: { meta: document.querySelector('meta[name="launch-status"]'), publish: publishStatus },
+  ready: false,
+  running: false,
+  cameraRig: null,
+  director: null,
+  perf: null,
+  register: register,
+  unregister: unregister,
+  get: getSubsystem,
+  has: hasSubsystem,
+  onFrame: onFrame,
+  offFrame: offFrame,
+  start: start,
+  stop: stop,
+  isRunning: function () { return runtime.running; },
+  setQuality: setQuality,
+  setPhase: setPhase,
+  resize: handleResize
+};
+
+window.LAUNCH_SCENE = runtime;
+
+/* ---------------------------------------------------------------------------
+ * SECTION: world - placeholder sky, sunlight, ground and clouds
+ * Owner of the world phase: sky, sunlight, layered terrain, hills and clouds.
+ * The scaffolding below is a deliberate bright daylight placeholder and is
+ * expected to be replaced (not reordered) from inside this marker.
+ * ------------------------------------------------------------------------ */
+
+function disposeMaterial(material) {
+  Object.keys(material).forEach(function (key) {
+    const value = material[key];
+    if (value && value.isTexture && typeof value.dispose === 'function') value.dispose();
+  });
+  material.dispose();
+}
+
+function disposeTree(root) {
+  root.traverse(function (object) {
+    if (object.geometry && typeof object.geometry.dispose === 'function') object.geometry.dispose();
+    if (Array.isArray(object.material)) object.material.forEach(disposeMaterial);
+    else if (object.material) disposeMaterial(object.material);
+    if (object.isLight) {
+      if (object.shadow && object.shadow.map) object.shadow.map.dispose();
+      if (typeof object.dispose === 'function') object.dispose();
+    }
+  });
+}
+
+/* Vertical blue-daylight gradient painted into an offscreen canvas; no asset. */
+function createSkyTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 8;
+  canvas.height = 256;
+  const context = canvas.getContext('2d');
+  const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0.00, '#1a63c8');
+  gradient.addColorStop(0.42, '#57a8ec');
+  gradient.addColorStop(0.70, '#a8d6f7');
+  gradient.addColorStop(0.88, '#e6f3ff');
+  gradient.addColorStop(1.00, '#ffffff');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function seededRandom(seed) {
+  let value = seed >>> 0;
+  return function random() {
+    value += 0x6d2b79f5;
+    let result = value;
+    result = Math.imul(result ^ (result >>> 15), result | 1);
+    result ^= result + Math.imul(result ^ (result >>> 7), result | 61);
+    return ((result ^ (result >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const worldStub = {
+  group: null,
+  sun: null,
+  clouds: null,
+
+  init(ctx) {
+    const group = new THREE.Group();
+    group.name = 'world-placeholder';
+
+    const sky = new THREE.Mesh(
+      new THREE.SphereGeometry(2800, 32, 16),
+      new THREE.MeshBasicMaterial({
+        map: createSkyTexture(),
+        side: THREE.BackSide,
+        depthWrite: false,
+        fog: false,
+        toneMapped: false
+      })
+    );
+    sky.name = 'sky-dome-placeholder';
+    sky.renderOrder = -1000;
+    group.add(sky);
+
+    /* Visual sun disc, matched to the key light direction below. */
+    const sunDirection = new THREE.Vector3(-420, 520, -560).normalize();
+    const sunDisc = new THREE.Mesh(
+      new THREE.SphereGeometry(70, 24, 16),
+      new THREE.MeshBasicMaterial({ color: 0xfff8e6, fog: false, toneMapped: false })
+    );
+    sunDisc.name = 'sun-disc-placeholder';
+    sunDisc.position.copy(sunDirection).multiplyScalar(2300);
+    group.add(sunDisc);
+
+    /* Key light: strong, warm, soft-shadowed. */
+    const sun = new THREE.DirectionalLight(0xfff3e2, 3.1);
+    sun.name = 'sun-placeholder';
+    sun.position.copy(sunDirection).multiplyScalar(880);
+    sun.castShadow = ctx.quality.shadows;
+    sun.shadow.mapSize.set(ctx.quality.shadowMapSize, ctx.quality.shadowMapSize);
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 1900;
+    sun.shadow.camera.left = -330;
+    sun.shadow.camera.right = 330;
+    sun.shadow.camera.top = 330;
+    sun.shadow.camera.bottom = -330;
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = 0.6;
+    sun.target.position.set(0, 10, 0);
+    group.add(sun);
+    group.add(sun.target);
+
+    const ambient = new THREE.HemisphereLight(0x9fc9ff, 0x6b7a4a, 0.9);
+    ambient.name = 'sky-ambient-placeholder';
+    group.add(ambient);
+
+    /* Ground plane plus a cleared apron, both receiving the soft shadows. */
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(9000, 9000),
+      new THREE.MeshStandardMaterial({ color: 0x6f9d4d, roughness: 1, metalness: 0 })
+    );
+    ground.name = 'ground-placeholder';
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    group.add(ground);
+
+    const apron = new THREE.Mesh(
+      new THREE.CircleGeometry(34, 64),
+      new THREE.MeshStandardMaterial({ color: 0xc7b184, roughness: 1, metalness: 0 })
+    );
+    apron.name = 'pad-apron-placeholder';
+    apron.rotation.x = -Math.PI / 2;
+    apron.position.y = 0.06;
+    apron.receiveShadow = true;
+    group.add(apron);
+
+    /* Colourful white cloud puffs; the closest ones cast the visible shadows. */
+    const random = seededRandom(20260921);
+    const puffGeometry = new THREE.SphereGeometry(1, 14, 10);
+    const cloudMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.98, metalness: 0 });
+    const clouds = new THREE.Group();
+    clouds.name = 'clouds-placeholder';
+    const puffCount = ctx.quality.cloudPuffs;
+    for (let index = 0; index < puffCount; index += 1) {
+      const near = index < 4; // first clouds sit inside the shadow frustum
+      const angle = random() * Math.PI * 2;
+      const radius = near ? 80 + random() * 140 : 340 + random() * 900;
+      const height = near ? 105 + random() * 60 : 170 + random() * 220;
+      const scale = near ? 18 + random() * 12 : 26 + random() * 30;
+      const cloud = new THREE.Group();
+      cloud.position.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius);
+      const blobs = 4 + Math.floor(random() * 3);
+      for (let blob = 0; blob < blobs; blob += 1) {
+        const puff = new THREE.Mesh(puffGeometry, cloudMaterial);
+        puff.position.set((random() - 0.5) * scale * 1.9, (random() - 0.5) * scale * 0.5, (random() - 0.5) * scale * 1.3);
+        const size = scale * (0.55 + random() * 0.6);
+        puff.scale.set(size, size * 0.75, size);
+        puff.castShadow = near;
+        cloud.add(puff);
+      }
+      clouds.add(cloud);
+    }
+    group.add(clouds);
+
+    this.group = group;
+    this.sun = sun;
+    this.clouds = clouds;
+    ctx.scene.add(group);
+  },
+
+  onQualityChange(qualityTier) {
+    if (!this.sun) return;
+    this.sun.castShadow = qualityTier.shadows;
+    this.sun.shadow.mapSize.set(qualityTier.shadowMapSize, qualityTier.shadowMapSize);
+    if (this.sun.shadow.map) {
+      this.sun.shadow.map.dispose();
+      this.sun.shadow.map = null;
+    }
+  },
+
+  update(dt) {
+    if (this.clouds) this.clouds.rotation.y += dt * 0.0015; // slow high-altitude drift
+  },
+
+  dispose(ctx) {
+    if (!this.group) return;
+    disposeTree(this.group);
+    ctx.scene.remove(this.group);
+    this.group = null;
+    this.sun = null;
+    this.clouds = null;
+  }
+};
+
+runtime.register('world', worldStub);
+
+/* ---------------------------------------------------------------------------
+ * SECTION: launch-complex - extension point (pad, flame trench, tower,
+ * ground equipment, barriers, warning lights). No scaffold code ships here;
+ * the owning phase appends exactly one subsystem registration.
+ * ------------------------------------------------------------------------ */
+
+/* ---------------------------------------------------------------------------
+ * SECTION: rocket - extension point (vehicle geometry, materials, staging).
+ * ------------------------------------------------------------------------ */
+
+/* ---------------------------------------------------------------------------
+ * SECTION: exhaust - extension point (engine plume and flame).
+ * ------------------------------------------------------------------------ */
+
+/* ---------------------------------------------------------------------------
+ * SECTION: particles - extension point (sparks, smoke, dust, debris).
+ * ------------------------------------------------------------------------ */
+
+/* ---------------------------------------------------------------------------
+ * SECTION: reactive - extension point (dynamic lighting, shockwave, FX that
+ * react to the shared director state).
+ * ------------------------------------------------------------------------ */
+
+/* ---------------------------------------------------------------------------
+ * SECTION: director - launch timeline stub
+ * Owns phase transitions and the shared thrust/altitude/velocity choreography.
+ * The stub holds the vehicle on the pad during pre-launch; the director phase
+ * fills in countdown, ignition, liftoff, ascent, staging and orbit.
+ * ------------------------------------------------------------------------ */
+
+const LAUNCH_PHASES = ['prelaunch', 'countdown', 'ignition', 'liftoff', 'ascent', 'staging', 'orbit'];
+
+const directorStub = {
+  phases: LAUNCH_PHASES,
+
+  init() {
+    state.phase = 'prelaunch';
+    state.phaseElapsed = 0;
+    state.missionTime = 0;
+  },
+
+  setPhase(phaseId) {
+    if (LAUNCH_PHASES.indexOf(phaseId) === -1) {
+      throw new RangeError('director.setPhase: unknown phase "' + phaseId + '"');
+    }
+    return setPhase(phaseId);
+  },
+
+  setThrust(value) {
+    state.thrust = clamp01(value);
+    return state.thrust;
+  },
+
+  setAltitude(metres) {
+    state.altitude = Math.max(0, Number(metres) || 0);
+    return state.altitude;
+  },
+
+  setVelocity(metresPerSecond) {
+    state.velocity = Number(metresPerSecond) || 0;
+    return state.velocity;
+  },
+
+  update(dt) {
+    state.phaseElapsed += dt;
+  },
+
+  dispose() {
+    state.phase = 'prelaunch';
+    state.phaseElapsed = 0;
+    state.missionTime = 0;
+    state.thrust = 0;
+    state.altitude = 0;
+    state.velocity = 0;
+  }
+};
+
+runtime.director = directorStub;
+runtime.register('director', directorStub);
+
+/* ---------------------------------------------------------------------------
+ * SECTION: camera - cinematic camera rig stub
+ * Named shots on a damped orbit around the launch axis. The camera phase adds
+ * follow shots, ignition shake and the landscape/cloud reveal on top of this.
+ * ------------------------------------------------------------------------ */
+
+const CAMERA_SHOTS = {
+  'pad-establish': { radius: 86, height: 24, target: [0, 16, 0], orbit: 0.028, damping: 1.1 },
+  'low-angle': { radius: 52, height: 5, target: [0, 26, 0], orbit: 0.045, damping: 0.9 },
+  'wide-reveal': { radius: 320, height: 96, target: [0, 44, 0], orbit: 0.010, damping: 1.4 },
+  'ascent-track': { radius: 150, height: 60, target: [0, 90, 0], orbit: 0.018, damping: 0.8 }
+};
+
+const cameraRigStub = {
+  shots: CAMERA_SHOTS,
+  shot: 'pad-establish',
+  angle: 0,
+  shake: 0,
+  focus: new THREE.Vector3(),
+
+  init() {
+    this.shot = 'pad-establish';
+    this.angle = Math.atan2(camera.position.z, camera.position.x);
+    this.focus.fromArray(CAMERA_SHOTS[this.shot].target);
+    state.camera.mode = 'cinematic';
+    state.camera.shot = this.shot;
+    state.camera.shake = 0;
+  },
+
+  setShot(name, immediate) {
+    if (!CAMERA_SHOTS[name]) {
+      throw new RangeError('cameraRig.setShot: unknown shot "' + name + '"');
+    }
+    this.shot = name;
+    const shot = CAMERA_SHOTS[name];
+    if (immediate) {
+      this.angle = Math.atan2(camera.position.z, camera.position.x);
+      this.focus.fromArray(shot.target);
+    }
+    return this.shot;
+  },
+
+  addShake(amount) {
+    this.shake = Math.min(1, this.shake + clamp01(amount));
+    state.camera.shake = this.shake;
+    return this.shake;
+  },
+
+  update(dt, currentState) {
+    const shot = CAMERA_SHOTS[this.shot] || CAMERA_SHOTS['pad-establish'];
+    currentState.camera.shot = this.shot;
+    this.angle += dt * shot.orbit;
+
+    const blend = 1 - Math.exp(-dt / shot.damping);
+    const desiredX = Math.cos(this.angle) * shot.radius;
+    const desiredZ = Math.sin(this.angle) * shot.radius;
+    camera.position.x += (desiredX - camera.position.x) * blend;
+    camera.position.z += (desiredZ - camera.position.z) * blend;
+    camera.position.y += (shot.height - camera.position.y) * blend;
+
+    this.focus.x += (shot.target[0] - this.focus.x) * blend;
+    this.focus.y += (shot.target[1] - this.focus.y) * blend;
+    this.focus.z += (shot.target[2] - this.focus.z) * blend;
+    camera.lookAt(this.focus);
+
+    if (this.shake > 0) {
+      this.shake = Math.max(0, this.shake - dt * 1.5);
+      const amplitude = this.shake * this.shake * 1.2;
+      camera.position.x += (Math.random() - 0.5) * amplitude;
+      camera.position.y += (Math.random() - 0.5) * amplitude;
+      camera.position.z += (Math.random() - 0.5) * amplitude;
+    }
+    currentState.camera.shake = this.shake;
+  },
+
+  dispose() {
+    camera.position.set(58, 22, 78);
+    camera.lookAt(0, 14, 0);
+    state.camera.shake = 0;
+  }
+};
+
+runtime.cameraRig = cameraRigStub;
+runtime.register('camera', cameraRigStub);
+
+/* ---------------------------------------------------------------------------
+ * SECTION: perf - quality tier, fps sampling and the launch-status channel
+ * The perf phase adds adaptive quality switching through LAUNCH_SCENE.setQuality.
+ * ------------------------------------------------------------------------ */
+
+const perfStub = {
+  fps: 0,
+  frameMs: 0,
+  sampleSeconds: 0,
+  sampleFrames: 0,
+
+  init() {
+    state.quality = quality.id;
+  },
+
+  update(dt) {
+    this.sampleFrames += 1;
+    this.sampleSeconds += dt;
+    if (this.sampleSeconds >= 0.5) {
+      this.fps = this.sampleFrames / this.sampleSeconds;
+      this.frameMs = (this.sampleSeconds * 1000) / this.sampleFrames;
+      state.fps = Math.round(this.fps);
+      this.sampleFrames = 0;
+      this.sampleSeconds = 0;
+    }
+    state.quality = quality.id;
+    publishStatus(false); // internally throttled to <= 4 refreshes per second
+  },
+
+  dispose() {
+    this.fps = 0;
+    this.frameMs = 0;
+    this.sampleSeconds = 0;
+    this.sampleFrames = 0;
+  }
+};
+
+runtime.perf = perfStub;
+runtime.register('perf', perfStub);
+
+/* ---------------------------------------------------------------------------
+ * SECTION: boot (start) - initialise the registry and auto-start the loop.
+ * No interaction is required: the scene begins animating on load.
+ * ------------------------------------------------------------------------ */
+
+runtime.start();
+console.log('[LAUNCH_SCENE] scaffold running - quality=' + quality.id +
+  ' subsystems=' + entries.map(function (entry) { return entry.name; }).join(','));
+</script>
+</body>
+</html>
