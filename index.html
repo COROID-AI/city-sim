@@ -1386,10 +1386,2240 @@ const worldSystem = {
 runtime.register('world', worldSystem);
 
 /* ---------------------------------------------------------------------------
- * SECTION: launch-complex - extension point (pad, flame trench, tower,
- * ground equipment, barriers, warning lights). No scaffold code ships here;
- * the owning phase appends exactly one subsystem registration.
+ * SECTION: launch-complex - concrete pad, flame trench, integration tower with
+ * animatable clamp arms, umbilical services, ground equipment, barriers,
+ * fencing and the emissive warning-light bank.
+ * ---------------------------------------------------------------------------
+ * Everything below is procedural: every texture is painted into a canvas at
+ * load time (no image URL, so the CDN host allowlist stays CDN-only) and every
+ * structure is seated on the world terrain sampler, LAUNCH_SCENE.collections.
+ * terrainHeight(x, z), so nothing floats above or sinks into the ground.
+ *
+ * Layout, in metres, launch axis at the world origin:
+ *   concrete apron ................ radius 45, walking surface y = +0.25
+ *   raised pad deck .............. octagon radius 30, deck surface y = +2.6
+ *   burner hole .................. radius 7.8 through the deck and apron
+ *   flame trench ................. corridor 12.6 wide from the burner hole to
+ *                                  the apron edge on +X, floor y = -9.7, with a
+ *                                  deflector wedge under the vehicle
+ *   integration tower ............ 84 m lattice, 17.6 m from the axis, azimuth
+ *                                  168 degrees, carrying three clamp arms and
+ *                                  three umbilical arms
+ *   blast wall / fence ........... radius 42.5 (concrete) and 51.5 (chain link)
+ *
+ * PUBLISHED HANDLES - LAUNCH_SCENE.handles.launchComplex (and runtime.handles)
+ *   pad             { group, deckTopY, deckRadius, apronRadius, flameHoleRadius,
+ *                     trench { floorY, halfWidth, mouthX, wedge } }
+ *   tower           { group, position, height, distance, platforms, clamps }
+ *   clampRigs[]     { id, kind, height, pivot, pivotRadius, armLength,
+ *                     closed, released, setRelease(t), setReach(r) }
+ *                     mechanical arms + clamps that hold the vehicle: the
+ *                     closed pose grips the lower body, the released pose
+ *                     swings and retracts clear of it
+ *   umbilicalRigs[] umbilical service arms with hose bundles (same shape)
+ *   allRigs[]       clampRigs followed by umbilicalRigs and the deck hold-downs
+ *   setClampRelease(t, immediate)  idempotent 0..1 release driving every rig
+ *   clampRelease    the animated value currently applied (0..1)
+ *   clampReleaseDuration  seconds the director phase can expect per transition
+ *   setClampReach(radius)  override the vehicle radius the jaws close on
+ *   vehicleSeat     { x, y, z } where the vehicle stands on the deck
+ *   warningLights   the emissive lamp bank (see lcCreateWarningLights):
+ *                     setBlink(enabled, rate) / setMode('blink'|'steady'|'off')
+ *                     setIntensity(0..1) / setPattern('chase'|'alternate'|
+ *                     'synchronised') / setState(options) / getState()
+ *                     getState() reports mode, rate, intensity, pattern, phase,
+ *                     the blink phase, the per-bank levels and brightness (the
+ *                     brightest winking lamp, so consumers can watch the flash)
+ *   setWarningBlink(enabled, rate) / setWarningState(options) / getWarningState()
+ *   instanced[]     every InstancedMesh used by the complex (frame budget)
+ *   group           the root Object3D added to the scene
  * ------------------------------------------------------------------------ */
+// ==== SECTION: launch-complex ====
+
+/* ---------------------------------------------------------------------------
+ * Configuration. Every identifier in this section is prefixed (LC_ / lc) so a
+ * sibling section can never collide with it.
+ * ------------------------------------------------------------------------ */
+
+const LC_SPEC = {
+  deck: {
+    topY: 2.6,             // walking surface of the concrete deck
+    plateDepth: 0.9,       // thickness of the deck plate
+    podiumTopY: 1.7,       // top of the concrete skirt under the plate
+    podiumDepth: 4.4,      // skirt reaches y = -2.7 (buried in the apron)
+    podiumRadius: 29.3,
+    radius: 30,            // octagon circumradius of the deck plate
+    sides: 8,
+    holeRadius: 7.8,       // burner opening under the vehicle
+    parapetRadius: 29.0,
+    parapetHeight: 1.15
+  },
+  apron: {
+    topY: 0.25,
+    depth: 0.6,
+    radius: 45,
+    sides: 12
+  },
+  trench: {
+    halfWidth: 6.3,        // inner half width of the flame-trench corridor
+    wallThickness: 0.95,
+    floorY: -9.7,
+    floorDepth: 1.8,
+    mouthX: 45.6,          // corridor opens just past the apron edge
+    wedgeApexY: -3.2
+  },
+  tower: {
+    distance: 17.6,        // metres from the launch axis to the tower centre
+    azimuthDeg: 168,
+    height: 84,
+    halfWidth: 3.5,
+    platforms: [11.5, 25.9, 40.4, 54.9, 69.4],
+    clamps: [6.6, 11.5, 16.4],
+    umbilicals: [26.2, 36.4, 46.6],
+    defaultVehicleRadius: 4.2
+  },
+  barrier: { radius: 42.5, fromDeg: 46, toDeg: 294, segmentDeg: 7.5 },
+  fence: { radius: 51.5, gateDeg: 305, gateHalfDeg: 5.5, postSpacingDeg: 4.5 },
+  equipment: { azimuthDeg: -128, waterAzimuthDeg: -35, houseAzimuthDeg: -62, mastAzimuths: [18, 112, 200, 288] },
+  lights: { blinkRate: 1.15, intensity: 1, mode: 'blink', pattern: 'chase' }
+};
+
+const LC_DEG = Math.PI / 180;
+const LC_TOWER_AZIMUTH = LC_SPEC.tower.azimuthDeg * LC_DEG;
+const LC_TOWER_CENTER = new THREE.Vector3(
+  Math.cos(LC_TOWER_AZIMUTH) * LC_SPEC.tower.distance, 0,
+  Math.sin(LC_TOWER_AZIMUTH) * LC_SPEC.tower.distance
+);
+const LC_TOWER_YAW = Math.PI - LC_TOWER_AZIMUTH;   // local +X points at the vehicle
+const LC_TOWER_INWARD = new THREE.Vector3(-Math.cos(LC_TOWER_AZIMUTH), 0, -Math.sin(LC_TOWER_AZIMUTH));
+const LC_TOWER_TANGENT = new THREE.Vector3(Math.sin(LC_TOWER_AZIMUTH), 0, -Math.cos(LC_TOWER_AZIMUTH));
+
+/* Shared unit geometries. Every repeated part of the complex is an instance of
+ * one of these, so the whole site costs a handful of geometries, not hundreds. */
+const LC_GEO = {
+  box: new THREE.BoxGeometry(1, 1, 1),
+  cylinder: new THREE.CylinderGeometry(0.5, 0.5, 1, 12, 1),
+  hose: new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1),
+  sphere: new THREE.SphereGeometry(0.5, 14, 10),
+  lamp: new THREE.SphereGeometry(0.42, 10, 8),
+  plane: new THREE.PlaneGeometry(1, 1)
+};
+
+/* ---------------------------------------------------------------------------
+ * Small build helpers (allocation-free scratch math, no per-frame cost)
+ * ------------------------------------------------------------------------ */
+
+const lcScratchPosition = new THREE.Vector3();
+const lcScratchEuler = new THREE.Euler();
+const lcScratchQuaternion = new THREE.Quaternion();
+const lcScratchScale = new THREE.Vector3();
+
+function lcCompose(matrix, item) {
+  const p = item.p || [0, 0, 0];
+  const r = item.r || [0, 0, 0];
+  const s = item.s || [1, 1, 1];
+  lcScratchPosition.set(p[0], p[1], p[2]);
+  lcScratchEuler.set(r[0], r[1], r[2]);
+  lcScratchQuaternion.setFromEuler(lcScratchEuler);
+  lcScratchScale.set(s[0], s[1], s[2]);
+  return matrix.compose(lcScratchPosition, lcScratchQuaternion, lcScratchScale);
+}
+
+/* One InstancedMesh per repeated part: the frame budget stays flat no matter
+ * how many pipes, stairs, bolts, barriers or lamps the site carries. */
+function lcInstance(name, geometry, material, items, options) {
+  const count = Math.max(1, items.length);
+  const mesh = new THREE.InstancedMesh(geometry, material, count);
+  const matrix = new THREE.Matrix4();
+  for (let i = 0; i < items.length; i += 1) {
+    lcCompose(matrix, items[i]);
+    mesh.setMatrixAt(i, matrix);
+  }
+  mesh.count = items.length;
+  mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.name = name;
+  const settings = options || {};
+  mesh.castShadow = settings.castShadow !== false;
+  mesh.receiveShadow = settings.receiveShadow !== false;
+  return mesh;
+}
+
+function lcBox(parent, material, position, size, rotation, name) {
+  const mesh = new THREE.Mesh(LC_GEO.box, material);
+  mesh.position.set(position[0], position[1], position[2]);
+  mesh.scale.set(size[0], size[1], size[2]);
+  if (rotation) mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  if (name) mesh.name = name;
+  parent.add(mesh);
+  return mesh;
+}
+
+function lcCylinder(parent, material, position, size, rotation, name) {
+  const mesh = new THREE.Mesh(LC_GEO.cylinder, material);
+  mesh.position.set(position[0], position[1], position[2]);
+  mesh.scale.set(size[0], size[1], size[2]);
+  if (rotation) mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  if (name) mesh.name = name;
+  parent.add(mesh);
+  return mesh;
+}
+
+function lcSphere(parent, material, position, size, name) {
+  const mesh = new THREE.Mesh(LC_GEO.sphere, material);
+  mesh.position.set(position[0], position[1], position[2]);
+  mesh.scale.set(size[0], size[1], size[2]);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  if (name) mesh.name = name;
+  parent.add(mesh);
+  return mesh;
+}
+
+/* Extrude a top-view outline downward: `topY` is the walking surface and the
+ * solid extends `depth` metres below it. */
+function lcExtrude(shape, depth, topY, material, name) {
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: depth,
+    bevelEnabled: false,
+    steps: 1,
+    curveSegments: 20
+  });
+  geometry.rotateX(Math.PI / 2);          // outline (x, y) -> ground plane (x, z)
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = name;
+  mesh.position.y = topY;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/* Straight prism from a 2D profile in the XY plane, extruded along Z and
+ * centred on `centreZ`. Used for the flame deflector and the trench ramp. */
+function lcPrism(profile, depth, centreZ, material, name) {
+  const shape = new THREE.Shape(profile);
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: depth, bevelEnabled: false, steps: 1 });
+  geometry.translate(0, 0, centreZ - depth * 0.5);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = name;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/* Pad top-view outline: a regular polygon carrying a "keyhole" cut - a round
+ * burner pit joined to a straight flame-trench corridor that opens on the +X
+ * edge. Extruded three times (deck plate, podium, apron) so the trench is a
+ * real void in the concrete instead of a painted dark patch. */
+function lcPadOutline(radius, sides, holeRadius, halfWidth) {
+  const step = (Math.PI * 2) / sides;
+  const start = -Math.PI / sides;
+  const edgeX = radius * Math.cos(Math.PI / sides);
+  const points = [new THREE.Vector2(edgeX, halfWidth)];
+
+  /* walk the polygon counter-clockwise from the +X edge, stopping where the
+   * corridor's far wall leaves the boundary */
+  for (let i = 1; i <= sides; i += 1) {
+    const angle = start + step * i;
+    points.push(new THREE.Vector2(Math.cos(angle) * radius, Math.sin(angle) * radius));
+  }
+  points.push(new THREE.Vector2(edgeX, -halfWidth));
+
+  /* inward along the corridor wall to the pit, around the pit's far side, and
+   * back out along the other corridor wall */
+  const cutX = Math.sqrt(Math.max(0.05, holeRadius * holeRadius - halfWidth * halfWidth));
+  const entryAngle = Math.atan2(-halfWidth, cutX);
+  const sweep = Math.PI * 2 - 2 * Math.abs(entryAngle);
+  const arcSteps = 36;
+  points.push(new THREE.Vector2(cutX, -halfWidth));
+  for (let i = 1; i <= arcSteps; i += 1) {
+    const angle = entryAngle - (sweep * i) / arcSteps;
+    points.push(new THREE.Vector2(Math.cos(angle) * holeRadius, Math.sin(angle) * holeRadius));
+  }
+
+  const shape = new THREE.Shape(points);
+  shape.closePath();
+  return shape;
+}
+
+/* ---------------------------------------------------------------------------
+ * Terrain seating: every structure samples the world height sampler, so the
+ * complex follows the levelled apron exactly and can never float or intersect.
+ * ------------------------------------------------------------------------ */
+
+function lcGroundAt(x, z) {
+  return terrainHeight(x, z);
+}
+
+function lcMinGround(x, z, radius) {
+  let minimum = terrainHeight(x, z);
+  for (let i = 0; i < 8; i += 1) {
+    const angle = (i / 8) * Math.PI * 2;
+    minimum = Math.min(minimum, terrainHeight(x + Math.cos(angle) * radius, z + Math.sin(angle) * radius));
+  }
+  return minimum;
+}
+
+/* ---------------------------------------------------------------------------
+ * Procedural canvas textures (never an image URL)
+ * ------------------------------------------------------------------------ */
+
+function lcCanvas(size, draw) {
+  return makeCanvasTexture(size, size, size, draw);
+}
+
+function lcConcreteTexture(base, joint, stain) {
+  return lcCanvas(512, function (ctx2d, width, height) {
+    const random = seededRandom(90210);
+    ctx2d.fillStyle = base;
+    ctx2d.fillRect(0, 0, width, height);
+
+    /* aggregate speckle */
+    for (let i = 0; i < 5200; i += 1) {
+      const tone = random();
+      ctx2d.fillStyle = tone > 0.5
+        ? 'rgba(255,255,255,' + (0.05 + tone * 0.10).toFixed(3) + ')'
+        : 'rgba(60,54,48,' + (0.04 + tone * 0.10).toFixed(3) + ')';
+      const size = 1 + random() * 2.6;
+      ctx2d.fillRect(random() * width, random() * height, size, size);
+    }
+
+    /* cast panel joints every quarter tile */
+    ctx2d.lineWidth = 3;
+    for (let i = 0; i <= 4; i += 1) {
+      const offset = (i / 4) * width;
+      ctx2d.strokeStyle = joint;
+      ctx2d.beginPath();
+      ctx2d.moveTo(offset, 0);
+      ctx2d.lineTo(offset, height);
+      ctx2d.stroke();
+      ctx2d.strokeStyle = 'rgba(255,255,255,0.18)';
+      ctx2d.beginPath();
+      ctx2d.moveTo(offset + 3, 0);
+      ctx2d.lineTo(offset + 3, height);
+      ctx2d.stroke();
+    }
+    ctx2d.strokeStyle = 'rgba(255,255,255,0.14)';
+    ctx2d.lineWidth = 2;
+    for (let i = 0; i <= 2; i += 1) {
+      const offset = (i / 2) * height;
+      ctx2d.beginPath();
+      ctx2d.moveTo(0, offset);
+      ctx2d.lineTo(width, offset);
+      ctx2d.stroke();
+    }
+
+    /* weathering: stains, rust weeping and soot blooms */
+    for (let i = 0; i < 90; i += 1) {
+      const x = random() * width;
+      const y = random() * height;
+      const radius = 8 + random() * 46;
+      const gradient = ctx2d.createRadialGradient(x, y, 0, x, y, radius);
+      gradient.addColorStop(0, stain);
+      gradient.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx2d.fillStyle = gradient;
+      ctx2d.beginPath();
+      ctx2d.arc(x, y, radius, 0, Math.PI * 2);
+      ctx2d.fill();
+    }
+
+    /* fine cracks so the surface never reads as flat paint */
+    ctx2d.strokeStyle = 'rgba(48,44,40,0.30)';
+    for (let i = 0; i < 26; i += 1) {
+      ctx2d.lineWidth = 0.6 + random();
+      let x = random() * width;
+      let y = random() * height;
+      ctx2d.beginPath();
+      ctx2d.moveTo(x, y);
+      for (let s = 0; s < 5; s += 1) {
+        x += (random() - 0.5) * 46;
+        y += (random() - 0.5) * 46;
+        ctx2d.lineTo(x, y);
+      }
+      ctx2d.stroke();
+    }
+  });
+}
+
+function lcSootTexture() {
+  return lcCanvas(512, function (ctx2d, width, height) {
+    const random = seededRandom(4242);
+    ctx2d.fillStyle = '#4a4640';
+    ctx2d.fillRect(0, 0, width, height);
+    /* charred patches with hot-metal discolouration */
+    for (let i = 0; i < 150; i += 1) {
+      const x = random() * width;
+      const y = random() * height;
+      const radius = 10 + random() * 90;
+      const hot = random() > 0.62;
+      const gradient = ctx2d.createRadialGradient(x, y, 0, x, y, radius);
+      gradient.addColorStop(0, hot ? 'rgba(96,58,34,0.55)' : 'rgba(24,22,20,0.6)');
+      gradient.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx2d.fillStyle = gradient;
+      ctx2d.beginPath();
+      ctx2d.arc(x, y, radius, 0, Math.PI * 2);
+      ctx2d.fill();
+    }
+    /* calcium bloom and rust weeping down the walls */
+    for (let i = 0; i < 220; i += 1) {
+      ctx2d.fillStyle = random() > 0.5 ? 'rgba(214,206,190,0.20)' : 'rgba(150,96,52,0.22)';
+      ctx2d.fillRect(random() * width, random() * height, 1 + random() * 3, 4 + random() * 42);
+    }
+  });
+}
+
+function lcPaintedSteelTexture() {
+  return lcCanvas(256, function (ctx2d, width, height) {
+    const random = seededRandom(1717);
+    ctx2d.fillStyle = '#e6e1d6';
+    ctx2d.fillRect(0, 0, width, height);
+    /* panel seams and rivet lines */
+    ctx2d.strokeStyle = 'rgba(120,118,112,0.55)';
+    ctx2d.lineWidth = 2;
+    for (let i = 1; i < 4; i += 1) {
+      ctx2d.beginPath();
+      ctx2d.moveTo(0, (i / 4) * height);
+      ctx2d.lineTo(width, (i / 4) * height);
+      ctx2d.stroke();
+    }
+    for (let i = 0; i < 700; i += 1) {
+      ctx2d.fillStyle = 'rgba(96,94,90,0.35)';
+      ctx2d.beginPath();
+      ctx2d.arc(random() * width, random() * height, 1.4, 0, Math.PI * 2);
+      ctx2d.fill();
+    }
+    /* grime and light rust streaks */
+    for (let i = 0; i < 60; i += 1) {
+      const x = random() * width;
+      const gradient = ctx2d.createLinearGradient(x, 0, x, height);
+      gradient.addColorStop(0, 'rgba(120,88,52,0.28)');
+      gradient.addColorStop(1, 'rgba(120,88,52,0)');
+      ctx2d.fillStyle = gradient;
+      ctx2d.fillRect(x, random() * height * 0.4, 2 + random() * 5, height);
+    }
+  });
+}
+
+function lcTowerStripeTexture() {
+  return lcCanvas(256, function (ctx2d, width, height) {
+    const random = seededRandom(6060);
+    ctx2d.fillStyle = '#ece7dc';
+    ctx2d.fillRect(0, 0, width, height);
+    ctx2d.fillStyle = '#d33a26';
+    ctx2d.fillRect(0, height * 0.30, width, height * 0.12);
+    ctx2d.fillRect(0, height * 0.68, width, height * 0.12);
+    for (let i = 0; i < 900; i += 1) {
+      ctx2d.fillStyle = random() > 0.5 ? 'rgba(255,255,255,0.10)' : 'rgba(70,60,52,0.10)';
+      ctx2d.fillRect(random() * width, random() * height, 1 + random() * 2, 1 + random() * 2);
+    }
+    for (let i = 0; i < 30; i += 1) {
+      const x = random() * width;
+      const gradient = ctx2d.createLinearGradient(x, 0, x, height);
+      gradient.addColorStop(0, 'rgba(96,74,44,0.22)');
+      gradient.addColorStop(1, 'rgba(96,74,44,0)');
+      ctx2d.fillStyle = gradient;
+      ctx2d.fillRect(x, random() * height * 0.5, 2 + random() * 4, height);
+    }
+  });
+}
+
+function lcHazardTexture() {
+  return lcCanvas(256, function (ctx2d, width, height) {
+    ctx2d.fillStyle = '#f2c317';
+    ctx2d.fillRect(0, 0, width, height);
+    ctx2d.fillStyle = '#22201d';
+    const stripe = 32;
+    for (let x = -height; x < width + height; x += stripe * 2) {
+      ctx2d.beginPath();
+      ctx2d.moveTo(x, height);
+      ctx2d.lineTo(x + stripe, height);
+      ctx2d.lineTo(x + stripe + height, 0);
+      ctx2d.lineTo(x + height, 0);
+      ctx2d.closePath();
+      ctx2d.fill();
+    }
+    const random = seededRandom(881);
+    for (let i = 0; i < 500; i += 1) {
+      ctx2d.fillStyle = random() > 0.5 ? 'rgba(255,255,255,0.10)' : 'rgba(40,34,26,0.14)';
+      ctx2d.fillRect(random() * width, random() * height, 1 + random() * 3, 1 + random() * 2);
+    }
+  });
+}
+
+function lcChainLinkTexture() {
+  return lcCanvas(256, function (ctx2d, width, height) {
+    ctx2d.clearRect(0, 0, width, height);
+    ctx2d.strokeStyle = 'rgba(206,214,220,0.95)';
+    ctx2d.lineWidth = 2.4;
+    const spacing = 18;
+    for (let i = -height; i < width + height; i += spacing) {
+      ctx2d.beginPath();
+      ctx2d.moveTo(i, 0);
+      ctx2d.lineTo(i + height, height);
+      ctx2d.stroke();
+      ctx2d.beginPath();
+      ctx2d.moveTo(i, height);
+      ctx2d.lineTo(i + height, 0);
+      ctx2d.stroke();
+    }
+    /* woven highlight so the mesh keeps its solidity in bright daylight */
+    ctx2d.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx2d.lineWidth = 1;
+    for (let i = -height; i < width + height; i += spacing) {
+      ctx2d.beginPath();
+      ctx2d.moveTo(i + 1, 0);
+      ctx2d.lineTo(i + height + 1, height);
+      ctx2d.stroke();
+    }
+  });
+}
+
+function lcGratingTexture() {
+  return lcCanvas(256, function (ctx2d, width, height) {
+    ctx2d.fillStyle = '#59605f';
+    ctx2d.fillRect(0, 0, width, height);
+    const cell = 32;
+    for (let y = 0; y < height; y += cell) {
+      for (let x = 0; x < width; x += cell) {
+        ctx2d.fillStyle = '#23282a';
+        ctx2d.fillRect(x + 4, y + 4, cell - 8, cell - 8);
+      }
+    }
+    ctx2d.fillStyle = 'rgba(255,255,255,0.16)';
+    for (let y = 0; y < height; y += cell) {
+      ctx2d.fillRect(0, y, width, 2);
+    }
+    ctx2d.fillStyle = 'rgba(0,0,0,0.22)';
+    for (let x = 0; x < width; x += cell) {
+      ctx2d.fillRect(x, 0, 2, height);
+    }
+  });
+}
+
+function lcAsphaltTexture() {
+  return lcCanvas(256, function (ctx2d, width, height) {
+    const random = seededRandom(3312);
+    ctx2d.fillStyle = '#5b5c5e';
+    ctx2d.fillRect(0, 0, width, height);
+    for (let i = 0; i < 9000; i += 1) {
+      const tone = random();
+      ctx2d.fillStyle = tone > 0.55 ? 'rgba(214,212,206,0.22)' : 'rgba(28,28,30,0.28)';
+      ctx2d.fillRect(random() * width, random() * height, 1 + random() * 2.4, 1 + random() * 2.4);
+    }
+  });
+}
+
+function lcGlowTexture() {
+  return lcCanvas(128, function (ctx2d, width, height) {
+    const centre = width * 0.5;
+    const glow = ctx2d.createRadialGradient(centre, centre, 0, centre, centre, centre);
+    glow.addColorStop(0, 'rgba(255,255,255,1)');
+    glow.addColorStop(0.18, 'rgba(255,255,255,0.72)');
+    glow.addColorStop(0.45, 'rgba(255,255,255,0.24)');
+    glow.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx2d.fillStyle = glow;
+    ctx2d.fillRect(0, 0, width, height);
+  });
+}
+
+function lcCreateTextures() {
+  return {
+    concrete: lcConcreteTexture('#c9c3b6', 'rgba(120,114,104,0.55)', 'rgba(112,96,72,0.16)'),
+    apron: lcConcreteTexture('#bfb9ac', 'rgba(108,102,92,0.6)', 'rgba(92,80,60,0.20)'),
+    soot: lcSootTexture(),
+    steel: lcPaintedSteelTexture(),
+    stripes: lcTowerStripeTexture(),
+    hazard: lcHazardTexture(),
+    chainLink: lcChainLinkTexture(),
+    grating: lcGratingTexture(),
+    asphalt: lcAsphaltTexture(),
+    glow: lcGlowTexture()
+  };
+}
+
+/* Tiling clones share the source canvas but keep their own repeat, and every
+ * clone is recorded in the current sink so dispose() can release it. */
+let lcTextureSink = null;
+
+function lcRepeat(texture, x, y) {
+  const clone = texture.clone();
+  clone.wrapS = THREE.RepeatWrapping;
+  clone.wrapT = THREE.RepeatWrapping;
+  clone.repeat.set(x, y);
+  clone.needsUpdate = true;
+  if (lcTextureSink) lcTextureSink.push(clone);
+  return clone;
+}
+
+function lcCreateMaterials(textures, sink) {
+  lcTextureSink = Array.isArray(sink) ? sink : null;
+  const materials = {};
+  materials.deck = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.concrete, 0.125, 0.125), color: 0xffffff, roughness: 0.93, metalness: 0.02
+  });
+  materials.podium = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.concrete, 0.16, 0.16), color: 0xcbc5b8, roughness: 0.94, metalness: 0.02
+  });
+  materials.apron = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.apron, 0.1, 0.1), color: 0xf0ece2, roughness: 0.95, metalness: 0.01
+  });
+  materials.trench = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.soot, 0.09, 0.09), color: 0xbdb7ac, roughness: 0.95, metalness: 0.02,
+    side: THREE.DoubleSide
+  });
+  materials.wedge = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.soot, 0.14, 0.14), color: 0xa8a29a, roughness: 0.9, metalness: 0.04
+  });
+  materials.concreteBlock = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.concrete, 0.2, 0.2), color: 0xd8d3c6, roughness: 0.94, metalness: 0.02
+  });
+  materials.steelPainted = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.steel, 0.5, 0.5), color: 0xffffff, roughness: 0.62, metalness: 0.24
+  });
+  materials.towerSteel = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.stripes, 1, 3), color: 0xffffff, roughness: 0.6, metalness: 0.25
+  });
+  materials.steelDark = new THREE.MeshStandardMaterial({ color: 0x4d565e, roughness: 0.5, metalness: 0.6 });
+  materials.steelRed = new THREE.MeshStandardMaterial({ color: 0xcf3a25, roughness: 0.55, metalness: 0.28 });
+  materials.steelGalv = new THREE.MeshStandardMaterial({ color: 0xa7b0b6, roughness: 0.42, metalness: 0.7 });
+  materials.hazard = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.hazard, 1, 1), color: 0xffffff, roughness: 0.65, metalness: 0.14
+  });
+  materials.grating = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.grating, 3, 3), color: 0xffffff, roughness: 0.7, metalness: 0.5,
+    side: THREE.DoubleSide
+  });
+  materials.fence = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.chainLink, 2.5, 1.5), transparent: true, alphaTest: 0.3,
+    side: THREE.DoubleSide, roughness: 0.6, metalness: 0.45, color: 0xffffff
+  });
+  materials.asphalt = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.asphalt, 3, 3), color: 0xffffff, roughness: 0.96, metalness: 0.02
+  });
+  materials.pipeWhite = new THREE.MeshStandardMaterial({ color: 0xd7dee2, roughness: 0.72, metalness: 0.12 });
+  materials.pipeCopper = new THREE.MeshStandardMaterial({ color: 0xb4652c, roughness: 0.55, metalness: 0.45 });
+  materials.pipeBlue = new THREE.MeshStandardMaterial({ color: 0x2f6ea8, roughness: 0.6, metalness: 0.2 });
+  materials.rubber = new THREE.MeshStandardMaterial({ color: 0x1f2427, roughness: 0.94, metalness: 0.04 });
+  materials.jawSteel = new THREE.MeshStandardMaterial({ color: 0x707b86, roughness: 0.44, metalness: 0.62 });
+  materials.jawRubber = new THREE.MeshStandardMaterial({ color: 0x2c3134, roughness: 0.92, metalness: 0.04 });
+  materials.tankShell = new THREE.MeshStandardMaterial({
+    map: lcRepeat(textures.steel, 0.25, 0.25), color: 0xffffff, roughness: 0.45, metalness: 0.34
+  });
+  materials.roof = new THREE.MeshStandardMaterial({ color: 0x8b8f92, roughness: 0.7, metalness: 0.3 });
+  materials.marking = new THREE.MeshStandardMaterial({ color: 0xf3f0e6, roughness: 0.8, metalness: 0.02 });
+  materials.safeLine = new THREE.MeshStandardMaterial({ color: 0xf2c317, roughness: 0.8, metalness: 0.02 });
+  lcTextureSink = null;
+  return materials;
+}
+
+/* ---------------------------------------------------------------------------
+ * Pad deck, burner pit and flame trench
+ * ------------------------------------------------------------------------ */
+
+function lcBuildPad(root, materials) {
+  const spec = LC_SPEC;
+  const halfWidth = spec.trench.halfWidth;
+  const wallInnerZ = halfWidth - 0.05;
+  const wallOuterZ = halfWidth + spec.trench.wallThickness;
+  const pitRadius = spec.deck.holeRadius;
+  const floorTop = spec.trench.floorY;
+  const floorBottom = floorTop - spec.trench.floorDepth;
+  const mouthX = spec.trench.mouthX;
+  const cutX = Math.sqrt(Math.max(0.05, pitRadius * pitRadius - halfWidth * halfWidth));
+
+  const pad = new THREE.Group();
+  pad.name = 'pad';
+  root.add(pad);
+
+  const deck = lcExtrude(
+    lcPadOutline(spec.deck.radius, spec.deck.sides, pitRadius, halfWidth),
+    spec.deck.plateDepth, spec.deck.topY, materials.deck, 'pad-deck-plate'
+  );
+  const podium = lcExtrude(
+    lcPadOutline(spec.deck.podiumRadius, spec.deck.sides, pitRadius, halfWidth),
+    spec.deck.podiumDepth, spec.deck.podiumTopY, materials.podium, 'pad-podium'
+  );
+  const apron = lcExtrude(
+    lcPadOutline(spec.apron.radius, spec.apron.sides, pitRadius, halfWidth),
+    spec.apron.depth, spec.apron.topY, materials.apron, 'pad-apron'
+  );
+  pad.add(deck);
+  pad.add(podium);
+  pad.add(apron);
+
+  /* ---- excavated trench below the deck ------------------------------- */
+  const trench = new THREE.Group();
+  trench.name = 'flame-trench';
+  pad.add(trench);
+
+  /* corridor walls: a buried run under the podium, then a taller run that
+   * reaches the apron surface out at the mouth */
+  const wallY = floorBottom;
+  const wallHeight = spec.deck.podiumTopY - spec.deck.podiumDepth - floorBottom;
+  if (wallHeight > 0) {
+    [-1, 1].forEach(function (side) {
+      const z = side * (wallInnerZ + wallOuterZ) * 0.5;
+      lcBox(trench, materials.trench, [16.5, wallY + wallHeight * 0.5, z],
+        [29.5, wallHeight, wallOuterZ - wallInnerZ]);
+      lcBox(trench, materials.wedge, [37.6, wallY + (spec.apron.topY - floorBottom) * 0.5 + 0.05, z],
+        [16.6, spec.apron.topY - floorBottom + 0.1, wallOuterZ - wallInnerZ]);
+      /* trench lip coping, proud of the apron so the cut reads as a real edge */
+      lcBox(trench, materials.concreteBlock, [37, spec.apron.topY + 0.06, side * (wallOuterZ + 0.4)],
+        [15.4, 0.32, 0.8]);
+    });
+  }
+
+  /* floor slab, pit disc and the pitch of the ramp out of the mouth */
+  lcBox(trench, materials.trench, [(mouthX - pitRadius) * 0.5, floorTop - spec.trench.floorDepth * 0.5, 0],
+    [mouthX + pitRadius, spec.trench.floorDepth, wallOuterZ * 2 - 0.1]);
+  lcCylinder(trench, materials.trench, [0, floorTop - spec.trench.floorDepth * 0.5 + 0.02, 0],
+    [pitRadius * 2.02, spec.trench.floorDepth, pitRadius * 2.02], null, 'flame-pit-floor');
+  trench.add(lcPrism([
+    new THREE.Vector2(30, floorTop),
+    new THREE.Vector2(mouthX, floorTop),
+    new THREE.Vector2(mouthX, floorTop + spec.trench.floorDepth)
+  ], wallOuterZ * 2 - 0.2, 0, materials.wedge, 'trench-mouth-ramp'));
+
+  /* round pit wall, open exactly where the corridor joins it */
+  const opening = Math.atan2(halfWidth, cutX);
+  const pitWall = new THREE.Mesh(
+    new THREE.CylinderGeometry(pitRadius, pitRadius, spec.deck.podiumTopY - spec.deck.podiumDepth - floorBottom, 36, 1, true,
+      Math.PI * 0.5 + opening, Math.PI * 2 - opening * 2),
+    materials.trench
+  );
+  pitWall.name = 'flame-pit-wall';
+  pitWall.position.y = floorBottom + (spec.deck.podiumTopY - spec.deck.podiumDepth - floorBottom) * 0.5;
+  pitWall.receiveShadow = true;
+  trench.add(pitWall);
+
+  /* flame deflector wedge sitting under the vehicle, with a steel ridge beam */
+  const wedge = lcPrism([
+    new THREE.Vector2(-6.2, floorTop + 0.02),
+    new THREE.Vector2(9.6, floorTop + 0.02),
+    new THREE.Vector2(1.4, spec.trench.wedgeApexY)
+  ], wallOuterZ * 2 - 0.4, 0, materials.wedge, 'flame-deflector');
+  trench.add(wedge);
+  lcBox(trench, materials.steelDark, [1.4, spec.trench.wedgeApexY - 0.05, 0], [1.0, 0.42, wallOuterZ * 2 - 0.4]);
+
+  /* water deluge ring inside the pit mouth, feeding the sound-suppression spray */
+  const deluge = new THREE.Mesh(new THREE.TorusGeometry(pitRadius - 0.55, 0.3, 6, 40), materials.pipeBlue);
+  deluge.name = 'deluge-ring';
+  deluge.rotation.x = Math.PI / 2;
+  deluge.position.y = spec.trench.wedgeApexY + 1.5;
+  deluge.castShadow = true;
+  trench.add(deluge);
+  const nozzles = [];
+  for (let i = 0; i < 16; i += 1) {
+    const angle = (i / 16) * Math.PI * 2;
+    nozzles.push({
+      p: [Math.cos(angle) * (pitRadius - 0.55), spec.trench.wedgeApexY + 1.3, Math.sin(angle) * (pitRadius - 0.55)],
+      s: [0.22, 0.5, 0.22],
+      r: [Math.PI * 0.5 - 0.5, -angle, 0]
+    });
+  }
+  trench.add(lcInstance('deluge-nozzles', LC_GEO.cylinder, materials.steelRed, nozzles));
+
+  /* ---- deck dressing: parapet, safelines, chevrons, bolts ------------ */
+  const parapet = [];
+  const segments = 26;
+  const gapDeg = Math.atan2(halfWidth + 1.4, spec.deck.parapetRadius) / LC_DEG;
+  for (let i = 0; i < segments; i += 1) {
+    const angle = (i / segments) * 360;
+    const delta = Math.abs(((angle + 180) % 360) - 180);
+    if (delta < gapDeg) continue;                      // leave the trench mouth clear
+    const radius = spec.deck.parapetRadius;
+    const x = Math.cos(angle * LC_DEG) * radius;
+    const z = Math.sin(angle * LC_DEG) * radius;
+    parapet.push({
+      p: [x, spec.deck.topY + spec.deck.parapetHeight * 0.5, z],
+      s: [(Math.PI * 2 * radius) / segments + 0.3, spec.deck.parapetHeight, 0.55],
+      r: [0, -angle * LC_DEG - Math.PI * 0.5, 0]
+    });
+  }
+  pad.add(lcInstance('deck-parapet', LC_GEO.box, materials.concreteBlock, parapet));
+
+  const bolts = [];
+  const boltCount = 40;
+  for (let i = 0; i < boltCount; i += 1) {
+    const angle = (i / boltCount) * Math.PI * 2;
+    bolts.push({
+      p: [Math.cos(angle) * (spec.deck.radius - 1.2), spec.deck.topY + 0.06, Math.sin(angle) * (spec.deck.radius - 1.2)],
+      s: [0.3, 0.16, 0.3]
+    });
+    bolts.push({
+      p: [Math.cos(angle) * (pitRadius + 1.1), spec.deck.topY + 0.06, Math.sin(angle) * (pitRadius + 1.1)],
+      s: [0.24, 0.14, 0.24]
+    });
+  }
+  pad.add(lcInstance('deck-bolts', LC_GEO.cylinder, materials.steelGalv, bolts, { castShadow: false }));
+
+  const safelines = [];
+  [pitRadius + 1.9, spec.deck.radius - 2.2].forEach(function (radius) {
+    safelines.push(new THREE.Mesh(new THREE.TorusGeometry(radius, 0.11, 5, 72), materials.safeLine));
+  });
+  safelines.forEach(function (mesh) {
+    mesh.rotation.x = Math.PI / 2;
+    mesh.position.y = spec.deck.topY + 0.03;
+    mesh.receiveShadow = true;
+    pad.add(mesh);
+  });
+
+  const chevrons = [];
+  for (let i = 0; i < 14; i += 1) {
+    const angle = (i / 14) * 360 + 6;
+    const delta = Math.abs(((angle + 180) % 360) - 180);
+    if (delta < gapDeg + 3) continue;
+    chevrons.push({
+      p: [Math.cos(angle * LC_DEG) * (spec.deck.parapetRadius - 0.9), spec.deck.topY + 0.05,
+        Math.sin(angle * LC_DEG) * (spec.deck.parapetRadius - 0.9)],
+      s: [2.6, 0.08, 1.5],
+      r: [0, -angle * LC_DEG - Math.PI * 0.5, 0]
+    });
+  }
+  pad.add(lcInstance('deck-hazard-chevrons', LC_GEO.box, materials.hazard, chevrons, { receiveShadow: false }));
+
+  /* interior support columns, visible through the trench mouth */
+  const columns = [];
+  for (let i = 0; i < 10; i += 1) {
+    const angle = Math.PI * 0.5 + opening + (i / 10) * (Math.PI * 2 - opening * 2);
+    const radius = pitRadius + 4.5 + (i % 3) * 4.4;
+    columns.push({
+      p: [Math.cos(angle) * radius, spec.deck.topY - 2.4, Math.sin(angle) * radius],
+      s: [1.2, 6.4, 1.2]
+    });
+  }
+  pad.add(lcInstance('podium-columns', LC_GEO.box, materials.podium, columns));
+
+  return {
+    group: pad,
+    deck: deck,
+    podium: podium,
+    apron: apron,
+    trench: trench,
+    wedge: wedge,
+    floorY: floorTop,
+    deckTopY: spec.deck.topY,
+    mouthX: mouthX,
+    cutX: cutX
+  };
+}
+
+
+/* ---------------------------------------------------------------------------
+ * Mechanical arms: clamp rigs, umbilical arms and deck hold-downs
+ * ------------------------------------------------------------------------ */
+
+/* One hinged arm rig. Local +X points at the vehicle, so the closed pose grips
+ * the lower body and the released pose swings (hinge yaw), retracts (slide) and
+ * opens its jaws clear of it. Both poses and the reach are published, so the
+ * director phase animates the release without touching a single mesh. */
+function lcCreateArmRig(root, materials, options) {
+  const spec = options;
+  const reference = Math.max(1.8, spec.referenceLength);
+  const thickness = spec.thickness;
+  const halfChord = thickness * 0.5;
+  const jawEnabled = spec.jaw !== false;
+  const JAW_REACH = 0.6;         // tip bracket + jaw pads reach past the tip
+
+  const rig = new THREE.Group();
+  rig.name = spec.id;
+  rig.position.set(spec.pivot[0], spec.pivot[1], spec.pivot[2]);
+  rig.rotation.y = spec.yaw;
+  root.add(rig);
+
+  const hinge = new THREE.Group();
+  hinge.name = spec.id + '-hinge';
+  rig.add(hinge);
+
+  const slide = new THREE.Group();
+  slide.name = spec.id + '-slide';
+  hinge.add(slide);
+
+  /* bracket bolted to the tower face */
+  lcBox(slide, materials.steelDark, [-0.55, 0, 0], [1.5, thickness * 2.2, thickness * 2.7]);
+
+  /* truss envelope: two chords, vertical struts and alternating diagonals */
+  const truss = new THREE.Group();
+  truss.name = spec.id + '-truss';
+  slide.add(truss);
+  lcBox(truss, materials.steelPainted, [reference * 0.5, halfChord, 0], [reference, thickness * 0.34, thickness * 0.5]);
+  lcBox(truss, materials.steelPainted, [reference * 0.5, -halfChord, 0], [reference, thickness * 0.34, thickness * 0.5]);
+  const bays = 5;
+  for (let i = 0; i <= bays; i += 1) {
+    const x = (reference * i) / bays;
+    lcBox(truss, materials.steelPainted, [x, 0, 0], [thickness * 0.3, thickness, thickness * 0.44]);
+  }
+  for (let i = 0; i < bays; i += 1) {
+    const x0 = (reference * i) / bays;
+    const x1 = (reference * (i + 1)) / bays;
+    const length = Math.sqrt((x1 - x0) * (x1 - x0) + thickness * thickness);
+    const angle = Math.atan2(thickness, x1 - x0) * (i % 2 ? 1 : -1);
+    [-1, 1].forEach(function (side) {
+      lcBox(truss, materials.steelPainted, [(x0 + x1) * 0.5, 0, side * thickness * 0.26],
+        [length, thickness * 0.16, thickness * 0.16], [0, 0, angle]);
+    });
+  }
+
+  /* hydraulic actuator slung under the truss */
+  let pistonRod = null;
+  if (spec.actuator !== false) {
+    lcCylinder(slide, materials.steelDark, [reference * 0.26, -halfChord - thickness * 0.5, 0],
+      [thickness * 0.42, reference * 0.55, thickness * 0.42], [0, 0, Math.PI / 2]);
+    pistonRod = lcCylinder(slide, materials.steelGalv, [reference * 0.26, -halfChord - thickness * 0.5, 0],
+      [thickness * 0.2, reference * 0.5, thickness * 0.2], [0, 0, Math.PI / 2], spec.id + '-piston');
+  }
+
+  /* tip assembly: jaws for a clamp, hose bundle for an umbilical */
+  const tip = new THREE.Group();
+  tip.name = spec.id + '-tip';
+  slide.add(tip);
+  lcBox(tip, materials.steelDark, [-0.1, 0, 0], [1.2, thickness * 1.5, thickness * 1.6]);
+
+  let jawTop = null;
+  let jawBottom = null;
+  if (jawEnabled) {
+    jawTop = new THREE.Group();
+    jawTop.name = spec.id + '-jaw-top';
+    jawTop.position.set(0.1, thickness * 0.6, 0);
+    tip.add(jawTop);
+    lcBox(jawTop, materials.jawSteel, [-0.125, thickness * 0.6, 0], [0.65, thickness * 1.05, thickness * 1.4]);
+    lcBox(jawTop, materials.jawRubber, [0.35, thickness * 0.55, 0], [0.3, thickness * 0.9, thickness * 1.2]);
+
+    jawBottom = new THREE.Group();
+    jawBottom.name = spec.id + '-jaw-bottom';
+    jawBottom.position.set(0.1, -thickness * 0.6, 0);
+    tip.add(jawBottom);
+    lcBox(jawBottom, materials.jawSteel, [-0.125, -thickness * 0.6, 0], [0.65, thickness * 1.05, thickness * 1.4]);
+    lcBox(jawBottom, materials.jawRubber, [0.35, -thickness * 0.55, 0], [0.3, thickness * 0.9, thickness * 1.2]);
+  } else {
+    /* flexible hose bundle sweeping down from the arm tip */
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-0.8, thickness * 0.3, 0),
+      new THREE.Vector3(reference * 0.35, -thickness * 0.9, thickness * 0.35),
+      new THREE.Vector3(reference * 0.78, -thickness * 1.6, thickness * 0.1),
+      new THREE.Vector3(reference, -thickness * 0.5, 0)
+    ]);
+    const bundle = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, thickness * 0.42, 7, false), materials.rubber);
+    bundle.name = spec.id + '-hose-bundle';
+    bundle.castShadow = true;
+    bundle.receiveShadow = true;
+    slide.add(bundle);
+    lcBox(tip, materials.steelRed, [0.3, 0, 0], [0.75, thickness * 2.0, thickness * 2.2]);
+    lcBox(tip, materials.rubber, [0.72, 0, 0], [0.22, thickness * 1.5, thickness * 1.7]);
+  }
+
+  const state = {
+    armLength: reference,
+    vehicleRadius: spec.vehicleRadius,
+    contactRadius: spec.pivotRadius - reference - JAW_REACH,
+    jawOffset: thickness * 1.15,   // pad centre above / below the arm axis
+    release: 0
+  };
+
+  function setReach(radius) {
+    const reach = Math.min(Math.max(Number(radius) || spec.vehicleRadius, 0.8), 7.5);
+    state.vehicleRadius = reach;
+    state.armLength = Math.max(1.5, spec.pivotRadius - reach - JAW_REACH);
+    state.contactRadius = spec.pivotRadius - state.armLength - JAW_REACH;
+    tip.position.x = state.armLength;
+    truss.scale.x = state.armLength / reference;
+    return reach;
+  }
+
+  function setRelease(t) {
+    const value = clamp01(t);
+    const eased = value * value * (3 - 2 * value);
+    hinge.rotation.y = spec.swing * eased;
+    slide.position.x = -spec.retract * eased;
+    if (jawTop) jawTop.rotation.z = 0.52 * eased;
+    if (jawBottom) jawBottom.rotation.z = -0.52 * eased;
+    if (pistonRod) pistonRod.position.x = reference * 0.26 - reference * 0.2 * eased;
+    state.release = value;
+    return value;
+  }
+
+  setReach(spec.vehicleRadius);
+  setRelease(0);
+
+  return {
+    id: spec.id,
+    kind: spec.kind,
+    group: rig,
+    hinge: hinge,
+    slide: slide,
+    truss: truss,
+    tip: tip,
+    jawTop: jawTop,
+    jawBottom: jawBottom,
+    pivot: new THREE.Vector3(spec.pivot[0], spec.pivot[1], spec.pivot[2]),
+    yaw: spec.yaw,
+    height: spec.pivot[1],
+    pivotRadius: spec.pivotRadius,
+    closed: { hingeYaw: 0, slideX: 0, jaw: 0 },
+    released: { hingeYaw: spec.swing, slideX: -spec.retract, jaw: 1 },
+    vehicleRadius: state.vehicleRadius,
+    contactRadius: state.contactRadius,
+    jawOffset: state.jawOffset,
+    armLength: state.armLength,
+    release: 0,
+    setRelease: setRelease,
+    setReach: setReach,
+    getState: function () {
+      return {
+        id: spec.id,
+        kind: spec.kind,
+        height: spec.pivot[1],
+        release: state.release,
+        hingeYaw: hinge.rotation.y,
+        slideX: slide.position.x,
+        armLength: state.armLength,
+        vehicleRadius: state.vehicleRadius,
+        contactRadius: state.contactRadius,
+        jawOffset: state.jawOffset,
+        closedPose: { hingeYaw: 0, slideX: 0, jaw: 0 },
+        releasedPose: { hingeYaw: spec.swing, slideX: -spec.retract, jaw: 1 }
+      };
+    }
+  };
+}
+
+/* Tower-local (x along the inward axis, z along the tangent, y above the deck)
+ * to world coordinates for lamp and bracket placement. */
+function lcTowerToWorld(x, y, z) {
+  return new THREE.Vector3(
+    LC_TOWER_CENTER.x + LC_TOWER_INWARD.x * x + LC_TOWER_TANGENT.x * z,
+    LC_SPEC.deck.topY + y,
+    LC_TOWER_CENTER.z + LC_TOWER_INWARD.z * x + LC_TOWER_TANGENT.z * z
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Integration tower
+ * ------------------------------------------------------------------------ */
+
+function lcBuildTower(root, materials) {
+  const spec = LC_SPEC.tower;
+  const hw = spec.halfWidth;
+  const height = spec.height;
+  const tower = new THREE.Group();
+  tower.name = 'integration-tower';
+  tower.position.set(LC_TOWER_CENTER.x, LC_SPEC.deck.topY, LC_TOWER_CENTER.z);
+  tower.rotation.y = LC_TOWER_YAW;
+  root.add(tower);
+
+  /* ---- four striped columns on concrete footings ---- */
+  [[hw, hw], [hw, -hw], [-hw, hw], [-hw, -hw]].forEach(function (leg, index) {
+    lcBox(tower, materials.concreteBlock, [leg[0], 0.6, leg[1]], [2.6, 1.2, 2.6]);
+    lcBox(tower, materials.towerSteel, [leg[0], height * 0.5, leg[1]], [1.05, height, 1.05], null, 'tower-leg-' + index);
+  });
+
+  /* ---- bracing: horizontals every level plus alternating diagonals ---- */
+  const levels = [];
+  for (let y = 3.4; y <= height - 5; y += 6) levels.push(y);
+  const braces = [];
+  const span = hw * 2 + 0.5;
+  levels.forEach(function (y) {
+    braces.push({ p: [hw, y, 0], s: [0.42, 0.42, span] });
+    braces.push({ p: [-hw, y, 0], s: [0.42, 0.42, span] });
+    braces.push({ p: [0, y, hw], s: [span, 0.42, 0.42] });
+    braces.push({ p: [0, y, -hw], s: [span, 0.42, 0.42] });
+  });
+  for (let i = 0; i < levels.length - 1; i += 1) {
+    const y0 = levels[i];
+    const y1 = levels[i + 1];
+    const bay = y1 - y0;
+    const length = Math.sqrt(bay * bay + span * span);
+    const tilt = Math.atan2(span, bay) * (i % 2 ? 1 : -1);
+    const mid = (y0 + y1) * 0.5;
+    braces.push({ p: [hw, mid, 0], s: [0.34, length, 0.34], r: [tilt, 0, 0] });
+    braces.push({ p: [-hw, mid, 0], s: [0.34, length, 0.34], r: [-tilt, 0, 0] });
+    braces.push({ p: [0, mid, hw], s: [0.34, length, 0.34], r: [0, 0, tilt] });
+    braces.push({ p: [0, mid, -hw], s: [0.34, length, 0.34], r: [0, 0, -tilt] });
+  }
+  tower.add(lcInstance('tower-bracing', LC_GEO.box, materials.steelPainted, braces));
+
+  /* ---- service shaft with doors on the outward face ---- */
+  const shaftZ = -hw - 1.05;
+  lcBox(tower, materials.steelPainted, [0, height * 0.5 + 0.5, shaftZ], [4.8, height - 3, 1.9], null, 'tower-service-shaft');
+  const doors = [];
+  spec.platforms.forEach(function (y) {
+    doors.push({ p: [0.9, y + 1.6, shaftZ - 1.02], s: [1.9, 2.3, 0.2] });
+  });
+  doors.push({ p: [-1.2, 4.4, shaftZ - 1.02], s: [1.9, 2.8, 0.2] });
+  tower.add(lcInstance('tower-shaft-doors', LC_GEO.box, materials.steelRed, doors));
+
+  /* ---- work platforms: grating decks, railings and stanchions ---- */
+  const decks = [];
+  const rails = [];
+  spec.platforms.forEach(function (y, index) {
+    const size = 10.6 - index * 0.45;
+    decks.push({ p: [0.6, y, 0], s: [size, 0.26, size] });
+    const edge = size * 0.5 - 0.3;
+    [0.62, 1.18].forEach(function (railHeight) {
+      rails.push({ p: [0.6, y + railHeight, edge], s: [size, 0.13, 0.13] });
+      rails.push({ p: [0.6, y + railHeight, -edge], s: [size, 0.13, 0.13] });
+      rails.push({ p: [0.6 + edge, y + railHeight, 0], s: [0.13, 0.13, size] });
+      rails.push({ p: [0.6 - edge, y + railHeight, 0], s: [0.13, 0.13, size] });
+    });
+    for (let i = 0; i <= 6; i += 1) {
+      const t = -edge + (2 * edge * i) / 6;
+      rails.push({ p: [0.6 + t, y + 0.68, edge], s: [0.16, 1.36, 0.16] });
+      rails.push({ p: [0.6 + t, y + 0.68, -edge], s: [0.16, 1.36, 0.16] });
+      rails.push({ p: [0.6 + edge, y + 0.68, t], s: [0.16, 1.36, 0.16] });
+      rails.push({ p: [0.6 - edge, y + 0.68, t], s: [0.16, 1.36, 0.16] });
+    }
+  });
+  tower.add(lcInstance('tower-platforms', LC_GEO.box, materials.grating, decks));
+  tower.add(lcInstance('tower-railing', LC_GEO.box, materials.steelGalv, rails));
+
+  /* ---- access stairs zig-zagging up the tangential face ---- */
+  const treads = [];
+  const stringers = [];
+  const flights = 8;
+  const rise = 4.9;
+  const treadCount = 16;
+  const run = 0.62;
+  const stairRun = treadCount * run;
+  let stairBase = 3;
+  for (let f = 0; f < flights; f += 1) {
+    const direction = f % 2 === 0 ? 1 : -1;
+    const startX = direction > 0 ? -hw - 1.0 : hw + 1.0;
+    for (let i = 0; i < treadCount; i += 1) {
+      treads.push({
+        p: [startX + direction * (i + 0.5) * run, stairBase + (i + 1) * (rise / treadCount), hw + 1.1],
+        s: [run + 0.06, 0.08, 1.6]
+      });
+    }
+    const tilt = Math.atan2(rise, stairRun) * direction;
+    [-0.85, 0.85].forEach(function (offset) {
+      stringers.push({
+        p: [startX + direction * stairRun * 0.5, stairBase + rise * 0.5, hw + 1.1 + offset],
+        s: [Math.sqrt(stairRun * stairRun + rise * rise), 0.24, 0.16],
+        r: [0, 0, tilt]
+      });
+    });
+    stairBase += rise;
+  }
+  tower.add(lcInstance('tower-stair-treads', LC_GEO.box, materials.grating, treads));
+  tower.add(lcInstance('tower-stair-stringers', LC_GEO.box, materials.steelPainted, stringers));
+
+  /* ---- maintenance ladders on the tangential face ---- */
+  const rungs = [];
+  const ladderRails = [];
+  for (let section = 0; section < 4; section += 1) {
+    const base = 5 + section * 17;
+    for (let r = 0; r < 17; r += 1) {
+      rungs.push({ p: [0, base + r, hw + 0.5], s: [0.66, 0.08, 0.08] });
+    }
+    [-0.36, 0.36].forEach(function (offset) {
+      ladderRails.push({ p: [offset, base + 8.5, hw + 0.5], s: [0.1, 17, 0.1] });
+    });
+  }
+  tower.add(lcInstance('tower-ladder-rungs', LC_GEO.box, materials.steelGalv, rungs));
+  tower.add(lcInstance('tower-ladder-rails', LC_GEO.box, materials.steelGalv, ladderRails));
+
+  /* ---- process pipes clamped to the inward face ---- */
+  const risers = [];
+  [-1.5, 0, 1.5].forEach(function (offset) {
+    risers.push({ p: [hw + 0.85, 24, offset], s: [0.62, 48, 0.62] });
+    risers.push({ p: [hw + 0.85, 55, offset], s: [0.5, 14, 0.5] });
+  });
+  tower.add(lcInstance('tower-risers', LC_GEO.hose, materials.pipeWhite, risers));
+  const clamps = [];
+  for (let y = 4; y <= 46; y += 6) {
+    clamps.push({ p: [hw + 0.85, y, 0], s: [1.1, 0.28, 3.6] });
+  }
+  tower.add(lcInstance('tower-pipe-clamps', LC_GEO.box, materials.steelGalv, clamps));
+
+  /* ---- deck level cable tray running from the tower to the pad edge ---- */
+  const trays = [];
+  for (let i = 0; i < 8; i += 1) {
+    const t = i / 7;
+    trays.push({
+      p: [LC_TOWER_CENTER.x * (1 - t) + Math.cos(LC_TOWER_AZIMUTH * 0.35) * 24 * t,
+        LC_SPEC.deck.topY + 0.28,
+        LC_TOWER_CENTER.z * (1 - t) + Math.sin(LC_TOWER_AZIMUTH * 0.35) * 24 * t],
+      s: [3.4, 0.34, 0.9],
+      r: [0, -LC_TOWER_AZIMUTH * 0.35, 0]
+    });
+  }
+  tower.add(lcInstance('deck-cable-trays', LC_GEO.box, materials.grating, trays));
+
+  /* ---- top: jib crane, lightning mast, radar, windsock ---- */
+  const crane = new THREE.Group();
+  crane.name = 'tower-crane';
+  tower.add(crane);
+  lcBox(crane, materials.steelPainted, [0, height + 1.4, 0], [4.4, 1.6, 4.4]);
+  lcBox(crane, materials.steelPainted, [4.6, height + 2.4, 0], [13.5, 0.85, 0.85]);
+  lcBox(crane, materials.steelDark, [10.6, height + 1.1, 0], [2.2, 1.1, 1.6]);
+  lcBox(crane, materials.steelPainted, [-4.0, height + 1.6, 0], [5.0, 1.4, 3.0]);
+  lcBox(crane, materials.steelPainted, [-0.6, height + 4.6, 0], [0.7, 6.0, 0.7], null, 'tower-crane-mast');
+  const tieDx = 11.5 - (-0.6);
+  const tieDy = height + 2.4 - (height + 7.6);
+  lcBox(crane, materials.steelDark, [(11.5 - 0.6) * 0.5, height + 5, 0],
+    [Math.sqrt(tieDx * tieDx + tieDy * tieDy), 0.18, 0.18], [0, 0, Math.atan2(tieDy, tieDx)]);
+
+  const craneHook = new THREE.Group();
+  craneHook.name = 'tower-crane-hook';
+  craneHook.position.set(10.6, height - 6, 0);
+  crane.add(craneHook);
+  lcCylinder(craneHook, materials.steelDark, [0, 5.1, 0], [0.1, 4.2, 0.1]);
+  lcBox(craneHook, materials.steelRed, [0, 3.0, 0], [0.9, 1.1, 0.9]);
+
+  /* lightning mast with its beacon */
+  lcCylinder(tower, materials.steelGalv, [-hw + 0.6, height + 5, hw - 0.6], [0.5, 10, 0.5]);
+  const beacon = lcTowerToWorld(-hw + 0.6, height + 10.2, hw - 0.6);
+  lcAddLamp('tower-red-b', beacon.x, beacon.y, beacon.z, 1.5);
+
+  /* radar antenna on the top platform */
+  const radar = new THREE.Group();
+  radar.name = 'tower-radar';
+  radar.position.set(-2.4, spec.platforms[4] + 1.0, -hw - 0.7);
+  tower.add(radar);
+  lcCylinder(radar, materials.steelGalv, [0, 1.1, 0], [0.26, 2.2, 0.26]);
+  const dish = new THREE.Mesh(new THREE.ConeGeometry(1.3, 0.7, 18, 1, true), materials.tankShell);
+  dish.name = 'tower-radar-dish';
+  dish.rotation.x = Math.PI * 0.5;
+  dish.position.set(0.55, 2.4, 0);
+  dish.castShadow = true;
+  radar.add(dish);
+
+  /* windsock, so the calm pre-launch beat has a little life */
+  const windsock = new THREE.Group();
+  windsock.name = 'tower-windsock';
+  windsock.position.set(hw + 0.7, 58, hw + 0.7);
+  tower.add(windsock);
+  lcCylinder(windsock, materials.steelGalv, [0, 2.2, 0], [0.16, 4.4, 0.16]);
+  const sock = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.5, 2.6, 10, 1, true), materials.hazard);
+  sock.name = 'tower-windsock-sock';
+  sock.material.side = THREE.DoubleSide;
+  sock.rotation.z = -Math.PI * 0.5;
+  sock.position.set(1.4, 4.0, 0);
+  sock.castShadow = true;
+  windsock.add(sock);
+
+  /* ---- warning-light columns on the outward face ---- */
+  [-2.3, 0, 2.3].forEach(function (x, columnIndex) {
+    for (let row = 0; row < 5; row += 1) {
+      const y = 7 + row * 6.4;
+      const world = lcTowerToWorld(x, y, hw + 0.16);
+      lcAddLamp(columnIndex === 1 ? 'tower-red-b' : 'tower-red-a', world.x, world.y, world.z, 1.25);
+      lcBox(tower, materials.steelDark, [x, y - 0.45, hw + 0.05], [0.9, 0.3, 0.3]);
+    }
+  });
+
+  /* two floodlight heads part way up the tower */
+  [22, 44].forEach(function (y, index) {
+    const side = index % 2 ? 1 : -1;
+    const z = side * (hw + 1.5);
+    lcBox(tower, materials.steelGalv, [0.6, y, z], [0.5, 0.5, 1.3]);
+    const world = lcTowerToWorld(0.6, y + 0.5, z);
+    lcAddLamp('flood-white', world.x, world.y, world.z, 1.7);
+  });
+
+  return {
+    group: tower,
+    crane: crane,
+    craneHook: craneHook,
+    radar: radar,
+    windsock: windsock,
+    beacon: beacon
+  };
+}
+
+/* ---- rigs: three clamp arms, three umbilical arms, four hold-downs ------ */
+function lcBuildRigs(root, materials) {
+  const spec = LC_SPEC.tower;
+  const hw = spec.halfWidth;
+  const pivotRadius = spec.distance - hw;
+  const defaultReach = spec.defaultVehicleRadius;
+  const clampRigs = [];
+  const umbilicalRigs = [];
+  const holdDownRigs = [];
+
+  spec.clamps.forEach(function (y, index) {
+    const pivot = lcTowerToWorld(hw, y, 0);
+    clampRigs.push(lcCreateArmRig(root, materials, {
+      id: 'clamp-' + (index + 1),
+      kind: 'clamp',
+      pivot: [pivot.x, pivot.y, pivot.z],
+      yaw: LC_TOWER_YAW,
+      pivotRadius: pivotRadius,
+      vehicleRadius: defaultReach,
+      thickness: 1.2,
+      swing: -1.12,
+      retract: 1.35,
+      referenceLength: Math.max(2.6, pivotRadius - defaultReach - 0.6)
+    }));
+  });
+
+  spec.umbilicals.forEach(function (y, index) {
+    const pivot = lcTowerToWorld(hw, y, 0);
+    umbilicalRigs.push(lcCreateArmRig(root, materials, {
+      id: 'umbilical-' + (index + 1),
+      kind: 'umbilical',
+      pivot: [pivot.x, pivot.y, pivot.z],
+      yaw: LC_TOWER_YAW,
+      pivotRadius: pivotRadius,
+      vehicleRadius: defaultReach + 0.9,
+      thickness: 0.66,
+      jaw: false,
+      swing: -0.95,
+      retract: 0.95,
+      referenceLength: Math.max(2.0, pivotRadius - defaultReach - 1.5)
+    }));
+  });
+
+  [45, 135, 225, 315].forEach(function (azimuthDeg, index) {
+    const azimuth = azimuthDeg * LC_DEG;
+    const radius = LC_SPEC.deck.holeRadius + 1.7;
+    const x = Math.cos(azimuth) * radius;
+    const z = Math.sin(azimuth) * radius;
+    const ground = lcGroundAt(x, z);
+    holdDownRigs.push(lcCreateArmRig(root, materials, {
+      id: 'hold-down-' + (index + 1),
+      kind: 'hold-down',
+      pivot: [x, ground + LC_SPEC.deck.topY, z],
+      yaw: Math.PI - azimuth,
+      pivotRadius: radius,
+      vehicleRadius: defaultReach,
+      thickness: 0.8,
+      swing: -0.72,
+      retract: 0.55,
+      referenceLength: Math.max(1.4, radius - defaultReach - 0.6)
+    }));
+    lcBox(root, materials.concreteBlock, [x, ground + LC_SPEC.deck.topY - 0.45, z], [2.1, 0.9, 2.1], [0, -azimuth, 0]);
+  });
+
+  return { clampRigs: clampRigs, umbilicalRigs: umbilicalRigs, holdDownRigs: holdDownRigs };
+}
+
+/* ---------------------------------------------------------------------------
+ * Ground equipment: cryogenic tanks, pump house, water tower, pipes, road
+ * ------------------------------------------------------------------------ */
+
+function lcBuildGroundEquipment(root, materials) {
+  const equipment = new THREE.Group();
+  equipment.name = 'ground-equipment';
+  root.add(equipment);
+  const handles = { sphereTanks: [], verticalTanks: [], buildings: [], road: null };
+
+  /* ---- spherical cryogenic tanks on skirts ---- */
+  const sphereSpecs = [
+    { azimuthDeg: -132, distance: 38.5, radius: 6.6 },
+    { azimuthDeg: -152, distance: 29.5, radius: 5.2 }
+  ];
+  const skirtLegs = [];
+  sphereSpecs.forEach(function (spec, index) {
+    const azimuth = spec.azimuthDeg * LC_DEG;
+    const x = Math.cos(azimuth) * spec.distance;
+    const z = Math.sin(azimuth) * spec.distance;
+    const base = lcMinGround(x, z, spec.radius) - 0.12;
+    const skirt = 3.6;
+    const centreY = base + skirt + spec.radius;
+    lcSphere(equipment, materials.tankShell, [x, centreY, z],
+      [spec.radius * 2, spec.radius * 2, spec.radius * 2], 'sphere-tank-' + index);
+    for (let i = 0; i < 10; i += 1) {
+      const angle = (i / 10) * Math.PI * 2;
+      skirtLegs.push({
+        p: [x + Math.cos(angle) * spec.radius * 0.82, base + skirt * 0.5, z + Math.sin(angle) * spec.radius * 0.82],
+        s: [0.55, skirt, 0.55]
+      });
+    }
+    lcCylinder(equipment, materials.concreteBlock, [x, base + 0.25, z],
+      [spec.radius * 2.6, 0.5, spec.radius * 2.6]);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(spec.radius * 0.99, 0.24, 6, 40), materials.hazard);
+    band.name = 'sphere-tank-band-' + index;
+    band.position.set(x, centreY, z);
+    band.rotation.x = Math.PI / 2;
+    band.castShadow = true;
+    equipment.add(band);
+    lcCylinder(equipment, materials.pipeWhite, [x, centreY + spec.radius + 1.5, z], [0.55, 3.0, 0.55]);
+    handles.sphereTanks.push({ centre: new THREE.Vector3(x, centreY, z), radius: spec.radius });
+  });
+  equipment.add(lcInstance('sphere-tank-skirts', LC_GEO.box, materials.steelGalv, skirtLegs));
+
+  /* ---- vertical propellant tanks inside a bund wall ---- */
+  const verticalSpecs = [
+    { azimuthDeg: -170, distance: 33, radius: 3.6, height: 13 },
+    { azimuthDeg: -188, distance: 26, radius: 3.0, height: 11 }
+  ];
+  const bundBlocks = [];
+  verticalSpecs.forEach(function (spec, index) {
+    const azimuth = spec.azimuthDeg * LC_DEG;
+    const x = Math.cos(azimuth) * spec.distance;
+    const z = Math.sin(azimuth) * spec.distance;
+    const base = lcMinGround(x, z, spec.radius + 2) - 0.1;
+    lcCylinder(equipment, materials.tankShell, [x, base + spec.height * 0.5, z],
+      [spec.radius * 2, spec.height, spec.radius * 2], null, 'vertical-tank-' + index);
+    lcSphere(equipment, materials.tankShell, [x, base + spec.height, z],
+      [spec.radius * 2, spec.radius * 1.1, spec.radius * 2]);
+    lcCylinder(equipment, materials.hazard, [x, base + spec.height * 0.62, z],
+      [spec.radius * 2.06, 0.9, spec.radius * 2.06]);
+    lcCylinder(equipment, materials.pipeCopper, [x + spec.radius + 0.8, base + 7, z], [0.4, 6, 0.4]);
+    for (let i = 0; i < 12; i += 1) {
+      const angle = (i / 12) * Math.PI * 2;
+      bundBlocks.push({
+        p: [x + Math.cos(angle) * (spec.radius + 3), base + 0.8, z + Math.sin(angle) * (spec.radius + 3)],
+        s: [2.6, 1.6, 0.7],
+        r: [0, -angle - Math.PI * 0.5, 0]
+      });
+    }
+    handles.verticalTanks.push({ centre: new THREE.Vector3(x, base + spec.height * 0.5, z), radius: spec.radius });
+  });
+  equipment.add(lcInstance('tank-bund-walls', LC_GEO.box, materials.concreteBlock, bundBlocks));
+
+  /* ---- pump house ---- */
+  const houseAzimuth = LC_SPEC.equipment.houseAzimuthDeg * LC_DEG;
+  const hx = Math.cos(houseAzimuth) * 34;
+  const hz = Math.sin(houseAzimuth) * 34;
+  const hBase = lcMinGround(hx, hz, 8) - 0.1;
+  lcBox(equipment, materials.concreteBlock, [hx, hBase + 3.2, hz], [15, 6.4, 9.5], [0, -houseAzimuth, 0], 'pump-house');
+  lcBox(equipment, materials.roof, [hx, hBase + 6.7, hz], [16.2, 0.6, 10.6], [0, -houseAzimuth, 0]);
+  lcBox(equipment, materials.steelDark, [hx + Math.cos(houseAzimuth) * 5.6, hBase + 1.6, hz + Math.sin(houseAzimuth) * 5.6],
+    [0.4, 3.2, 3.2], [0, -houseAzimuth, 0]);
+  lcCylinder(equipment, materials.steelGalv, [hx - 5.2, hBase + 8.4, hz - 2.6], [1.5, 4.0, 1.5]);
+  const vents = [];
+  for (let i = 0; i < 3; i += 1) {
+    vents.push({ p: [hx - 3.4 + i * 3.4, hBase + 6.6, hz - 4.2], s: [1.3, 1.0, 1.3] });
+  }
+  equipment.add(lcInstance('pump-house-vents', LC_GEO.box, materials.steelGalv, vents));
+  lcAddLamp('perimeter-green', hx + Math.cos(houseAzimuth) * 7.9, hBase + 3.8, hz + Math.sin(houseAzimuth) * 7.9, 1.2);
+  handles.buildings.push({ position: new THREE.Vector3(hx, hBase, hz) });
+
+  /* ---- water tower feeding the sound-suppression deluge ---- */
+  const waterAzimuth = LC_SPEC.equipment.waterAzimuthDeg * LC_DEG;
+  const wx = Math.cos(waterAzimuth) * 31;
+  const wz = Math.sin(waterAzimuth) * 31;
+  const wBase = lcMinGround(wx, wz, 7) - 0.1;
+  const tankY = wBase + 17;
+  lcCylinder(equipment, materials.tankShell, [wx, tankY, wz], [10.6, 11, 10.6], null, 'water-tank');
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(5.3, 3.2, 14), materials.tankShell);
+  cone.name = 'water-tank-cone';
+  cone.position.set(wx, tankY - 7.1, wz);
+  cone.rotation.x = Math.PI;
+  cone.castShadow = true;
+  equipment.add(cone);
+  const waterLegs = [];
+  for (let i = 0; i < 4; i += 1) {
+    const angle = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    waterLegs.push({
+      p: [wx + Math.cos(angle) * 3.6, wBase + 6.8, wz + Math.sin(angle) * 3.6],
+      s: [0.8, 13.6, 0.8]
+    });
+  }
+  for (let i = 0; i < 3; i += 1) {
+    const angle = (i / 3) * Math.PI;
+    waterLegs.push({
+      p: [wx, wBase + 4 + i * 4, wz],
+      s: [8.6, 0.36, 0.36],
+      r: [0, angle, 0]
+    });
+  }
+  equipment.add(lcInstance('water-tower-legs', LC_GEO.box, materials.steelGalv, waterLegs));
+  lcAddLamp('deck-amber-b', wx, tankY + 6.4, wz, 1.4);
+
+  /* ---- transfer pipe runs from the tank farm to the pad ---- */
+  const pipes = [];
+  const saddles = [];
+  const runs = [
+    { from: sphereSpecs[0], material: 'pipeWhite' },
+    { from: sphereSpecs[1], material: 'pipeCopper' },
+    { from: { azimuthDeg: -170, distance: 33 }, material: 'pipeBlue' }
+  ];
+  runs.forEach(function (run, runIndex) {
+    const azimuth = run.from.azimuthDeg * LC_DEG;
+    const start = new THREE.Vector3(Math.cos(azimuth) * (run.from.distance - 7), 0, Math.sin(azimuth) * (run.from.distance - 7));
+    const end = new THREE.Vector3(Math.cos(azimuth) * 20.5, 0, Math.sin(azimuth) * 20.5);
+    const length = start.distanceTo(end);
+    const steps = Math.max(3, Math.round(length / 4.5));
+    for (let i = 0; i < steps; i += 1) {
+      const t0 = i / steps;
+      const t1 = (i + 1) / steps;
+      const a = start.clone().lerp(end, t0);
+      const b = start.clone().lerp(end, t1);
+      const mid = a.clone().lerp(b, 0.5);
+      const ground = lcGroundAt(mid.x, mid.z);
+      pipes.push({
+        p: [mid.x, ground + 1.35, mid.z],
+        s: [0.72, length / steps + 0.1, 0.72],
+        r: [0, -Math.atan2(b.z - a.z, b.x - a.x), Math.PI * 0.5]
+      });
+      if (i % 2 === 0) {
+        saddles.push({ p: [mid.x, ground + 0.6, mid.z], s: [1.5, 1.2, 1.1], r: [0, -azimuth, 0] });
+      }
+    }
+    /* vertical elbow down at the pad edge */
+    const padGround = lcGroundAt(end.x, end.z);
+    pipes.push({ p: [end.x, padGround + 3.4, end.z], s: [0.72, 4.4, 0.72] });
+  });
+  equipment.add(lcInstance('transfer-pipes', LC_GEO.hose, materials.pipeWhite, pipes));
+  equipment.add(lcInstance('pipe-saddles', LC_GEO.box, materials.concreteBlock, saddles));
+
+  /* ---- equipment skids and drums around the apron ---- */
+  const skids = [];
+  for (let i = 0; i < 7; i += 1) {
+    const azimuth = (-40 + i * 26 + (i % 3) * 5) * LC_DEG;
+    const distance = 25 + (i % 4) * 4.5;
+    const x = Math.cos(azimuth) * distance;
+    const z = Math.sin(azimuth) * distance;
+    const ground = lcMinGround(x, z, 2.6);
+    if (ground < LC_SPEC.apron.topY - 1.5) continue;
+    skids.push({
+      p: [x, ground + 1.6, z], s: [3.4, 2.0, 2.4], r: [0, -azimuth, 0]
+    });
+  }
+  equipment.add(lcInstance('equipment-skids', LC_GEO.box, materials.steelPainted, skids));
+  const drums = [];
+  for (let i = 0; i < 14; i += 1) {
+    const azimuth = (-24 - i * 2.2) * LC_DEG;
+    const distance = 22 + (i % 5) * 1.6;
+    const x = Math.cos(azimuth) * distance;
+    const z = Math.sin(azimuth) * distance;
+    const ground = lcGroundAt(x, z);
+    drums.push({ p: [x, ground + 0.75, z], s: [1.0, 1.5, 1.0] });
+  }
+  equipment.add(lcInstance('equipment-drums', LC_GEO.cylinder, materials.hazard, drums));
+
+  /* ---- approach road from the gate to the apron ---- */
+  const gateAzimuth = LC_SPEC.fence.gateDeg * LC_DEG;
+  const road = new THREE.Group();
+  road.name = 'access-road';
+  equipment.add(road);
+  const roadPieces = [
+    { distance: 35, length: 17, y: LC_SPEC.apron.topY },
+    { distance: 53, length: 20, y: 0.04 }
+  ];
+  const dashes = [];
+  roadPieces.forEach(function (piece) {
+    const x = Math.cos(gateAzimuth) * piece.distance;
+    const z = Math.sin(gateAzimuth) * piece.distance;
+    lcBox(road, materials.asphalt, [x, piece.y + 0.04, z], [piece.length, 0.16, 11], [0, -gateAzimuth, 0]);
+    for (let i = -1; i <= 1; i += 1) {
+      const offset = (i * piece.length) / 3;
+      dashes.push({
+        p: [x + Math.cos(gateAzimuth) * offset, piece.y + 0.14, z + Math.sin(gateAzimuth) * offset],
+        s: [2.4, 0.06, 0.4],
+        r: [0, -gateAzimuth, 0]
+      });
+    }
+  });
+  road.add(lcInstance('road-markings', LC_GEO.box, materials.marking, dashes, { castShadow: false }));
+  handles.road = road;
+
+  /* ---- floodlight masts around the apron ---- */
+  const mastLamps = [];
+  LC_SPEC.equipment.mastAzimuths.forEach(function (azimuthDeg) {
+    const azimuth = azimuthDeg * LC_DEG;
+    const distance = 39;
+    const x = Math.cos(azimuth) * distance;
+    const z = Math.sin(azimuth) * distance;
+    const ground = lcMinGround(x, z, 1.6) - 0.1;
+    lcCylinder(equipment, materials.steelGalv, [x, ground + 8, z], [0.7, 16, 0.7], null, 'floodlight-mast');
+    lcBox(equipment, materials.steelDark, [x, ground + 16.4, z], [2.6, 0.5, 0.8], [0, -azimuth, 0]);
+    [0, 1].forEach(function (index) {
+      const side = index === 0 ? -1 : 1;
+      lcBox(equipment, materials.steelDark,
+        [x + Math.cos(azimuth + Math.PI * 0.5) * 0.5 * side, ground + 16.0, z + Math.sin(azimuth + Math.PI * 0.5) * 0.5 * side],
+        [1.4, 1.0, 1.4], [0.5, -azimuth, 0]);
+      lcAddLamp('flood-white',
+        x + Math.cos(azimuth + Math.PI * 0.5) * 0.5 * side,
+        ground + 15.4,
+        z + Math.sin(azimuth + Math.PI * 0.5) * 0.5 * side, 1.7);
+      lcAddLamp('deck-amber-b', x, ground + 16.9, z, 1.0);
+    });
+    mastLamps.push({ azimuthDeg: azimuthDeg, x: x, z: z });
+  });
+  handles.floodlightMasts = mastLamps;
+  return { group: equipment, handles: handles };
+}
+
+/* ---------------------------------------------------------------------------
+ * Blast barriers and perimeter fencing
+ * ------------------------------------------------------------------------ */
+
+function lcAngleDelta(a, b) {
+  return Math.abs(((a - b + 540) % 360) - 180);
+}
+
+function lcBuildBarriers(root, materials) {
+  const barriers = new THREE.Group();
+  barriers.name = 'barriers';
+  root.add(barriers);
+  const apronY = LC_SPEC.apron.topY;
+  const spec = LC_SPEC.barrier;
+
+  /* ---- concrete blast wall ringing the pad ---- */
+  const blocks = [];
+  const copings = [];
+  const footings = [];
+  let blockIndex = 0;
+  for (let angle = spec.fromDeg; angle <= spec.toDeg; angle += spec.segmentDeg) {
+    const a = angle * LC_DEG;
+    const x = Math.cos(a) * spec.radius;
+    const z = Math.sin(a) * spec.radius;
+    const height = 3.4 + (blockIndex % 3) * 0.3;
+    const yaw = -(a + Math.PI * 0.5);
+    blocks.push({ p: [x, apronY + height * 0.5, z], s: [5.6, height, 1.0], r: [0, yaw, 0] });
+    copings.push({ p: [x, apronY + height + 0.16, z], s: [5.8, 0.32, 1.1], r: [0, yaw, 0] });
+    footings.push({ p: [x, apronY + 0.22, z], s: [6.4, 0.44, 1.9], r: [0, yaw, 0] });
+    if (blockIndex % 6 === 2) {
+      lcAddLamp('tower-red-a', x, apronY + height + 0.85, z, 1.2);
+    }
+    blockIndex += 1;
+  }
+  barriers.add(lcInstance('blast-wall-blocks', LC_GEO.box, materials.concreteBlock, blocks));
+  barriers.add(lcInstance('blast-wall-coping', LC_GEO.box, materials.hazard, copings));
+  barriers.add(lcInstance('blast-wall-footings', LC_GEO.box, materials.podium, footings));
+
+  /* ---- jersey barriers flanking the approach ---- */
+  const jersey = [];
+  for (let i = 0; i < 16; i += 1) {
+    const angle = (-72 + i * 4.5) * LC_DEG;
+    const x = Math.cos(angle) * 38.5;
+    const z = Math.sin(angle) * 38.5;
+    jersey.push({
+      p: [x, apronY + 0.55, z], s: [5.0, 1.1, 0.7], r: [0, -(angle + Math.PI * 0.5), 0]
+    });
+  }
+  barriers.add(lcInstance('jersey-barriers', LC_GEO.box, materials.hazard, jersey));
+
+  /* ---- angled steel blast shields at the trench mouth ---- */
+  [-1, 1].forEach(function (side) {
+    lcBox(barriers, materials.hazard,
+      [LC_SPEC.trench.mouthX - 6.5, apronY + 2.6, side * 10.4],
+      [0.9, 5.6, 7.2], [0, side * 0.42, 0], 'trench-blast-shield');
+    lcBox(barriers, materials.steelDark,
+      [LC_SPEC.trench.mouthX - 6.5, apronY + 5.5, side * 10.4],
+      [1.2, 0.4, 7.4], [0, side * 0.42, 0]);
+  });
+
+  /* ---- perimeter chain-link fence with a vehicle gate ---- */
+  const fenceSpec = LC_SPEC.fence;
+  const posts = [];
+  const panels = [];
+  const topRails = [];
+  let lampIndex = 0;
+  for (let angle = 0; angle < 360; angle += fenceSpec.postSpacingDeg) {
+    if (lcAngleDelta(angle, fenceSpec.gateDeg) < fenceSpec.gateHalfDeg) continue;
+    const a = angle * LC_DEG;
+    const x = Math.cos(a) * fenceSpec.radius;
+    const z = Math.sin(a) * fenceSpec.radius;
+    const ground = lcGroundAt(x, z);
+    posts.push({ p: [x, ground + 1.35, z], s: [0.2, 2.7, 0.2] });
+    if (lampIndex % 6 === 0) {
+      lcAddLamp('perimeter-green', x, ground + 2.95, z, 1.15);
+    }
+    lampIndex += 1;
+    const half = fenceSpec.postSpacingDeg * 0.5 * LC_DEG;
+    const midAngle = a + half;
+    const chord = fenceSpec.radius * Math.sin(half) * 2;
+    const mx = Math.cos(midAngle) * fenceSpec.radius;
+    const mz = Math.sin(midAngle) * fenceSpec.radius;
+    panels.push({
+      p: [mx, ground + 1.35, mz], s: [chord, 2.5, 1], r: [0, -(midAngle + Math.PI * 0.5), 0]
+    });
+    topRails.push({
+      p: [mx, ground + 2.62, mz], s: [chord, 0.14, 0.14], r: [0, -(midAngle + Math.PI * 0.5), 0]
+    });
+  }
+  barriers.add(lcInstance('fence-posts', LC_GEO.box, materials.steelGalv, posts));
+  barriers.add(lcInstance('fence-panels', LC_GEO.plane, materials.fence, panels, { castShadow: false }));
+  barriers.add(lcInstance('fence-top-rails', LC_GEO.box, materials.steelGalv, topRails));
+
+  /* gate posts and the gate leaf itself */
+  const gateAzimuth = fenceSpec.gateDeg * LC_DEG;
+  [-1, 1].forEach(function (side) {
+    const a = gateAzimuth + side * fenceSpec.gateHalfDeg * LC_DEG;
+    const x = Math.cos(a) * fenceSpec.radius;
+    const z = Math.sin(a) * fenceSpec.radius;
+    const ground = lcGroundAt(x, z);
+    lcBox(barriers, materials.concreteBlock, [x, ground + 1.7, z], [0.7, 3.4, 0.7]);
+    lcCylinder(barriers, materials.steelGalv, [x, ground + 4.1, z], [0.3, 1.4, 0.3]);
+  });
+  const gateX = Math.cos(gateAzimuth) * fenceSpec.radius;
+  const gateZ = Math.sin(gateAzimuth) * fenceSpec.radius;
+  const gateGround = lcGroundAt(gateX, gateZ);
+  lcBox(barriers, materials.steelGalv, [gateX, gateGround + 1.3, gateZ], [1.0, 2.6, 10.0],
+    [0, -(gateAzimuth + Math.PI * 0.5), 0], 'perimeter-gate');
+  lcBox(barriers, materials.hazard, [gateX, gateGround + 2.3, gateZ], [1.1, 0.6, 10.2],
+    [0, -(gateAzimuth + Math.PI * 0.5), 0]);
+
+  return { group: barriers, panelCount: panels.length, postCount: posts.length };
+}
+
+/* ---- amber beacons standing on the deck parapet ---- */
+function lcBuildDeckLights(root, materials) {
+  const brackets = [];
+  const lamps = [];
+  const radius = LC_SPEC.deck.parapetRadius;
+  const y = LC_SPEC.deck.topY + LC_SPEC.deck.parapetHeight;
+  for (let i = 0; i < 12; i += 1) {
+    const angle = (i / 12) * 360 + 15;
+    if (lcAngleDelta(angle, 0) < 16) continue;
+    const a = angle * LC_DEG;
+    const x = Math.cos(a) * radius;
+    const z = Math.sin(a) * radius;
+    brackets.push({ p: [x, y + 0.24, z], s: [1.0, 0.5, 0.8], r: [0, -a, 0] });
+    lcAddLamp(i % 2 === 0 ? 'deck-amber-a' : 'deck-amber-b', x, y + 0.75, z, 1.15);
+    lamps.push(i);
+  }
+  root.add(lcInstance('deck-beacon-brackets', LC_GEO.box, materials.steelDark, brackets));
+  return lamps.length;
+}
+
+/* ---------------------------------------------------------------------------
+ * Warning-light bank: emissive cores plus additive glow sprites
+ * ------------------------------------------------------------------------ */
+
+const lcLamps = {};
+
+function lcAddLamp(bucket, x, y, z, scale) {
+  if (!lcLamps[bucket]) lcLamps[bucket] = [];
+  lcLamps[bucket].push({ p: [x, y, z], s: [scale, scale, scale] });
+}
+
+function lcPulse(x) {
+  const wrapped = x - Math.floor(x);
+  return Math.pow(0.5 + 0.5 * Math.cos(wrapped * Math.PI * 2), 1.6);
+}
+
+function lcNormaliseMode(mode) {
+  const value = String(mode == null ? '' : mode).trim().toLowerCase();
+  if (value === 'off' || value === 'dark' || value === 'blackout') return 'off';
+  if (value === 'steady' || value === 'on' || value === 'solid' || value === 'constant') return 'steady';
+  return 'blink';
+}
+
+function lcNormalisePattern(pattern) {
+  const value = String(pattern == null ? '' : pattern).trim().toLowerCase();
+  if (value === 'alternate' || value === 'alternating') return 'alternate';
+  if (value === 'synchronised' || value === 'synchronized' || value === 'all' || value === 'simultaneous') return 'synchronised';
+  return 'chase';
+}
+
+const LC_LIGHT_BUCKETS = [
+  { name: 'tower-red-a', colour: 0xff2d14, offset: 0, steady: false, size: 1.25 },
+  { name: 'tower-red-b', colour: 0xff551f, offset: 0.37, steady: false, size: 1.25 },
+  { name: 'deck-amber-a', colour: 0xffab00, offset: 0.19, steady: false, size: 1.1 },
+  { name: 'deck-amber-b', colour: 0xff8400, offset: 0.61, steady: false, size: 1.1 },
+  { name: 'perimeter-green', colour: 0x3bff70, offset: 0, steady: true, size: 1.05 },
+  { name: 'flood-white', colour: 0xfff6e2, offset: 0, steady: true, size: 1.6 }
+];
+
+function lcCreateWarningLights(root, materials, textures) {
+  const group = new THREE.Group();
+  group.name = 'warning-light-bank';
+  root.add(group);
+
+  const banks = [];
+  let lampCount = 0;
+  LC_LIGHT_BUCKETS.forEach(function (bucket) {
+    const lamps = lcLamps[bucket.name] || [];
+    if (!lamps.length) return;
+
+    const items = lamps.map(function (lamp) {
+      const size = bucket.size * lamp.s[0];
+      return { p: lamp.p, s: [size, size, size] };
+    });
+    const coreMaterial = new THREE.MeshBasicMaterial({
+      color: bucket.colour, toneMapped: false, fog: false
+    });
+    coreMaterial.name = bucket.name + '-lamp-material';
+    const cores = lcInstance(bucket.name + '-lamps', LC_GEO.lamp, coreMaterial, items,
+      { castShadow: false, receiveShadow: false });
+    group.add(cores);
+
+    const spriteMaterial = new THREE.SpriteMaterial({
+      map: textures.glow, color: bucket.colour, transparent: true, opacity: 0.7,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false
+    });
+    spriteMaterial.name = bucket.name + '-glow-material';
+    const sprites = lamps.map(function (lamp) {
+      const sprite = new THREE.Sprite(spriteMaterial);
+      sprite.name = bucket.name + '-glow';
+      sprite.position.set(lamp.p[0], lamp.p[1], lamp.p[2]);
+      sprite.scale.set(3.2, 3.2, 1);
+      group.add(sprite);
+      return sprite;
+    });
+
+    lampCount += lamps.length;
+    banks.push({
+      name: bucket.name,
+      colour: new THREE.Color(bucket.colour),
+      offset: bucket.offset,
+      steady: !!bucket.steady,
+      size: bucket.size,
+      cores: cores,
+      coreMaterial: coreMaterial,
+      spriteMaterial: spriteMaterial,
+      sprites: sprites,
+      count: lamps.length,
+      level: 1
+    });
+  });
+
+  const warning = {
+    name: 'warning-light-bank',
+    group: group,
+    banks: banks,
+    lampCount: lampCount,
+    mode: LC_SPEC.lights.mode,
+    rate: LC_SPEC.lights.blinkRate,
+    intensity: LC_SPEC.lights.intensity,
+    pattern: LC_SPEC.lights.pattern,
+    phase: 0,
+    brightness: 1,
+    meanBrightness: 1,
+
+    setMode(mode) {
+      this.mode = lcNormaliseMode(mode);
+      this.update(0);
+      return this.mode;
+    },
+
+    /* setBlink(false) parks the bank on a steady glow, setBlink(true, rate)
+     * restarts the flash; both are safe to call every frame. */
+    setBlink(enabled, rate) {
+      this.mode = enabled === false ? 'steady' : 'blink';
+      if (Number.isFinite(Number(rate))) this.setRate(rate);
+      this.update(0);
+      return this.mode;
+    },
+
+    setRate(rate) {
+      const value = Number(rate);
+      if (Number.isFinite(value)) this.rate = Math.min(8, Math.max(0, value));
+      return this.rate;
+    },
+
+    setIntensity(value) {
+      this.intensity = clamp01(value);
+      this.update(0);
+      return this.intensity;
+    },
+
+    setPattern(pattern) {
+      this.pattern = lcNormalisePattern(pattern);
+      this.update(0);
+      return this.pattern;
+    },
+
+    setState(options) {
+      const settings = options && typeof options === 'object' ? options : {};
+      if (settings.mode !== undefined) this.mode = lcNormaliseMode(settings.mode);
+      if (settings.blink !== undefined) this.mode = settings.blink === false ? 'steady' : 'blink';
+      if (settings.rate !== undefined) this.setRate(settings.rate);
+      if (settings.intensity !== undefined) this.intensity = clamp01(settings.intensity);
+      if (settings.pattern !== undefined) this.pattern = lcNormalisePattern(settings.pattern);
+      if (settings.resetPhase === true) this.phase = 0;
+      this.update(0);
+      return this.getState();
+    },
+
+    getState() {
+      return {
+        mode: this.mode,
+        rate: this.rate,
+        intensity: this.intensity,
+        pattern: this.pattern,
+        phase: this.phase,
+        brightness: this.brightness,
+        meanBrightness: this.meanBrightness,
+        lampCount: lampCount,
+        banks: banks.map(function (bank) {
+          return { name: bank.name, level: bank.level, lamps: bank.count, steady: bank.steady };
+        })
+      };
+    },
+
+    update(dt) {
+      const delta = Math.max(0, Number(dt) || 0);
+      if (this.mode === 'blink' && this.rate > 0) {
+        this.phase = (this.phase + delta * this.rate) % 1;
+      }
+      let peak = 0;
+      let blinkTotal = 0;
+      let blinkCount = 0;
+      let steadyLevel = 0;
+      for (let i = 0; i < banks.length; i += 1) {
+        const bank = banks[i];
+        let level;
+        if (this.mode === 'off') level = 0;
+        else if (bank.steady || this.mode === 'steady') level = 1;
+        else {
+          const offset = this.pattern === 'synchronised'
+            ? 0
+            : this.pattern === 'alternate' ? (i % 2) * 0.5 : bank.offset;
+          level = lcPulse(this.phase + offset);
+        }
+        bank.level = level;
+        if (bank.steady) {
+          steadyLevel = level;
+        } else {
+          peak = Math.max(peak, level);
+          blinkTotal += level;
+          blinkCount += 1;
+        }
+        const brightness = clamp01(level * this.intensity);
+        bank.coreMaterial.color.copy(bank.colour).multiplyScalar(0.1 + 0.9 * brightness);
+        bank.spriteMaterial.opacity = this.mode === 'off' ? 0.05 : 0.1 + 0.72 * brightness;
+        const size = bank.size * (2.6 + 1.6 * brightness);
+        for (let s = 0; s < bank.sprites.length; s += 1) {
+          bank.sprites[s].scale.set(size, size, 1);
+        }
+      }
+      /* brightness is the brightest blinking lamp (1 = fully lit, 0 = dark), so
+       * a consumer sampling the published state sees the flash; meanBrightness
+       * reports the average across the winking banks, and the per-bank levels in
+       * getState() show the chase offset of every group. */
+      this.brightness = blinkCount ? peak : steadyLevel;
+      this.meanBrightness = blinkCount ? blinkTotal / blinkCount : steadyLevel;
+      return this.brightness;
+    },
+
+    dispose() {
+      group.clear();
+      banks.length = 0;
+      lampCount = 0;
+    }
+  };
+
+  warning.update(0);
+  return warning;
+}
+
+/* ---------------------------------------------------------------------------
+ * Disposal + vehicle probe
+ * ------------------------------------------------------------------------ */
+
+function lcDisposeTree(root) {
+  root.traverse(function (object) {
+    if (object.isMesh || object.isLine || object.isPoints) {
+      if (object.geometry) object.geometry.dispose();
+      if (object.material) {
+        const list = Array.isArray(object.material) ? object.material : [object.material];
+        for (let i = 0; i < list.length; i += 1) list[i].dispose();
+      }
+    }
+  });
+}
+
+/* The vehicle section registers after this one; until it exists the jaws close
+ * on the configured radius, and once it registers the rigs pull back to grip
+ * whatever footprint the real vehicle has. */
+function lcFindVehicleRadius() {
+  const candidates = [];
+  const subsystem = runtime.get('rocket');
+  if (subsystem) {
+    ['group', 'root', 'mesh', 'object', 'vehicle', 'body'].forEach(function (key) {
+      if (subsystem[key] && subsystem[key].isObject3D) candidates.push(subsystem[key]);
+    });
+  }
+  const named = scene.getObjectByName('rocket');
+  if (named) candidates.push(named);
+  for (let i = 0; i < candidates.length; i += 1) {
+    const box = new THREE.Box3().setFromObject(candidates[i]);
+    if (box.isEmpty()) continue;
+    const size = box.getSize(new THREE.Vector3());
+    const radius = Math.max(size.x, size.z) * 0.5;
+    if (radius > 0.35 && radius < 12 && size.y > 4) return radius;
+  }
+  return null;
+}
+
+/* ---------------------------------------------------------------------------
+ * Launch complex subsystem
+ * ------------------------------------------------------------------------ */
+
+const launchComplexSystem = {
+  group: null,
+  textures: null,
+  materials: null,
+  materialTextures: null,
+  pad: null,
+  tower: null,
+  equipment: null,
+  barriers: null,
+  warning: null,
+  instanced: [],
+  rigs: [],
+  clampRigs: [],
+  umbilicalRigs: [],
+  holdDownRigs: [],
+  handles: null,
+  release: { value: 0, target: 0, duration: 1.25 },
+  vehicleRadius: null,
+  nextProbe: 0,
+
+  init(ctx) {
+    const textures = lcCreateTextures();
+    const materialTextures = [];
+    const materials = lcCreateMaterials(textures, materialTextures);
+    const group = new THREE.Group();
+    group.name = 'launch-complex';
+
+    /* build order matters: every site builder registers its lamp positions,
+     * and the warning-light bank is assembled from that registry last. */
+    const pad = lcBuildPad(group, materials);
+    const tower = lcBuildTower(group, materials);
+    const rigs = lcBuildRigs(group, materials);
+    const equipment = lcBuildGroundEquipment(group, materials);
+    const barriers = lcBuildBarriers(group, materials);
+    lcBuildDeckLights(group, materials);
+    const warning = lcCreateWarningLights(group, materials, textures);
+
+    ctx.scene.add(group);
+
+    const instanced = [];
+    group.traverse(function (object) {
+      if (object.isInstancedMesh) {
+        instanced.push({ name: object.name, mesh: object, count: object.count });
+      }
+    });
+
+    const allRigs = rigs.clampRigs.concat(rigs.umbilicalRigs, rigs.holdDownRigs);
+
+    const handles = {
+      group: group,
+      pad: {
+        group: pad.group,
+        deckTopY: pad.deckTopY,
+        deckRadius: LC_SPEC.deck.radius,
+        apronRadius: LC_SPEC.apron.radius,
+        flameHoleRadius: LC_SPEC.deck.holeRadius,
+        deck: pad.deck,
+        podium: pad.podium,
+        apron: pad.apron,
+        trench: {
+          group: pad.trench,
+          floorY: pad.floorY,
+          halfWidth: LC_SPEC.trench.halfWidth,
+          mouthX: pad.mouthX,
+          cutX: pad.cutX,
+          wedge: pad.wedge,
+          ramp: pad.trench.getObjectByName('trench-mouth-ramp')
+        }
+      },
+      tower: {
+        group: tower.group,
+        height: LC_SPEC.tower.height,
+        distance: LC_SPEC.tower.distance,
+        halfWidth: LC_SPEC.tower.halfWidth,
+        azimuthRad: LC_TOWER_AZIMUTH,
+        inward: LC_TOWER_INWARD.clone(),
+        tangent: LC_TOWER_TANGENT.clone(),
+        platforms: LC_SPEC.tower.platforms.slice(),
+        clampHeights: LC_SPEC.tower.clamps.slice(),
+        umbilicalHeights: LC_SPEC.tower.umbilicals.slice(),
+        crane: tower.crane,
+        craneHook: tower.craneHook,
+        radar: tower.radar,
+        windsock: tower.windsock
+      },
+      equipment: equipment.handles,
+      barriers: barriers,
+      clampRigs: rigs.clampRigs,
+      umbilicalRigs: rigs.umbilicalRigs,
+      holdDownRigs: rigs.holdDownRigs,
+      allRigs: allRigs,
+      rigCount: allRigs.length,
+      vehicleSeat: { x: 0, y: LC_SPEC.deck.topY, z: 0 },
+      vehicleRadius: LC_SPEC.tower.defaultVehicleRadius,
+      clampRelease: 0,
+      clampReleaseTarget: 0,
+      clampReleaseDuration: this.release.duration,
+      setClampRelease: this.setClampRelease.bind(this),
+      setClampReach: this.setClampReach.bind(this),
+      setClampPose: this.setClampPose.bind(this),
+      warningLights: warning,
+      setWarningBlink: function (enabled, rate) { return warning.setBlink(enabled, rate); },
+      setWarningState: function (options) { return warning.setState(options); },
+      getWarningState: function () { return warning.getState(); },
+      instanced: instanced,
+      instancedCount: instanced.length
+    };
+
+    this.group = group;
+    this.textures = textures;
+    this.materialTextures = materialTextures;
+    this.materials = materials;
+    this.pad = pad;
+    this.tower = tower;
+    this.equipment = equipment;
+    this.barriers = barriers;
+    this.warning = warning;
+    this.instanced = instanced;
+    this.rigs = allRigs;
+    this.clampRigs = rigs.clampRigs;
+    this.umbilicalRigs = rigs.umbilicalRigs;
+    this.holdDownRigs = rigs.holdDownRigs;
+    this.handles = handles;
+    this.vehicleRadius = null;
+    this.nextProbe = 0;
+
+    if (!runtime.handles) runtime.handles = {};
+    runtime.handles.launchComplex = handles;
+    runtime.launchComplex = this;
+
+    state.launchComplex = state.launchComplex || {};
+    state.launchComplex.clampRelease = 0;
+    state.launchComplex.clampReleaseTarget = 0;
+    state.launchComplex.clampsReleased = false;
+    state.launchComplex.rigCount = allRigs.length;
+    state.launchComplex.lampCount = warning.lampCount;
+    state.launchComplex.warningLights = {
+      mode: warning.mode, rate: warning.rate, intensity: warning.intensity, brightness: warning.brightness
+    };
+    state.launchComplex.instancedCount = instanced.length;
+    state.launchComplex.vehicleRadius = LC_SPEC.tower.defaultVehicleRadius;
+
+    lcApplyRelease(this);
+  },
+
+  /* Idempotent: repeating the same request never restarts the travel or
+   * disturbs a release the director phase already started. */
+  setClampRelease(t, immediate) {
+    const next = clamp01(t);
+    const release = this.release;
+    if (Math.abs(next - release.target) <= 1e-6 && immediate !== true) return release.value;
+    release.target = next;
+    if (immediate === true || release.duration <= 0) {
+      release.value = next;
+      lcApplyRelease(this);
+    }
+    return release.value;
+  },
+
+  setClampPose(t) {
+    return this.setClampRelease(t, true);
+  },
+
+  setClampReach(radius) {
+    const value = Number(radius);
+    if (!Number.isFinite(value) || value <= 0) return this.vehicleRadius;
+    const reach = Math.min(Math.max(value, 0.8), 7.5);
+    this.vehicleRadius = reach;
+    for (let i = 0; i < this.rigs.length; i += 1) this.rigs[i].setReach(reach);
+    if (this.handles) this.handles.vehicleRadius = reach;
+    if (state.launchComplex) state.launchComplex.vehicleRadius = reach;
+    return reach;
+  },
+
+  update(dt, currentState) {
+    const delta = Math.max(0, Number(dt) || 0);
+    const release = this.release;
+
+    if (release.value !== release.target) {
+      const step = (delta / release.duration) * (release.target > release.value ? 1 : -1);
+      release.value = release.target > release.value
+        ? Math.min(release.target, release.value + step)
+        : Math.max(release.target, release.value - step);
+      lcApplyRelease(this);
+    }
+
+    if (this.warning) this.warning.update(delta);
+    if (this.tower) {
+      if (this.tower.radar) this.tower.radar.rotation.y += delta * 0.4;
+      if (this.tower.craneHook) this.tower.craneHook.rotation.z = Math.sin(currentState.elapsed * 0.55) * 0.035;
+      if (this.tower.windsock) {
+        this.tower.windsock.rotation.y = Math.sin(currentState.elapsed * 0.35) * 0.2;
+      }
+    }
+
+    if (this.vehicleRadius === null && currentState.elapsed >= this.nextProbe) {
+      this.nextProbe = currentState.elapsed + 0.5;
+      const radius = lcFindVehicleRadius();
+      if (radius !== null) this.setClampReach(radius);
+    }
+
+    const shared = currentState.launchComplex;
+    if (shared && this.warning) {
+      shared.clampRelease = release.value;
+      shared.clampReleaseTarget = release.target;
+      shared.clampsReleased = release.value > 0.999;
+      shared.warningLights.mode = this.warning.mode;
+      shared.warningLights.rate = this.warning.rate;
+      shared.warningLights.intensity = this.warning.intensity;
+      shared.warningLights.brightness = this.warning.brightness;
+      shared.warningLights.meanBrightness = this.warning.meanBrightness;
+      shared.vehicleRadius = this.vehicleRadius === null ? LC_SPEC.tower.defaultVehicleRadius : this.vehicleRadius;
+    }
+  },
+
+  onQualityChange(qualityTier) {
+    /* The bank is emissive and unit-scaled, so it costs the same at every
+     * tier; only the glow sprites are trimmed on the lowest tier. */
+    if (!this.warning) return;
+    const visible = qualityTier.id !== 'low' || this.warning.banks.length <= 2;
+    for (let i = 0; i < this.warning.banks.length; i += 1) {
+      const bank = this.warning.banks[i];
+      for (let s = 0; s < bank.sprites.length; s += 1) {
+        bank.sprites[s].visible = visible || bank.name === 'tower-red-a' || bank.name === 'tower-red-b';
+      }
+    }
+  },
+
+  dispose(ctx) {
+    if (this.warning) this.warning.dispose();
+    if (this.group) {
+      ctx.scene.remove(this.group);
+      lcDisposeTree(this.group);
+    }
+    if (this.textures) {
+      Object.keys(this.textures).forEach(function (key) {
+        const texture = this.textures[key];
+        if (texture && texture.dispose) texture.dispose();
+      }, this);
+    }
+    if (this.materialTextures) {
+      this.materialTextures.forEach(function (texture) { if (texture && texture.dispose) texture.dispose(); });
+    }
+    this.group = null;
+    this.textures = null;
+    this.materials = null;
+    this.materialTextures = null;
+    this.pad = null;
+    this.tower = null;
+    this.equipment = null;
+    this.barriers = null;
+    this.warning = null;
+    this.instanced = [];
+    this.rigs = [];
+    this.clampRigs = [];
+    this.umbilicalRigs = [];
+    this.holdDownRigs = [];
+    this.handles = null;
+    this.release.value = 0;
+    this.release.target = 0;
+    this.vehicleRadius = null;
+    if (runtime.handles) runtime.handles.launchComplex = null;
+    runtime.launchComplex = null;
+  }
+};
+
+function lcApplyRelease(system) {
+  const value = system.release.value;
+  for (let i = 0; i < system.rigs.length; i += 1) system.rigs[i].setRelease(value);
+  if (system.handles) {
+    system.handles.clampRelease = value;
+    system.handles.clampReleaseTarget = system.release.target;
+  }
+  if (state.launchComplex) {
+    state.launchComplex.clampRelease = value;
+    state.launchComplex.clampReleaseTarget = system.release.target;
+    state.launchComplex.clampsReleased = value > 0.999;
+  }
+  return value;
+}
+
+runtime.register('launchComplex', launchComplexSystem);
 
 /* ---------------------------------------------------------------------------
  * SECTION: rocket - extension point (vehicle geometry, materials, staging).
