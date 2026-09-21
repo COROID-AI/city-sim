@@ -7826,9 +7826,782 @@ runtime.smoke = smokeSystem.api;
 runtime.register('smoke', smokeSystem);
 
 /* ---------------------------------------------------------------------------
- * SECTION: reactive - extension point (dynamic lighting, shockwave, FX that
- * react to the shared director state).
+ * SECTION: reactive - the environment answers the engines.
+ * ---------------------------------------------------------------------------
+ * Everything in this section is in place: it rewrites the per-instance
+ * matrices of the instanced foliage and loose-prop handles published by the
+ * world phase (LAUNCH_SCENE.collections.foliage / .props) from the gust field
+ * published by the exhaust phase (LAUNCH_SCENE.exhaust) plus the shared
+ * director state. No geometry, material, instance count or draw call is
+ * created here - the grass, tree and prop meshes are displaced exactly where
+ * they already are - and no world, launch-complex, rocket, exhaust or particle
+ * code is touched, so the pad, the tower, the barriers and every other static
+ * structure stay perfectly still.
+ *
+ * THE FIELD - one cause, read every frame, never invented
+ *   level     LAUNCH_SCENE.exhaust.level          ramped thrust, 0..1
+ *   core      LAUNCH_SCENE.exhaust.gustRadius     metres of hot-gas gust
+ *   anchor    LAUNCH_SCENE.exhaust.plumeBase      world-space engine anchor
+ *   altitude  LAUNCH_SCENE.state.altitude         metres above the pad
+ *   front     LAUNCH_SCENE.smoke.dustRadius       ground dust front, metres
+ *   gated     clamp01((level - ignitionThreshold) / (1 - ignitionThreshold))
+ *             -> identically 0 through the calm pre-launch beat
+ *   reach     core * gustGain                     metres of visible response
+ *   settle    1 / (1 + altitude / settleAltitude) -> decay after liftoff
+ *   falloff   smoothstep(1 - distance / reach)    -> smooth radial profile
+ *   gust      falloff * gated * settle * wobble
+ *
+ * FOLIAGE AND LIGHT VEGETATION
+ *   Every tuft, trunk and canopy inside the reach leans away from the engine
+ *   anchor along the radial push direction. The lean is a per-instance spring
+ *   (stiffness plus damping), so it whips up with the thrust ramp, holds while
+ *   the vehicle is clamped and springs back to the exact rest pose when the
+ *   field dies. Blades also flatten (Y squash, XZ spread) and carry an outward
+ *   ripple whose crest is phase-locked to the published dust front, so grass
+ *   and ground dust ripple outward together. A tree's trunk and canopy share
+ *   one bend phase, so the tree leans as a single piece instead of splitting.
+ *
+ * LOOSE PROPS
+ *   Boulders, crates and barrels are pushed radially out of the gust with a
+ *   per-instance swirl, roll about the horizontal axis perpendicular to their
+ *   travel (rolling angle = travel / body radius, so they tumble rather than
+ *   slide), hop a little while the field is strong and are re-seated on the
+ *   published terrain sampler so they stay on the ground they cross. All of
+ *   them settle back onto their rest pose as the field decays: the site
+ *   visibly comes to rest again.
+ *
+ * CALM OPENING BEAT
+ *   Below the ignition threshold the gate is exactly zero, so nothing is
+ *   pushed and no gust exists. The only motion authored here is a very slow,
+ *   few-degree ambient air sway over the vegetation, which reads as subtle air
+ *   movement while the particle phase drifts its light smoke haze. Nothing is
+ *   emitted, nothing is displaced far, and no text, label, marker or indicator
+ *   of any kind is ever drawn.
+ *
+ * PER-FRAME COST
+ *   An index list of the instances inside the response range is built once at
+ *   bind, every scratch vector/quaternion/matrix is pre-allocated, the hot loop
+ *   allocates nothing, instances that are exactly at rest are skipped, and the
+ *   prop terrain re-seat runs on a 4-frame stride.
+ *
+ * PUBLISHED API - LAUNCH_SCENE.reactive (registered as the 'reactive' subsystem)
+ *   field           live gust numbers { level, gated, settle, core, reach, ... }
+ *   handles[]       per-handle report { name, kind, count, visited, disturbed }
+ *   falloffAt(x, z) smooth radial profile of the field at a ground position
+ *   restError()     max |current - rest| matrix element over the visited set
+ *   getState()      numbers-only snapshot, mirrored into state.reactive
  * ------------------------------------------------------------------------ */
+// ==== SECTION: reactive ====
+
+const RX_VERSION = '1.0.0-reactive';
+const RX_TAU = Math.PI * 2;
+
+/* Tunables. Metres, radians and seconds. */
+const RX_SPEC = {
+  ignitionThreshold: 0.07,   // no gust at all below this thrust level
+  gustGain: 16,              // visible reach = published gustRadius * this
+  range: 520,                // metres from the launch axis that react at all
+  settleAltitude: 58,        // metres of climb over which the field decays
+  maxTilt: 3.6,              // rad, safety clamp on one lean/roll angle
+  coreAtFullThrust: 28,      // fallback core when there is no exhaust api
+  ambient: {
+    amplitude: 0.085,        // rad of ambient sway with the engines dark
+    frequency: 0.62,         // rad/s - deliberately slow air movement
+    gustFade: 0.62,          // how much the ambient gives way to the gust
+    fadeAltitude: 4,         // metres of climb over which the ambient dies
+    windX: 0.86,             // ambient wind heading (XZ, not normalised)
+    windZ: -0.51
+  },
+  ripple: {
+    wavelength: 30,          // metres between ripple crests
+    speed: 2.6,              // rad/s the crests travel outward
+    frontFollow: 0.85        // how far the ripple tracks the dust front
+  },
+  wobble: { amount: 0.13, frequency: 5.1 },
+  restEpsilon: 1e-4          // spring value treated as exactly at rest
+};
+
+/* Per-handle reaction. `tilt` is the lean at full gust (foliage) or the extra
+ * tumbling rotation at full gust (props); `push` is the radial travel in
+ * metres; `bodyRadius` converts that travel into a rolling angle; `ambient` is
+ * the share of the ambient sway the handle receives (0 = inert at rest). */
+const RX_HANDLES = {
+  'foliage-grass': {
+    kind: 'grass', stiffness: 46, damping: 7.4, tilt: 0.92, flatten: 0.46,
+    spread: 0.16, ripple: 0.30, ambient: 1.00, push: 0, lift: 0, bodyRadius: 1
+  },
+  'foliage-tree-trunks': {
+    kind: 'trunk', stiffness: 30, damping: 8.6, tilt: 0.30, flatten: 0.06,
+    spread: 0.03, ripple: 0.10, ambient: 0.55, push: 0, lift: 0, bodyRadius: 1
+  },
+  'foliage-tree-canopies': {
+    kind: 'canopy', stiffness: 30, damping: 8.6, tilt: 0.30, flatten: 0.14,
+    spread: 0.05, ripple: 0.10, ambient: 0.55, push: 0, lift: 0, bodyRadius: 1
+  },
+  'prop-boulders': {
+    kind: 'prop', stiffness: 34, damping: 9.2, tilt: 0.55, flatten: 0,
+    spread: 0, ripple: 0.03, ambient: 0, push: 1.20, lift: 0.10, bodyRadius: 1.05
+  },
+  'prop-crates': {
+    kind: 'prop', stiffness: 28, damping: 8.0, tilt: 1.30, flatten: 0,
+    spread: 0, ripple: 0.05, ambient: 0, push: 3.00, lift: 0.26, bodyRadius: 0.95
+  },
+  'prop-barrels': {
+    kind: 'prop', stiffness: 26, damping: 7.6, tilt: 1.55, flatten: 0,
+    spread: 0, ripple: 0.05, ambient: 0, push: 2.60, lift: 0.34, bodyRadius: 0.60
+  }
+};
+const RX_FOLIAGE_FALLBACK = {
+  kind: 'grass', stiffness: 40, damping: 7.8, tilt: 0.60, flatten: 0.30,
+  spread: 0.10, ripple: 0.16, ambient: 0.80, push: 0, lift: 0, bodyRadius: 1
+};
+const RX_PROP_FALLBACK = {
+  kind: 'prop', stiffness: 30, damping: 8.4, tilt: 1.00, flatten: 0,
+  spread: 0, ripple: 0.05, ambient: 0, push: 1.80, lift: 0.20, bodyRadius: 0.85
+};
+
+/* Stable per-instance pseudo-random in [0, 1). A pure function of the index,
+ * so the trunk and canopy meshes of one tree share one phase and one jitter
+ * and therefore bend as a single object. */
+function rxHash(value) {
+  const x = Math.sin(value * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/* Smoothstep on an already clamped profile value. */
+function rxSmoothStep(value) {
+  const t = value < 0 ? 0 : value > 1 ? 1 : value;
+  return t * t * (3 - 2 * t);
+}
+
+/* Shared scratch objects: the hot loop never allocates. */
+const rxScratch = {
+  position: new THREE.Vector3(),
+  scale: new THREE.Vector3(),
+  rest: new THREE.Quaternion(),
+  bend: new THREE.Quaternion(),
+  axis: new THREE.Vector3(),
+  matrix: new THREE.Matrix4()
+};
+
+/* Decompose the rest pose of one published instanced handle once, then list
+ * the instances that sit inside the response range. */
+function rxBindHandle(handle, fallback, axisX, axisZ, sampler) {
+  const config = RX_HANDLES[handle.name] || fallback;
+  const grounded = !!(sampler && config.push > 0);
+  const count = handle.count;
+  const record = {
+    name: handle.name,
+    kind: config.kind,
+    config: config,
+    mesh: handle.mesh,
+    base: handle.base,
+    count: count,
+    sampler: sampler,
+    grounded: grounded,
+    position: new Float32Array(count * 3),
+    rotation: new Float32Array(count * 4),
+    scale: new Float32Array(count * 3),
+    phase: new Float32Array(count),
+    jitter: new Float32Array(count),
+    cosSwirl: new Float32Array(count),
+    sinSwirl: new Float32Array(count),
+    ground: new Float32Array(count),
+    sink: new Float32Array(count),
+    spring: new Float32Array(count),
+    springVel: new Float32Array(count),
+    touched: new Uint8Array(count),
+    indices: null,
+    visited: 0,
+    disturbed: 0,
+    tilt: 0,
+    push: 0
+  };
+
+  const position = rxScratch.position;
+  const rest = rxScratch.rest;
+  const scale = rxScratch.scale;
+  const matrix = rxScratch.matrix;
+  const indices = [];
+
+  for (let i = 0; i < count; i += 1) {
+    matrix.fromArray(handle.base, i * 16);
+    matrix.decompose(position, rest, scale);
+    const i3 = i * 3;
+    const i4 = i * 4;
+    record.position[i3] = position.x;
+    record.position[i3 + 1] = position.y;
+    record.position[i3 + 2] = position.z;
+    record.rotation[i4] = rest.x;
+    record.rotation[i4 + 1] = rest.y;
+    record.rotation[i4 + 2] = rest.z;
+    record.rotation[i4 + 3] = rest.w;
+    record.scale[i3] = scale.x;
+    record.scale[i3 + 1] = scale.y;
+    record.scale[i3 + 2] = scale.z;
+    record.phase[i] = rxHash(i + 1) * RX_TAU;
+    record.jitter[i] = 0.85 + 0.3 * rxHash(i + 7.3);
+    if (config.push > 0) {
+      const swirl = (rxHash(i + 13.7) - 0.5) * 0.7;
+      record.cosSwirl[i] = Math.cos(swirl);
+      record.sinSwirl[i] = Math.sin(swirl);
+    } else {
+      record.cosSwirl[i] = 1;
+      record.sinSwirl[i] = 0;
+    }
+    record.ground[i] = position.y;
+    const dx = position.x - axisX;
+    const dz = position.z - axisZ;
+    if (Math.sqrt(dx * dx + dz * dz) <= RX_SPEC.range) indices.push(i);
+  }
+
+  /* Props ride the published terrain sampler: remember how far below the
+   * surface their rest pose sits, so the pushed pose can be re-seated. */
+  if (grounded) {
+    for (let n = 0; n < indices.length; n += 1) {
+      const i = indices[n];
+      const i3 = i * 3;
+      record.sink[i] = record.position[i3 + 1] - sampler(record.position[i3], record.position[i3 + 2]);
+      record.ground[i] = sampler(record.position[i3], record.position[i3 + 2]) + record.sink[i];
+    }
+  }
+
+  record.indices = Int32Array.from(indices);
+  return record;
+}
+
+/* Put one instance back on its exact published rest matrix. */
+function rxRestoreInstance(handle, index) {
+  const mesh = handle.mesh;
+  if (!mesh || !mesh.instanceMatrix || !mesh.instanceMatrix.array) return;
+  const current = mesh.instanceMatrix.array;
+  const base = handle.base;
+  const offset = index * 16;
+  for (let element = 0; element < 16; element += 1) current[offset + element] = base[offset + element];
+  mesh.instanceMatrix.needsUpdate = true;
+}
+
+const reactiveSystem = {
+  version: RX_VERSION,
+  bound: false,
+  worldRef: null,
+  handles: [],
+  axisX: 0,
+  axisZ: 0,
+  clock: 0,
+  frames: 0,
+  level: 0,
+  gated: 0,
+  settle: 1,
+  core: 0,
+  reach: 1,
+  originX: 0,
+  originY: 0,
+  originZ: 0,
+  dustFront: 0,
+  dustLive: 0,
+  disturbed: 0,
+  visited: 0,
+  maxTilt: 0,
+  maxPush: 0,
+  wobbleFactor: 1,
+  ambientScale: 1,
+  waveNumber: RX_TAU / RX_SPEC.ripple.wavelength,
+  wavePhase: 0,
+  ambientTime: 0,
+  restTimer: 0,
+  restErrorValue: 0,
+  api: null,
+
+  init(ctx) {
+    this.bind(true);
+    const shared = (ctx && ctx.state) || state;
+    shared.reactive = shared.reactive || {
+      level: 0, gated: 0, settle: 1, core: 0, reach: 0, clock: 0,
+      visited: 0, disturbed: 0, handles: 0, tilt: 0, push: 0,
+      dustFront: 0, dustLive: 0, calm: true, ambient: RX_SPEC.ambient.amplitude,
+      frames: 0, restError: 0
+    };
+    this.publish(shared);
+    console.log('[LAUNCH_SCENE] reactive online - instanced handles=' + this.handles.length +
+      ', range=' + RX_SPEC.range + 'm, gust gain=' + RX_SPEC.gustGain +
+      ', ignition threshold=' + RX_SPEC.ignitionThreshold);
+  },
+
+  /* Consume the published world handles. Re-binds only when the collections
+   * appear late or the world subsystem was replaced (re-registered). */
+  bind(force) {
+    const collections = runtime.collections;
+    if (!collections) return this.handles.length > 0;
+    const world = runtime.world || null;
+    if (!force && this.bound && this.worldRef === world) return true;
+
+    const complex = runtime.handles && runtime.handles.launchComplex ? runtime.handles.launchComplex : null;
+    const seat = complex && complex.vehicleSeat ? complex.vehicleSeat : null;
+    this.axisX = seat && Number.isFinite(seat.x) ? seat.x : 0;
+    this.axisZ = seat && Number.isFinite(seat.z) ? seat.z : 0;
+
+    const sampler = typeof collections.terrainHeight === 'function' ? collections.terrainHeight : null;
+    const foliage = Array.isArray(collections.foliage) ? collections.foliage : [];
+    const props = Array.isArray(collections.props) ? collections.props : [];
+    const handles = [];
+
+    for (let i = 0; i < foliage.length; i += 1) {
+      const handle = foliage[i];
+      if (!handle || !handle.mesh || !handle.base || !(handle.count > 0)) continue;
+      handles.push(rxBindHandle(handle, RX_FOLIAGE_FALLBACK, this.axisX, this.axisZ, sampler));
+    }
+    for (let i = 0; i < props.length; i += 1) {
+      const handle = props[i];
+      if (!handle || !handle.mesh || !handle.base || !(handle.count > 0)) continue;
+      handles.push(rxBindHandle(handle, RX_PROP_FALLBACK, this.axisX, this.axisZ, sampler));
+    }
+
+    this.handles = handles;
+    this.worldRef = world;
+    this.bound = handles.length > 0;
+    return this.bound;
+  },
+
+  update(dt, shared) {
+    const delta = Math.max(0, Math.min(0.25, Number(dt) || 0));
+    this.frames += 1;
+    if (delta <= 0) return;
+    if (!this.bind(false)) return;
+
+    const current = shared || runtime.state;
+    this.clock += delta;
+
+    /* ---- the field: published exhaust numbers, never a private timer ---- */
+    const exhaust = runtime.exhaust || null;
+    const level = clamp01(exhaust ? exhaust.level : (current ? current.thrust : 0));
+    const altitude = Math.max(0, Number(current && current.altitude) || 0);
+    const gated = clamp01((level - RX_SPEC.ignitionThreshold) / (1 - RX_SPEC.ignitionThreshold));
+    const core = Math.max(0, exhaust ? exhaust.gustRadius : level * RX_SPEC.coreAtFullThrust);
+    const reach = Math.max(0.001, core * RX_SPEC.gustGain);
+    const settle = 1 / (1 + altitude / RX_SPEC.settleAltitude);
+    /* The ambient breath belongs to the calm beat on the pad: it fades out as
+     * the vehicle climbs, so afterwards the ground settles to its rest pose. */
+    const ambientScale = 1 - rxSmoothStep(clamp01((altitude - 0.5) / RX_SPEC.ambient.fadeAltitude));
+
+    let originX = this.axisX;
+    let originY = 0;
+    let originZ = this.axisZ;
+    if (exhaust && exhaust.plumeBase) {
+      originX = exhaust.plumeBase.x;
+      originY = exhaust.plumeBase.y;
+      originZ = exhaust.plumeBase.z;
+    }
+
+    const smoke = runtime.smoke || runtime.particles || null;
+    const dustFront = smoke && Number.isFinite(smoke.dustRadius) ? Math.max(0, smoke.dustRadius) : 0;
+    const dustLive = smoke && typeof smoke.active === 'function' ? smoke.active('dust') : 0;
+
+    this.level = level;
+    this.gated = gated;
+    this.settle = settle;
+    this.core = core;
+    this.reach = reach;
+    this.ambientScale = ambientScale;
+    this.originX = originX;
+    this.originY = originY;
+    this.originZ = originZ;
+    this.dustFront = dustFront;
+    this.dustLive = dustLive;
+    this.wobbleFactor = 1 - RX_SPEC.wobble.amount +
+      RX_SPEC.wobble.amount * (1 + Math.sin(this.clock * RX_SPEC.wobble.frequency));
+    this.wavePhase = this.clock * RX_SPEC.ripple.speed;
+    this.ambientTime = this.clock * RX_SPEC.ambient.frequency;
+
+    let visited = 0;
+    let disturbed = 0;
+    let maxTilt = 0;
+    let maxPush = 0;
+    for (let i = 0; i < this.handles.length; i += 1) {
+      const handle = this.handles[i];
+      this.applyHandle(handle, delta);
+      visited += handle.visited;
+      disturbed += handle.disturbed;
+      if (handle.tilt > maxTilt) maxTilt = handle.tilt;
+      if (handle.push > maxPush) maxPush = handle.push;
+    }
+    this.visited = visited;
+    this.disturbed = disturbed;
+    this.maxTilt = maxTilt;
+    this.maxPush = maxPush;
+
+    /* The rest metric is a diagnostic, so it is sampled 4x per second. */
+    this.restTimer += delta;
+    if (this.restTimer >= 0.25) {
+      this.restTimer = 0;
+      this.restErrorValue = this.restError();
+    }
+
+    this.publish(current);
+  },
+
+  /* Displace one published handle in place from the current field. */
+  applyHandle(handle, dt) {
+    const config = handle.config;
+    const mesh = handle.mesh;
+    const limit = Math.min(mesh.count, handle.count);
+    const indices = handle.indices;
+    const position = handle.position;
+    const rotation = handle.rotation;
+    const scale = handle.scale;
+    const spring = handle.spring;
+    const springVel = handle.springVel;
+    const phase = handle.phase;
+    const jitter = handle.jitter;
+    const cosSwirl = handle.cosSwirl;
+    const sinSwirl = handle.sinSwirl;
+    const touched = handle.touched;
+
+    const originX = this.originX;
+    const originZ = this.originZ;
+    const strength = this.gated * this.settle * this.wobbleFactor;
+    const ambientAmp = config.ambient * RX_SPEC.ambient.amplitude * this.ambientScale;
+    const windX = RX_SPEC.ambient.windX;
+    const windZ = RX_SPEC.ambient.windZ;
+    const waveNumber = this.waveNumber;
+    const wavePhase = this.wavePhase;
+    const front = this.dustFront * RX_SPEC.ripple.frontFollow;
+    const ambientTime = this.ambientTime;
+    const lift = config.lift || 0;
+    const pushDistance = config.push || 0;
+    const bodyRadius = config.bodyRadius || 1;
+    const tiltAmount = config.tilt;
+    const rippleAmount = config.ripple;
+    const flattenAmount = config.flatten;
+    const spreadAmount = config.spread;
+    const stiffnessBase = config.stiffness;
+    const damping = config.damping;
+    const reach = this.reach;
+    const grounded = handle.grounded;
+    const sampler = handle.sampler;
+    const ground = handle.ground;
+    const sink = handle.sink;
+    const frame = this.frames;
+    const restEpsilon = RX_SPEC.restEpsilon;
+    const tiltClamp = RX_SPEC.maxTilt;
+    const gustFade = RX_SPEC.ambient.gustFade;
+
+    const pos = rxScratch.position;
+    const scaleV = rxScratch.scale;
+    const rest = rxScratch.rest;
+    const bend = rxScratch.bend;
+    const axis = rxScratch.axis;
+    const matrix = rxScratch.matrix;
+
+    let visited = 0;
+    let disturbed = 0;
+    let maxTilt = 0;
+    let maxPush = 0;
+    let wrote = false;
+
+    for (let n = 0; n < indices.length; n += 1) {
+      const i = indices[n];
+      if (i >= limit) break;
+      visited += 1;
+      const i3 = i * 3;
+
+      const x = position[i3];
+      const y = position[i3 + 1];
+      const z = position[i3 + 2];
+      const dx = x - originX;
+      const dz = z - originZ;
+      const distance = Math.sqrt(dx * dx + dz * dz) + 1e-4;
+      const nx = dx / distance;
+      const nz = dz / distance;
+
+      /* Smooth radial falloff from the published gust radius, gated through
+       * the calm beat and decayed as the engines climb away from the ground. */
+      const falloff = rxSmoothStep(1 - distance / reach);
+      const target = falloff * strength;
+
+      /* Spring: whips up with the thrust ramp, springs back with a little
+       * overshoot when the field dies. */
+      const stiffness = stiffnessBase * jitter[i];
+      let velocity = springVel[i] + ((target - spring[i]) * stiffness - springVel[i] * damping) * dt;
+      let response = spring[i] + velocity * dt;
+      if (response < 0) {
+        response = 0;
+        if (velocity < 0) velocity = 0;
+      } else if (response > 1.6) {
+        response = 1.6;
+        if (velocity > 0) velocity = 0;
+      }
+      spring[i] = response;
+      springVel[i] = velocity;
+
+      if (response < restEpsilon && target < restEpsilon && ambientAmp <= 0) {
+        if (touched[i]) {
+          rxRestoreInstance(handle, i);
+          touched[i] = 0;
+        }
+        continue;
+      }
+      touched[i] = 1;
+      disturbed += 1;
+
+      /* Radial push, swirled per instance so loose props tumble outward. */
+      const ux = nx * cosSwirl[i] - nz * sinSwirl[i];
+      const uz = nx * sinSwirl[i] + nz * cosSwirl[i];
+      const travel = pushDistance * response;
+
+      /* Ripple crest travels outward, phase-locked to the published dust. */
+      const ripple = rippleAmount * response *
+        Math.sin(waveNumber * (distance - front) - wavePhase + phase[i]);
+      const tilt = tiltAmount * response + ripple + travel / bodyRadius;
+
+      /* Ambient air movement, faded out as the gust takes over. */
+      const breeze = ambientAmp > 0
+        ? ambientAmp * Math.sin(ambientTime + phase[i]) *
+          (1 - gustFade * (response > 1 ? 1 : response))
+        : 0;
+
+      /* World-space tilt: radial gust push plus the ambient breeze. The
+       * rotation axis (up x tilt) is the torque that leans the instance. */
+      const tx = ux * tilt + windX * breeze;
+      const tz = uz * tilt + windZ * breeze;
+      const tiltLength = Math.sqrt(tx * tx + tz * tz);
+      if (tiltLength > 1e-5) {
+        const inverse = 1 / tiltLength;
+        axis.set(tz * inverse, 0, -tx * inverse);
+        bend.setFromAxisAngle(axis, tiltLength < tiltClamp ? tiltLength : tiltClamp);
+      } else {
+        bend.set(0, 0, 0, 1);
+      }
+
+      const i4 = i * 4;
+      rest.set(rotation[i4], rotation[i4 + 1], rotation[i4 + 2], rotation[i4 + 3]);
+      bend.multiply(rest);
+
+      const flatten = flattenAmount * response;
+      const spread = spreadAmount * response;
+      let groundY = y;
+      if (grounded) {
+        if (((i + frame) & 3) === 0) ground[i] = sampler(x + ux * travel, z + uz * travel) + sink[i];
+        groundY = ground[i];
+      }
+
+      pos.set(x + ux * travel, groundY + lift * response, z + uz * travel);
+      scaleV.set(
+        scale[i3] * (1 + spread),
+        scale[i3 + 1] * (1 - flatten),
+        scale[i3 + 2] * (1 + spread)
+      );
+      matrix.compose(pos, bend, scaleV);
+      mesh.setMatrixAt(i, matrix);
+      wrote = true;
+
+      if (tiltLength > maxTilt) maxTilt = tiltLength;
+      if (travel > maxPush) maxPush = travel;
+    }
+
+    if (wrote) mesh.instanceMatrix.needsUpdate = true;
+    handle.visited = visited;
+    handle.disturbed = disturbed;
+    handle.tilt = maxTilt;
+    handle.push = maxPush;
+  },
+
+  /* Smooth radial profile of the current field at a ground position. */
+  falloffAt(x, z) {
+    const dx = (Number(x) || 0) - this.originX;
+    const dz = (Number(z) || 0) - this.originZ;
+    return rxSmoothStep(1 - Math.sqrt(dx * dx + dz * dz) / this.reach);
+  },
+
+  /* Max |current - rest| matrix element over the visited instances: this is
+   * what proves the environment settles back to its published rest pose. */
+  restError() {
+    let worst = 0;
+    const handles = this.handles;
+    for (let h = 0; h < handles.length; h += 1) {
+      const handle = handles[h];
+      const mesh = handle.mesh;
+      if (!mesh || !mesh.instanceMatrix || !mesh.instanceMatrix.array) continue;
+      const current = mesh.instanceMatrix.array;
+      const base = handle.base;
+      const limit = Math.min(mesh.count, handle.count);
+      const indices = handle.indices;
+      for (let n = 0; n < indices.length; n += 1) {
+        const i = indices[n];
+        if (i >= limit) break;
+        const offset = i * 16;
+        for (let element = 0; element < 16; element += 1) {
+          const diff = current[offset + element] - base[offset + element];
+          const abs = diff < 0 ? -diff : diff;
+          if (abs > worst) worst = abs;
+        }
+      }
+    }
+    return worst;
+  },
+
+  disturbedCount() {
+    let total = 0;
+    for (let i = 0; i < this.handles.length; i += 1) total += this.handles[i].disturbed;
+    return total;
+  },
+
+  /* Mirror the live numbers into the shared state, allocation free. */
+  publish(shared) {
+    const target = shared && shared.reactive ? shared.reactive : null;
+    if (!target) return;
+    target.level = Math.round(this.level * 1000) / 1000;
+    target.gated = Math.round(this.gated * 1000) / 1000;
+    target.settle = Math.round(this.settle * 1000) / 1000;
+    target.core = Math.round(this.core * 100) / 100;
+    target.reach = Math.round(this.reach * 100) / 100;
+    target.clock = Math.round(this.clock * 100) / 100;
+    target.visited = this.visited;
+    target.disturbed = this.disturbed;
+    target.handles = this.handles.length;
+    target.tilt = Math.round(this.maxTilt * 1000) / 1000;
+    target.push = Math.round(this.maxPush * 1000) / 1000;
+    target.dustFront = Math.round(this.dustFront * 100) / 100;
+    target.dustLive = this.dustLive;
+    target.calm = this.gated <= 0;
+    target.ambient = RX_SPEC.ambient.amplitude;
+    target.frames = this.frames;
+    target.restError = Math.round(this.restErrorValue * 100000) / 100000;
+  },
+
+  /* Numbers-only snapshot: what a console session or a test samples. */
+  getState() {
+    const collections = runtime.collections;
+    const reports = [];
+    for (let i = 0; i < this.handles.length; i += 1) {
+      const handle = this.handles[i];
+      reports.push({
+        name: handle.name,
+        kind: handle.kind,
+        count: handle.count,
+        active: Math.min(handle.mesh.count, handle.count),
+        inRange: handle.indices.length,
+        visited: handle.visited,
+        disturbed: handle.disturbed,
+        tilt: Math.round(handle.tilt * 1000) / 1000,
+        push: Math.round(handle.push * 1000) / 1000,
+        flatten: handle.config.flatten,
+        grounded: handle.grounded
+      });
+    }
+    return {
+      registered: runtime.has('reactive'),
+      subsystem: 'reactive',
+      version: RX_VERSION,
+      terrainSampler: !!(collections && typeof collections.terrainHeight === 'function'),
+      exhaustSource: !!runtime.exhaust,
+      smokeSource: !!(runtime.smoke || runtime.particles),
+      instancedHandles: this.handles.length,
+      frames: this.frames,
+      clock: Math.round(this.clock * 100) / 100,
+      level: Math.round(this.level * 1000) / 1000,
+      gated: Math.round(this.gated * 1000) / 1000,
+      calm: this.gated <= 0,
+      ignitionThreshold: RX_SPEC.ignitionThreshold,
+      core: Math.round(this.core * 100) / 100,
+      reach: Math.round(this.reach * 100) / 100,
+      settle: Math.round(this.settle * 1000) / 1000,
+      origin: {
+        x: Math.round(this.originX * 100) / 100,
+        y: Math.round(this.originY * 100) / 100,
+        z: Math.round(this.originZ * 100) / 100
+      },
+      ambient: {
+        amplitude: RX_SPEC.ambient.amplitude,
+        frequency: RX_SPEC.ambient.frequency,
+        scale: Math.round(this.ambientScale * 1000) / 1000,
+        wind: { x: RX_SPEC.ambient.windX, z: RX_SPEC.ambient.windZ }
+      },
+      dustFront: Math.round(this.dustFront * 100) / 100,
+      dustLive: this.dustLive,
+      visited: this.visited,
+      disturbed: this.disturbed,
+      maxTilt: Math.round(this.maxTilt * 1000) / 1000,
+      maxPush: Math.round(this.maxPush * 1000) / 1000,
+      restError: Math.round(this.restError() * 100000) / 100000,
+      allocationsPerFrame: 0,
+      handles: reports,
+      errors: runtime.state.errors.length
+    };
+  },
+
+  dispose(ctx) {
+    /* Hand every displaced instance back to its published rest pose. */
+    const handles = this.handles;
+    for (let i = 0; i < handles.length; i += 1) {
+      const handle = handles[i];
+      const mesh = handle.mesh;
+      if (mesh && mesh.instanceMatrix && mesh.instanceMatrix.array && handle.base) {
+        mesh.instanceMatrix.array.set(handle.base);
+        mesh.instanceMatrix.needsUpdate = true;
+      }
+      handle.spring.fill(0);
+      handle.springVel.fill(0);
+      handle.touched.fill(0);
+    }
+    this.handles = [];
+    this.bound = false;
+    this.worldRef = null;
+    this.clock = 0;
+    this.frames = 0;
+    this.level = 0;
+    this.gated = 0;
+    this.settle = 1;
+    this.core = 0;
+    this.reach = 1;
+    this.disturbed = 0;
+    this.visited = 0;
+    this.maxTilt = 0;
+    this.maxPush = 0;
+    this.ambientScale = 1;
+    this.dustFront = 0;
+    this.dustLive = 0;
+    this.restTimer = 0;
+    this.restErrorValue = 0;
+    if (runtime.state) runtime.state.reactive = null;
+    if (runtime.reactive === this.api) runtime.reactive = null;
+    this.api = null;
+  }
+};
+
+/* The interface published as LAUNCH_SCENE.reactive: live field numbers, the
+ * per-handle report and the two settling diagnostics. */
+function rxCreateApi(system) {
+  return {
+    version: RX_VERSION,
+    subsystem: 'reactive',
+    ignitionThreshold: RX_SPEC.ignitionThreshold,
+    gustGain: RX_SPEC.gustGain,
+    range: RX_SPEC.range,
+    getState: function () { return system.getState(); },
+    falloffAt: function (x, z) { return system.falloffAt(x, z); },
+    restError: function () { return system.restError(); },
+    disturbed: function () { return system.disturbedCount(); },
+    get handles() { return system.handles; },
+    get calm() { return system.gated <= 0; },
+    get field() {
+      return {
+        level: system.level,
+        gated: system.gated,
+        settle: system.settle,
+        core: system.core,
+        reach: system.reach,
+        origin: { x: system.originX, y: system.originY, z: system.originZ },
+        dustFront: system.dustFront
+      };
+    },
+    get system() { return system; }
+  };
+}
+
+reactiveSystem.api = rxCreateApi(reactiveSystem);
+runtime.reactive = reactiveSystem.api;
+runtime.register('reactive', reactiveSystem);
 
 /* ---------------------------------------------------------------------------
  * SECTION: director - launch timeline stub
