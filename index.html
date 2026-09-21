@@ -6291,9 +6291,1539 @@ exhaustSystem.api = exCreateApi(exhaustSystem);
 runtime.exhaust = exhaustSystem.api;
 runtime.register('flames', exhaustSystem);
 
+/* ============================================================================
+ * SECTION: particles - the launch atmosphere: thick rolling smoke, a ground
+ * dust wall, the bright plume trail, sparks, embers, motes and debris.
+ * ----------------------------------------------------------------------------
+ * Everything below is emitted from the exhaust signal, never from a private
+ * timeline. LAUNCH_SCENE.exhaust publishes the ramped thrust level, the flame
+ * scale, the world-space plume (base, axis, length, width and the sampled
+ * world segments), the gust radius and the near-field heat; this section
+ * samples exactly those numbers every frame and converts them into emission
+ * rates, spawn positions, velocities, spread radius and trail length. Smoke,
+ * dust and trail therefore always stay causally tied to the flames, and the
+ * pad keeps belching smoke and dust while the vehicle climbs because the
+ * driver is the thrust level, not the vehicle position.
+ *
+ * SEVEN RECYCLED POOLS (InstancedMesh billboards, one shader, no churn)
+ *   smoke   thick pad smoke: rolls, expands, swirls and rises
+ *   dust    the ground dust wall: hugs the terrain sampler, spreads outward
+ *   trail   the bright plume trail: welded to the engine bay, long at altitude
+ *   spark   additive sparks thrown off the flame and off the pad
+ *   ember   glowing embers guttering inside the smoke cloud
+ *   mote    small dust motes drifting through the gust field
+ *   debris  exhaust fragments tumbling out of the flame trench
+ * Every pool is pre-allocated once at the high-tier capacity; a live budget
+ * scales the active limit and the emission rates per quality tier, dead
+ * instances are recycled by a swap-remove, and the per-frame path allocates
+ * nothing at all: positions, sizes, rolls, alphas and tints are written into
+ * pre-allocated InstancedBufferAttributes.
+ *
+ * MOTION - one shared curl field, no per-particle script
+ *   The roll, swirl and rise come from the curl of an analytic potential that
+ *   every puff samples at its own position (offset by its own seed), plus a
+ *   thrust-scaled gust push out of the plume, buoyancy and drag. Ground dust
+ *   is clamped to the terrain sampler published by the world phase, sparks and
+ *   debris bounce and skitter on the deck, apron and trench floor, and the
+ *   trail is built from LAUNCH_SCENE.exhaust.plumeSegments so it stretches
+ *   with the plume and stays attached to the engine bells.
+ *
+ * TEXTURES - canvas only, never an image URL: procedural puff, dust, plume,
+ * spark, ember and chip sprites are painted at load time and tinted per
+ * instance, so the CDN host allowlist stays CDN-only.
+ *
+ * PUBLISHED API - LAUNCH_SCENE.smoke (registered as the 'smoke' subsystem)
+ *   pools           { name -> live pool } for the whole particle stack
+ *   getState()      numbers-only snapshot: per-pool active counts, limits,
+ *                   capacities, emitted totals, the ground dust radius, the
+ *                   trail length, the gust radius, thrust, altitude, frames
+ *   active(name)    live instance count of one pool
+ *   live / capacity totals across the pools
+ *   dustRadius      metres of ground dust footprint currently spread
+ *   trailLength     metres of bright trail currently emitted
+ *   getState() is what the verification console samples: counts stay bounded
+ *   by the pool limit over an arbitrarily long run and never fall to zero
+ *   while the engines are lit.
+ * ----------------------------------------------------------------------------
+ */
+// ==== SECTION: particles ====
+
 /* ---------------------------------------------------------------------------
- * SECTION: particles - extension point (sparks, smoke, dust, debris).
+ * Tunables. Metres, seconds, m/s and m/s^2 unless stated otherwise.
  * ------------------------------------------------------------------------ */
+
+const PS_VERSION = '1.0.0-particles';
+const PS_TAU = Math.PI * 2;
+
+const PS_SPEC = {
+  /* The shared curl field that stirs every puff. */
+  curl: { epsilon: 1.35, drift: 0.26 },
+  /* Ambient drift: smoke and dust always breathe a little. */
+  wind: { x: 0.85, z: -0.5 },
+  /* Blast acceleration inside the gust radius, scaled by the thrust level. */
+  blast: { outward: 15.0, lift: 7.0 },
+  /* Ground dust wall travel. */
+  dust: {
+    startRadius: 10.5,     // metres of footprint at ignition
+    maxRadius: 268,        // furthest the wall is allowed to reach
+    speedBase: 3.4,        // m/s of wall travel with the engines off
+    speedThrust: 9.4,      // extra m/s at full thrust
+    altitudeBoost: 0.65,   // extra travel while the vehicle climbs
+    altitudeScale: 260,    // metres over which that boost is reached
+    hover: 0.30,           // metres of clearance held above the sampler
+    hoverGrow: 1.9,        // extra lift a dust puff gains over its life
+    hugStride: 4,          // re-sample the terrain every 4 frames (power of 2)
+    recapture: 0.20        // 1/s: how fast the wall settles after shutdown
+  },
+  /* Ignition thump: one burst of matter the moment the fire catches. */
+  ignition: { burstLevel: 0.10, sparks: 48, debris: 24, embers: 16, smoke: 30 },
+  /* Live budget per quality tier: pools are allocated once, only the active
+   * limit and the emission rates scale. */
+  tiers: {
+    high: { id: 'high', scale: 1.00, curl: 1.00 },
+    medium: { id: 'medium', scale: 0.62, curl: 0.78 },
+    low: { id: 'low', scale: 0.36, curl: 0.42 }
+  }
+};
+
+/* One entry per pool. `grow` is the growth factor applied over the lifetime
+ * (negative = the sprite shrinks), `aspect` the height/width of the billboard,
+ * `fadeOut` the exponent of the (1 - p) alpha tail, `push`/`wind` the response
+ * to the blast field and to the ambient drift, `bounce` the number of ground
+ * bounces, `hug` the terrain-sampler clamp and `deflect` the ground splash. */
+const PS_POOLS = {
+  smoke: {
+    texture: 'smoke', additive: false, renderOrder: 20, capacity: 460,
+    gravity: 0.0, curl: 1.9, drag: 0.30, spin: 1.05, flicker: 0,
+    alpha: 0.60, fadeIn: 0.34, fadeOut: 1.35, cool: false,
+    tint: [0.76, 0.79, 0.84], tintHot: [1.00, 0.84, 0.62], tintCool: [0.76, 0.79, 0.84],
+    size: [5.4, 8.8], grow: [2.2, 3.2], aspect: 0.84, life: [3.0, 4.8],
+    push: 1.00, wind: 1.00, hug: false, bounce: 0, deflect: false
+  },
+  dust: {
+    texture: 'dust', additive: false, renderOrder: 19, capacity: 320,
+    gravity: -0.25, curl: 0.9, drag: 0.66, spin: 0.45, flicker: 0,
+    alpha: 0.54, fadeIn: 0.30, fadeOut: 1.30, cool: false,
+    tint: [0.80, 0.70, 0.51], tintHot: [0.95, 0.84, 0.63], tintCool: [0.80, 0.70, 0.51],
+    size: [5.2, 9.6], grow: [1.1, 1.9], aspect: 0.50, life: [2.9, 5.4],
+    push: 1.25, wind: 0.70, hug: true, bounce: 0, deflect: false
+  },
+  trail: {
+    texture: 'plume', additive: true, renderOrder: 22, capacity: 280,
+    gravity: 0.0, curl: 0.85, drag: 0.42, spin: 0.65, flicker: 0.15,
+    alpha: 0.52, fadeIn: 0.10, fadeOut: 1.15, cool: false,
+    tint: [1.00, 0.55, 0.20], tintHot: [1.00, 0.94, 0.78], tintCool: [1.00, 0.55, 0.20],
+    size: [1.5, 2.7], grow: [0.8, 1.5], aspect: 1.25, life: [1.15, 2.05],
+    push: 0.60, wind: 0.35, hug: false, bounce: 0, deflect: true
+  },
+  spark: {
+    texture: 'spark', additive: true, renderOrder: 23, capacity: 260,
+    gravity: -13.5, curl: 0.0, drag: 0.08, spin: 0.0, flicker: 0.45,
+    alpha: 0.95, fadeIn: 0.05, fadeOut: 0.85, cool: true,
+    tint: [1.00, 0.95, 0.74], tintHot: [1.00, 0.86, 0.60], tintCool: [0.80, 0.22, 0.05],
+    size: [0.34, 0.86], grow: [-0.45, -0.10], aspect: 1.00, life: [0.45, 1.35],
+    push: 0.40, wind: 0.20, hug: false, bounce: 3, deflect: false
+  },
+  ember: {
+    texture: 'ember', additive: true, renderOrder: 21, capacity: 150,
+    gravity: -1.1, curl: 0.5, drag: 0.55, spin: 0.50, flicker: 0.55,
+    alpha: 0.85, fadeIn: 0.25, fadeOut: 1.10, cool: true,
+    tint: [1.00, 0.52, 0.14], tintHot: [1.00, 0.68, 0.26], tintCool: [0.60, 0.12, 0.02],
+    size: [0.9, 2.6], grow: [-0.30, 0.20], aspect: 1.00, life: [2.4, 5.5],
+    push: 0.80, wind: 0.50, hug: false, bounce: 0, deflect: false
+  },
+  mote: {
+    texture: 'dust', additive: false, renderOrder: 18, capacity: 130,
+    gravity: -0.40, curl: 0.7, drag: 0.85, spin: 0.65, flicker: 0,
+    alpha: 0.34, fadeIn: 0.40, fadeOut: 1.60, cool: false,
+    tint: [0.86, 0.78, 0.62], tintHot: [0.95, 0.88, 0.72], tintCool: [0.86, 0.78, 0.62],
+    size: [0.5, 1.5], grow: [0.4, 1.1], aspect: 0.90, life: [3.0, 6.5],
+    push: 0.70, wind: 1.20, hug: false, bounce: 0, deflect: false
+  },
+  debris: {
+    texture: 'chip', additive: false, renderOrder: 17, capacity: 130,
+    gravity: -9.4, curl: 0.0, drag: 0.12, spin: 5.5, flicker: 0,
+    alpha: 0.95, fadeIn: 0.04, fadeOut: 0.90, cool: false,
+    tint: [0.66, 0.63, 0.58], tintHot: [0.92, 0.88, 0.80], tintCool: [0.66, 0.63, 0.58],
+    size: [0.30, 0.90], grow: [-0.20, 0.10], aspect: 1.00, life: [1.6, 3.4],
+    push: 0.50, wind: 0.10, hug: false, bounce: 4, deflect: false
+  }
+};
+
+const PS_POOL_ORDER = ['smoke', 'dust', 'trail', 'spark', 'ember', 'mote', 'debris'];
+
+/* ---------------------------------------------------------------------------
+ * Shared helpers: one potential field, one curl, one instance write
+ * ------------------------------------------------------------------------ */
+
+function psRange(random, pair) {
+  return pair[0] + random() * (pair[1] - pair[0]);
+}
+
+/* Analytic potential: smooth, deterministic, allocation free. */
+function psPotential(x, y, z, t) {
+  return Math.sin(x * 0.62 + y * 0.41 + t * 0.35) * 0.50
+    + Math.sin(y * 0.83 - z * 0.57 + t * 0.21) * 0.32
+    + Math.sin(z * 1.21 + x * 0.36 - t * 0.45) * 0.22
+    + Math.sin((x + y + z) * 0.29 + t * 0.13) * 0.16;
+}
+
+/* Curl of that potential by central differences; writes x, y, z into out.
+ * This is the whole of the "roll, swirl and rise": a puff that drifts through
+ * the field is stirred by the field, not by a private animation. */
+function psCurl(x, y, z, t, out) {
+  const e = PS_SPEC.curl.epsilon;
+  const dy = psPotential(x, y + e, z, t) - psPotential(x, y - e, z, t);
+  const dz = psPotential(x, y, z + e, t) - psPotential(x, y, z - e, t);
+  const dx = psPotential(x + e, y, z, t) - psPotential(x - e, y, z, t);
+  out[0] = (dy - dz) / (2 * e);
+  out[1] = (dz - dx) / (2 * e);
+  out[2] = (dx - dy) / (2 * e);
+}
+
+/* Late-bound terrain sampler: the world phase publishes terrainHeight(x, z)
+ * through LAUNCH_SCENE.collections, and the ground dust wall is clamped to it
+ * so the dust rolls along the ground instead of floating over it. */
+function psTerrain(system, x, z) {
+  let sampler = system.terrain;
+  if (!sampler) {
+    const collections = runtime.collections;
+    if (collections && typeof collections.terrainHeight === 'function') {
+      sampler = collections.terrainHeight;
+      system.terrain = sampler;
+    }
+  }
+  return sampler ? sampler(x, z) : 0;
+}
+
+/* Surface under a point: deck plate on the pad, trench floor inside the flame
+ * corridor, apron on the blast apron, terrain everywhere else. */
+function psSurfaceY(system, x, z) {
+  const pad = system.pad;
+  const dx = x - pad.x;
+  const dz = z - pad.z;
+  const d2 = dx * dx + dz * dz;
+  const along = pad.trenchSign * dx;
+  if (Math.abs(dz) <= pad.trenchHalfWidth && along > pad.holeRadius && along < pad.trenchMouth) {
+    return pad.trenchFloorY;
+  }
+  if (d2 <= pad.deckSq) return pad.deckY;
+  if (d2 <= pad.apronSq) return pad.apronY;
+  return psTerrain(system, x, z);
+}
+
+/* ---------------------------------------------------------------------------
+ * Procedural canvas sprites (never an image URL)
+ * ------------------------------------------------------------------------ */
+
+function psPuffTexture(kind, seed) {
+  const dusty = kind === 'dust';
+  return makeCanvasTexture(256, 256, 256, function (context, width, height) {
+    const random = seededRandom(seed);
+    const centre = width * 0.5;
+    const core = context.createRadialGradient(centre, centre, 0, centre, centre, centre);
+    core.addColorStop(0.00, 'rgba(255,255,255,0.98)');
+    core.addColorStop(0.30, 'rgba(252,253,255,0.88)');
+    core.addColorStop(0.60, 'rgba(246,249,252,0.44)');
+    core.addColorStop(0.84, 'rgba(240,246,250,0.13)');
+    core.addColorStop(1.00, 'rgba(236,244,250,0)');
+    context.fillStyle = core;
+    context.fillRect(0, 0, width, height);
+
+    /* Billowy lobes break the disc silhouette. */
+    context.globalCompositeOperation = 'lighter';
+    const lobes = 26;
+    for (let i = 0; i < lobes; i += 1) {
+      const angle = random() * PS_TAU;
+      const distance = random() * centre * 0.6;
+      const x = centre + Math.cos(angle) * distance;
+      const y = centre + Math.sin(angle) * distance * 0.82;
+      const radius = width * (0.10 + random() * 0.17);
+      const lobe = context.createRadialGradient(x, y, 0, x, y, radius);
+      lobe.addColorStop(0, 'rgba(255,255,255,0.52)');
+      lobe.addColorStop(0.6, 'rgba(252,254,255,0.20)');
+      lobe.addColorStop(1, 'rgba(248,252,255,0)');
+      context.fillStyle = lobe;
+      context.beginPath();
+      context.arc(x, y, radius, 0, PS_TAU);
+      context.fill();
+    }
+
+    /* Internal structure: the roll of a puff reads because the sprite itself
+     * carries scrolled density, not because the disc is uniform. */
+    for (let i = 0; i < 34; i += 1) {
+      const x = centre + (random() - 0.5) * width * 0.74;
+      const y = centre + (random() - 0.5) * height * 0.74;
+      const radius = width * (0.05 + random() * 0.15);
+      const light = random() > (dusty ? 0.55 : 0.45);
+      const patch = context.createRadialGradient(x, y, 0, x, y, radius);
+      patch.addColorStop(0, light ? 'rgba(255,255,255,0.30)' : 'rgba(92,98,108,0.26)');
+      patch.addColorStop(1, 'rgba(255,255,255,0)');
+      context.fillStyle = patch;
+      context.beginPath();
+      context.arc(x, y, radius, 0, PS_TAU);
+      context.fill();
+    }
+
+    /* Trim everything back inside the soft silhouette, then shade the base of
+     * the puff so a lit top and a cooler underside read at a glance. */
+    context.globalCompositeOperation = 'destination-in';
+    context.fillStyle = core;
+    context.fillRect(0, 0, width, height);
+    context.globalCompositeOperation = 'source-atop';
+    const shade = context.createLinearGradient(0, 0, 0, height);
+    shade.addColorStop(0, 'rgba(255,255,255,0)');
+    shade.addColorStop(0.62, dusty ? 'rgba(120,100,72,0.10)' : 'rgba(186,198,212,0.12)');
+    shade.addColorStop(1, dusty ? 'rgba(108,88,60,0.34)' : 'rgba(150,166,186,0.34)');
+    context.fillStyle = shade;
+    context.fillRect(0, 0, width, height);
+    context.globalCompositeOperation = 'source-over';
+  });
+}
+
+function psSparkTexture() {
+  return makeCanvasTexture(64, 64, 64, function (context, width, height) {
+    const centre = width * 0.5;
+    const glow = context.createRadialGradient(centre, centre, 0, centre, centre, centre);
+    glow.addColorStop(0.00, 'rgba(255,255,255,1)');
+    glow.addColorStop(0.16, 'rgba(255,244,206,0.94)');
+    glow.addColorStop(0.42, 'rgba(255,178,84,0.32)');
+    glow.addColorStop(1.00, 'rgba(255,132,32,0)');
+    context.fillStyle = glow;
+    context.fillRect(0, 0, width, height);
+  });
+}
+
+function psEmberTexture() {
+  return makeCanvasTexture(64, 64, 64, function (context, width, height) {
+    const random = seededRandom(90214);
+    const centre = width * 0.5;
+    const core = context.createRadialGradient(centre, centre, 0, centre, centre, centre * 0.92);
+    core.addColorStop(0.00, 'rgba(255,246,222,1)');
+    core.addColorStop(0.26, 'rgba(255,206,124,0.92)');
+    core.addColorStop(0.62, 'rgba(255,140,42,0.44)');
+    core.addColorStop(1.00, 'rgba(214,78,10,0)');
+    context.fillStyle = core;
+    context.fillRect(0, 0, width, height);
+    /* Lumpy coal edge: a few hot patches clipped back inside the glow. */
+    context.globalCompositeOperation = 'source-atop';
+    for (let i = 0; i < 9; i += 1) {
+      const angle = random() * PS_TAU;
+      const distance = random() * centre * 0.55;
+      const x = centre + Math.cos(angle) * distance;
+      const y = centre + Math.sin(angle) * distance;
+      const radius = width * (0.06 + random() * 0.12);
+      const patch = context.createRadialGradient(x, y, 0, x, y, radius);
+      patch.addColorStop(0, 'rgba(255,236,196,0.55)');
+      patch.addColorStop(1, 'rgba(255,150,60,0)');
+      context.fillStyle = patch;
+      context.beginPath();
+      context.arc(x, y, radius, 0, PS_TAU);
+      context.fill();
+    }
+    context.globalCompositeOperation = 'source-over';
+  });
+}
+
+/* Exhaust fragment: a small angular chip with a hot rim, so debris reads as
+ * incandescent metal and insulation rather than as a dot. */
+function psChipTexture() {
+  return makeCanvasTexture(64, 64, 64, function (context, width, height) {
+    const random = seededRandom(90215);
+    const centre = width * 0.5;
+    context.clearRect(0, 0, width, height);
+    context.beginPath();
+    const sides = 5;
+    for (let i = 0; i < sides; i += 1) {
+      const angle = (i / sides) * PS_TAU + 0.4;
+      const radius = width * (0.20 + random() * 0.16);
+      const x = centre + Math.cos(angle) * radius;
+      const y = centre + Math.sin(angle) * radius;
+      if (i === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    }
+    context.closePath();
+    const body = context.createLinearGradient(centre - 16, centre - 16, centre + 16, centre + 16);
+    body.addColorStop(0.0, 'rgba(255,232,190,0.98)');
+    body.addColorStop(0.5, 'rgba(180,146,108,0.96)');
+    body.addColorStop(1.0, 'rgba(72,62,54,0.94)');
+    context.fillStyle = body;
+    context.fill();
+    context.globalCompositeOperation = 'source-atop';
+    context.strokeStyle = 'rgba(255,246,222,0.85)';
+    context.lineWidth = 2.4;
+    context.stroke();
+    context.globalCompositeOperation = 'source-over';
+  });
+}
+
+function psCreateTextures() {
+  const textures = {
+    smoke: psPuffTexture('smoke', 90210),
+    dust: psPuffTexture('dust', 90211),
+    plume: psPuffTexture('plume', 90212),
+    spark: psSparkTexture(),
+    ember: psEmberTexture(),
+    chip: psChipTexture()
+  };
+  /* Sprites must not bleed across their own edge. */
+  const names = Object.keys(textures);
+  for (let i = 0; i < names.length; i += 1) {
+    const texture = textures[names[i]];
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+  }
+  return textures;
+}
+
+/* ---------------------------------------------------------------------------
+ * Billboard shader: one quad per instance, screen aligned, rotated by its own
+ * roll, faded with its own alpha, fogged against the scene fog so the far end
+ * of a high trail sinks into the same haze as the sky.
+ * ------------------------------------------------------------------------ */
+
+const PS_BILLBOARD_VERT = [
+  'attribute vec3 aOffset;',
+  'attribute vec2 aSize;',
+  'attribute float aRoll;',
+  'attribute float aAlpha;',
+  'attribute vec3 aTint;',
+  'varying vec2 vUv;',
+  'varying vec4 vColour;',
+  'varying float vFogDepth;',
+  'void main() {',
+  '  float c = cos(aRoll);',
+  '  float s = sin(aRoll);',
+  '  vec2 corner = position.xy;',
+  '  vec2 spun = vec2(corner.x * c - corner.y * s, corner.x * s + corner.y * c);',
+  '  vec4 mv = modelViewMatrix * vec4(aOffset, 1.0);',
+  '  mv.xy += spun * aSize;',
+  '  vFogDepth = -mv.z;',
+  '  vUv = uv;',
+  '  vColour = vec4(aTint, aAlpha);',
+  '  gl_Position = projectionMatrix * mv;',
+  '}'
+].join('\n');
+
+const PS_BILLBOARD_FRAG = [
+  'uniform sampler2D uMap;',
+  'uniform vec3 uFogColour;',
+  'uniform float uFogNear;',
+  'uniform float uFogFar;',
+  'uniform float uOpacity;',
+  'uniform float uAdditive;',
+  'varying vec2 vUv;',
+  'varying vec4 vColour;',
+  'varying float vFogDepth;',
+  'void main() {',
+  '  vec4 texel = texture2D(uMap, vUv);',
+  '  float alpha = texel.a * vColour.a * uOpacity;',
+  '  if (alpha < 0.004) discard;',
+  '  vec3 colour = texel.rgb * vColour.rgb;',
+  '  float fog = smoothstep(uFogNear, uFogFar, vFogDepth);',
+  '  if (uAdditive > 0.5) {',
+  '    gl_FragColor = vec4(colour, alpha * (1.0 - fog));',
+  '  } else {',
+  '    gl_FragColor = vec4(mix(colour, uFogColour, fog), alpha * (1.0 - fog * 0.7));',
+  '  }',
+  EX_OUTPUT_GLSL,
+  '}'
+].join('\n');
+
+function psBillboardMaterial(name, spec, map) {
+  return new THREE.ShaderMaterial({
+    name: 'particles-' + name,
+    uniforms: {
+      uMap: { value: map },
+      uOpacity: { value: spec.alpha },
+      uAdditive: { value: spec.additive ? 1 : 0 },
+      uFogColour: { value: new THREE.Color(0xd8ecff) },
+      uFogNear: { value: 900 },
+      uFogFar: { value: 5200 }
+    },
+    vertexShader: PS_BILLBOARD_VERT,
+    fragmentShader: PS_BILLBOARD_FRAG,
+    transparent: true,
+    blending: spec.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    fog: false
+  });
+}
+
+/* ---------------------------------------------------------------------------
+ * Pool construction, reservation and recycling
+ * ------------------------------------------------------------------------ */
+
+function psCreatePool(name, spec, textures) {
+  const capacity = spec.capacity;
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  const attributes = {
+    aOffset: new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3),
+    aSize: new THREE.InstancedBufferAttribute(new Float32Array(capacity * 2), 2),
+    aRoll: new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1),
+    aAlpha: new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1),
+    aTint: new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3)
+  };
+  const names = Object.keys(attributes);
+  for (let i = 0; i < names.length; i += 1) {
+    attributes[names[i]].setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute(names[i], attributes[names[i]]);
+  }
+
+  const material = psBillboardMaterial(name, spec, textures[spec.texture]);
+  const mesh = new THREE.InstancedMesh(geometry, material, capacity);
+  mesh.name = 'particles-' + name;
+  mesh.count = 0;                    // nothing is drawn until the emiters fill it
+  mesh.frustumCulled = false;        // positions live in world space in the shader
+  mesh.renderOrder = spec.renderOrder;
+  mesh.matrixAutoUpdate = false;
+  mesh.updateMatrix();
+
+  return {
+    name: name,
+    spec: spec,
+    mesh: mesh,
+    geometry: geometry,
+    material: material,
+    attributes: attributes,
+    capacity: capacity,
+    limit: capacity,
+    active: 0,
+    emitted: 0,
+    acc: 0,
+    burst: 0,
+    curlStrength: spec.curl,
+    coolR: spec.tintCool[0],
+    coolG: spec.tintCool[1],
+    coolB: spec.tintCool[2],
+    /* Attribute arrays (shared with the geometry) ... */
+    pos: attributes.aOffset.array,
+    size: attributes.aSize.array,
+    roll: attributes.aRoll.array,
+    alpha: attributes.aAlpha.array,
+    tint: attributes.aTint.array,
+    /* ... plus the simulation arrays, one entry per pre-allocated instance. */
+    vel: new Float32Array(capacity * 3),
+    tintA: new Float32Array(capacity * 3),
+    base: new Float32Array(capacity),
+    aspect: new Float32Array(capacity),
+    spin: new Float32Array(capacity),
+    growK: new Float32Array(capacity),
+    drag: new Float32Array(capacity),
+    rise: new Float32Array(capacity),
+    seed: new Float32Array(capacity),
+    age: new Float32Array(capacity),
+    life: new Float32Array(capacity),
+    peak: new Float32Array(capacity),
+    ground: new Float32Array(capacity),
+    bounce: new Uint8Array(capacity)
+  };
+}
+
+/* Copy one instance slot over another (used by the swap-remove below). */
+function psCopyInstance(pool, from, to) {
+  if (from === to) return;
+  const f3 = from * 3;
+  const t3 = to * 3;
+  pool.pos[t3] = pool.pos[f3];
+  pool.pos[t3 + 1] = pool.pos[f3 + 1];
+  pool.pos[t3 + 2] = pool.pos[f3 + 2];
+  pool.vel[t3] = pool.vel[f3];
+  pool.vel[t3 + 1] = pool.vel[f3 + 1];
+  pool.vel[t3 + 2] = pool.vel[f3 + 2];
+  pool.tint[t3] = pool.tint[f3];
+  pool.tint[t3 + 1] = pool.tint[f3 + 1];
+  pool.tint[t3 + 2] = pool.tint[f3 + 2];
+  pool.tintA[t3] = pool.tintA[f3];
+  pool.tintA[t3 + 1] = pool.tintA[f3 + 1];
+  pool.tintA[t3 + 2] = pool.tintA[f3 + 2];
+  pool.size[to * 2] = pool.size[from * 2];
+  pool.size[to * 2 + 1] = pool.size[from * 2 + 1];
+  pool.roll[to] = pool.roll[from];
+  pool.alpha[to] = pool.alpha[from];
+  pool.base[to] = pool.base[from];
+  pool.aspect[to] = pool.aspect[from];
+  pool.spin[to] = pool.spin[from];
+  pool.growK[to] = pool.growK[from];
+  pool.drag[to] = pool.drag[from];
+  pool.rise[to] = pool.rise[from];
+  pool.seed[to] = pool.seed[from];
+  pool.age[to] = pool.age[from];
+  pool.life[to] = pool.life[from];
+  pool.peak[to] = pool.peak[from];
+  pool.ground[to] = pool.ground[from];
+  pool.bounce[to] = pool.bounce[from];
+}
+
+/* Reserve one instance. The live range is packed, so the slot handed out is
+ * always the tail of [0, active) and the draw range never has holes. */
+function psReserve(pool) {
+  if (pool.active >= pool.limit || pool.active >= pool.capacity) return -1;
+  const index = pool.active;
+  pool.active += 1;
+  pool.emitted += 1;
+  return index;
+}
+
+/* Recycle: the last live instance takes the dead slot. */
+function psRelease(pool, index) {
+  const last = pool.active - 1;
+  if (index !== last) psCopyInstance(pool, last, index);
+  pool.active = last;
+}
+
+/* Common instance write shared by every emitter. Returns the instance index,
+ * or -1 when the pool cannot take another live particle. */
+function psSpawn(system, pool, x, y, z, vx, vy, vz, width, aspect, life, alphaPeak, tr, tg, tb) {
+  const index = psReserve(pool);
+  if (index === -1) return -1;
+  const spec = pool.spec;
+  const random = system.random;
+  const i3 = index * 3;
+  const i2 = index * 2;
+  pool.pos[i3] = x;
+  pool.pos[i3 + 1] = y;
+  pool.pos[i3 + 2] = z;
+  pool.vel[i3] = vx;
+  pool.vel[i3 + 1] = vy;
+  pool.vel[i3 + 2] = vz;
+  pool.size[i2] = width;
+  pool.size[i2 + 1] = width * aspect;
+  pool.tint[i3] = tr;
+  pool.tint[i3 + 1] = tg;
+  pool.tint[i3 + 2] = tb;
+  pool.tintA[i3] = tr;
+  pool.tintA[i3 + 1] = tg;
+  pool.tintA[i3 + 2] = tb;
+  pool.base[index] = width;
+  pool.aspect[index] = aspect;
+  pool.growK[index] = psRange(random, spec.grow);
+  pool.spin[index] = (random() * 2 - 1) * spec.spin;
+  pool.drag[index] = spec.drag;
+  pool.rise[index] = 0;
+  pool.seed[index] = random() * 512;
+  pool.age[index] = 0;
+  pool.life[index] = life;
+  pool.peak[index] = alphaPeak;
+  pool.alpha[index] = 0;
+  pool.roll[index] = random() * PS_TAU;
+  pool.ground[index] = psSurfaceY(system, x, z);
+  pool.bounce[index] = 0;
+  return index;
+}
+
+/* ---------------------------------------------------------------------------
+ * Emitters - every one of them reads the published exhaust signal
+ * ------------------------------------------------------------------------ */
+
+/* The ignition thump: the moment the fire catches, one burst of matter is
+ * queued into the pools so the first second of thrust reads as violent. */
+function psIgnitionBurst(system) {
+  const scale = system.tier.scale;
+  const spec = PS_SPEC.ignition;
+  const pools = system.pools;
+  pools.spark.burst += Math.round(spec.sparks * scale);
+  pools.debris.burst += Math.round(spec.debris * scale);
+  pools.ember.burst += Math.round(spec.embers * scale);
+  pools.smoke.burst += Math.round(spec.smoke * scale);
+}
+
+/* Take whatever is queued (ignition burst) plus this frame's share of the
+ * rate, and return how many instances may actually be spawned. */
+function psDraw(system, pool, rate, dt) {
+  if (pool.burst > 0) {
+    pool.acc += pool.burst;
+    pool.burst = 0;
+  }
+  pool.acc += rate * dt;
+  let count = Math.floor(pool.acc);
+  pool.acc -= count;
+  if (count <= 0) return 0;
+  const room = pool.limit - pool.active;
+  if (count > room) count = room;
+  return count;
+}
+
+/* Pad smoke: the thick cloud that keeps pouring out of the burner hole and the
+ * flame trench for as long as the engines are lit - and long after liftoff,
+ * because the source is the thrust level, not the vehicle position. */
+function psEmitSmoke(system, ctx) {
+  const pool = system.pools.smoke;
+  const spec = pool.spec;
+  const padFall = 1 - 0.42 * clamp01(ctx.altitude / 600);
+  const count = psDraw(system, pool, (10 + 78 * ctx.level) * padFall * system.tier.scale, ctx.dt);
+  if (count <= 0) return;
+  const random = system.random;
+  const pad = system.pad;
+  const warmRadius = Math.max(14, ctx.gust + 12);
+  for (let n = 0; n < count; n += 1) {
+    const angle = random() * PS_TAU;
+    let x; let y; let z; let vx; let vy; let vz;
+    if (random() < 0.42) {
+      /* Trench jet: a hard, low, sideways blast out of the corridor. */
+      const along = 12 + random() * 34;
+      x = pad.x + pad.trenchSign * along;
+      z = pad.z + (random() - 0.5) * 11;
+      y = pad.apronY + 0.7 + random() * 2.4;
+      const speed = (16 + 34 * ctx.level) * (0.55 + 0.5 * random());
+      vx = pad.trenchSign * speed;
+      vz = (random() - 0.5) * 12;
+      vy = 3.0 + 7.0 * random() + 5.0 * ctx.level;
+    } else {
+      /* The rolling cloud on and around the deck. */
+      const radius = 5.5 + random() * 24;
+      x = pad.x + Math.cos(angle) * radius + pad.trenchSign * 6 * random();
+      z = pad.z + Math.sin(angle) * radius;
+      y = pad.deckY + 0.6 + random() * 3.4;
+      const speed = (5 + 20 * ctx.level) * (0.4 + random());
+      vx = Math.cos(angle) * speed;
+      vz = Math.sin(angle) * speed;
+      vy = 3.5 + 9.0 * random() * (0.4 + ctx.level);
+    }
+    const dx = x - ctx.baseX;
+    const dy = y - ctx.baseY;
+    const dz = z - ctx.baseZ;
+    const warm = clamp01(1 - Math.sqrt(dx * dx + dy * dy + dz * dz) / warmRadius) * ctx.level;
+    const shade = 0.82 + 0.36 * random();
+    const tr = (spec.tint[0] + (spec.tintHot[0] - spec.tint[0]) * warm) * shade;
+    const tg = (spec.tint[1] + (spec.tintHot[1] - spec.tint[1]) * warm) * shade;
+    const tb = (spec.tint[2] + (spec.tintHot[2] - spec.tint[2]) * warm) * shade;
+    const index = psSpawn(system, pool, x, y, z, vx, vy, vz,
+      psRange(random, spec.size), spec.aspect * (0.85 + 0.3 * random()),
+      psRange(random, spec.life), 0.85 + 0.15 * random(), tr, tg, tb);
+    if (index < 0) break;
+    pool.rise[index] = (2.6 + 8.5 * ctx.level) * (0.6 + 0.8 * random());
+    pool.drag[index] = spec.drag * (0.75 + 0.6 * random());
+  }
+}
+
+/* The ground dust wall: a ring of dust that starts at the pad, sweeps outward
+ * across the terrain sampler and keeps travelling while the vehicle climbs. */
+function psEmitDust(system, ctx) {
+  const pool = system.pools.dust;
+  const spec = pool.spec;
+  const pad = system.pad;
+  const random = system.random;
+
+  const travel = (PS_SPEC.dust.speedBase + PS_SPEC.dust.speedThrust * ctx.level) *
+    (1 + PS_SPEC.dust.altitudeBoost * clamp01(ctx.altitude / PS_SPEC.dust.altitudeScale));
+  let radius = system.dustRadius;
+  if (ctx.level > 0.04) {
+    radius = Math.min(PS_SPEC.dust.maxRadius, radius + travel * ctx.dt);
+  } else if (radius > PS_SPEC.dust.startRadius) {
+    radius += (PS_SPEC.dust.startRadius - radius) * (1 - Math.exp(-ctx.dt * PS_SPEC.dust.recapture));
+  }
+  system.dustRadius = radius;
+
+  const groundFall = 1 - 0.45 * clamp01(ctx.altitude / 520);
+  const count = psDraw(system, pool, (5 + 52 * ctx.level) * groundFall * system.tier.scale, ctx.dt);
+  if (count <= 0) return;
+  for (let n = 0; n < count; n += 1) {
+    const angle = random() * PS_TAU;
+    const band = 0.58 + 0.5 * Math.sqrt(random());
+    const r = Math.max(3.5, radius * band);
+    const x = pad.x + Math.cos(angle) * r;
+    const z = pad.z + Math.sin(angle) * r;
+    const surface = psSurfaceY(system, x, z);
+    const y = surface + PS_SPEC.dust.hover + random() * 0.9;
+    const speed = (2.5 + 9.5 * ctx.level) * (0.6 + 0.7 * random());
+    const warm = clamp01(1 - r / 55) * ctx.level;
+    const shade = 0.86 + 0.28 * random();
+    const tr = (spec.tint[0] + (spec.tintHot[0] - spec.tint[0]) * warm) * shade;
+    const tg = (spec.tint[1] + (spec.tintHot[1] - spec.tint[1]) * warm) * shade;
+    const tb = (spec.tint[2] + (spec.tintHot[2] - spec.tint[2]) * warm) * shade;
+    const width = psRange(random, spec.size) * (0.8 + 0.4 * Math.min(1, radius / 120));
+    const index = psSpawn(system, pool, x, y, z,
+      Math.cos(angle) * speed, 0.7 + 2.6 * ctx.level * random(), Math.sin(angle) * speed,
+      width, spec.aspect * (0.85 + 0.35 * random()), psRange(random, spec.life),
+      0.80 + 0.20 * random(), tr, tg, tb);
+    if (index < 0) break;
+    pool.rise[index] = 0.35 + 1.7 * ctx.level * (0.3 + 0.7 * random());
+    pool.drag[index] = spec.drag * (0.8 + 0.5 * random());
+  }
+}
+
+/* The bright plume trail: spawned along the published world-space plume, so it
+ * stretches with the plume length, thickens where the column widens and always
+ * leaves the engine bay rather than a fixed point in space. */
+function psEmitTrail(system, ctx) {
+  const pool = system.pools.trail;
+  const spec = pool.spec;
+  if (ctx.level < 0.03 || ctx.trailLength < 1) {
+    if (pool.burst > 0) {
+      pool.acc += pool.burst;
+      pool.burst = 0;
+    }
+    return;
+  }
+  const lengthFactor = clamp01(ctx.trailLength / 90);
+  const count = psDraw(system, pool, ctx.level * (14 + 96 * lengthFactor) * system.tier.scale, ctx.dt);
+  if (count <= 0) return;
+  const random = system.random;
+  const segments = ctx.segments;
+  const segmentCount = segments ? segments.length : 0;
+  const coreWidth = Math.max(1.1, ctx.trailWidth * 0.62) *
+    (1 + 0.55 * clamp01(ctx.altitude / 300));
+  for (let n = 0; n < count; n += 1) {
+    const t = Math.pow(random(), 1.55);
+    const along = t * ctx.trailLength;
+    let columnRadius = ctx.trailWidth * (0.55 + 0.75 * t);
+    if (segmentCount > 0) {
+      columnRadius = segments[Math.min(segmentCount - 1, Math.floor(t * segmentCount))].radius;
+    }
+    const lateral = columnRadius * (0.3 + 0.9 * random());
+    const lateralAngle = random() * PS_TAU;
+    const offA = Math.cos(lateralAngle) * lateral;
+    const offB = Math.sin(lateralAngle) * lateral;
+    const x = ctx.baseX + ctx.axisX * along + ctx.rightX * offA + ctx.fwdX * offB;
+    const y = ctx.baseY + ctx.axisY * along + ctx.rightY * offA + ctx.fwdY * offB;
+    const z = ctx.baseZ + ctx.axisZ * along + ctx.rightZ * offA + ctx.fwdZ * offB;
+    const speed = (6 + 24 * ctx.level) * (0.5 + 0.8 * random());
+    const vx = ctx.axisX * speed + ctx.rightX * (random() - 0.5) * 9;
+    const vy = ctx.axisY * speed + ctx.fwdY * (random() - 0.5) * 9 + 1.4;
+    const vz = ctx.axisZ * speed + ctx.fwdZ * (random() - 0.5) * 9;
+    const heat = clamp01(1.15 - t * 1.5);
+    const shade = 0.88 + 0.24 * random();
+    const tr = (spec.tint[0] + (spec.tintHot[0] - spec.tint[0]) * heat) * shade;
+    const tg = (spec.tint[1] + (spec.tintHot[1] - spec.tint[1]) * heat) * shade;
+    const tb = (spec.tint[2] + (spec.tintHot[2] - spec.tint[2]) * heat) * shade;
+    const width = coreWidth * (0.7 + 0.75 * random()) * (0.35 + 0.65 * Math.sqrt(t + 0.28));
+    const index = psSpawn(system, pool, x, y, z, vx, vy, vz, width, spec.aspect,
+      psRange(random, spec.life),
+      (0.70 + 0.30 * ctx.flicker) * (0.80 + 0.20 * random()), tr, tg, tb);
+    if (index < 0) break;
+    pool.rise[index] = 1.2 + 3.0 * ctx.level;
+    pool.drag[index] = spec.drag * (0.8 + 0.5 * random());
+  }
+}
+
+/* Sparks: thrown off the flame and off the pad, ballistic, bouncing on the
+ * deck and the apron and cooling from white-hot to dull red before they die. */
+function psEmitSparks(system, ctx) {
+  const pool = system.pools.spark;
+  const spec = pool.spec;
+  const count = psDraw(system, pool,
+    Math.pow(ctx.level, 1.5) * (44 + 96 * ctx.level) * system.tier.scale, ctx.dt);
+  if (count <= 0) return;
+  const random = system.random;
+  const pad = system.pad;
+  const anchors = ctx.anchors;
+  const fromEngine = anchors && anchors.length
+    ? clamp01(0.35 + ctx.altitude / 120) : 0;
+  for (let n = 0; n < count; n += 1) {
+    let x; let y; let z; let vx; let vy; let vz;
+    if (fromEngine > 0 && random() < fromEngine) {
+      const entry = anchors[Math.floor(random() * anchors.length)];
+      const anchor = entry.anchor;
+      anchor.updateWorldMatrix(true, false);
+      PS_VEC.setFromMatrixPosition(anchor.matrixWorld);
+      x = PS_VEC.x + (random() - 0.5) * 2.4;
+      y = PS_VEC.y + (random() - 0.5) * 1.6;
+      z = PS_VEC.z + (random() - 0.5) * 2.4;
+      const speed = (18 + 52 * ctx.level) * (0.5 + 0.8 * random());
+      vx = ctx.axisX * speed + (random() - 0.5) * 26;
+      vy = ctx.axisY * speed + random() * 10;
+      vz = ctx.axisZ * speed + (random() - 0.5) * 26;
+    } else {
+      const angle = random() * PS_TAU;
+      const r = 4 + random() * 22;
+      x = pad.x + Math.cos(angle) * r;
+      z = pad.z + Math.sin(angle) * r;
+      y = psSurfaceY(system, x, z) + 0.35 + random() * 0.8;
+      const speed = 12 + 30 * ctx.level;
+      const elevation = 0.25 + random() * 0.75;
+      const horizontal = speed * Math.cos(elevation);
+      vx = Math.cos(angle) * horizontal + pad.trenchSign * speed * 0.35;
+      vz = Math.sin(angle) * horizontal;
+      vy = speed * Math.sin(elevation) * (0.6 + 0.7 * random());
+    }
+    const shade = 0.9 + 0.2 * random();
+    const index = psSpawn(system, pool, x, y, z, vx, vy, vz,
+      psRange(random, spec.size), spec.aspect, psRange(random, spec.life),
+      0.75 + 0.25 * random(),
+      spec.tint[0] * shade, spec.tint[1] * shade, spec.tint[2] * shade);
+    if (index < 0) break;
+    pool.rise[index] = 2.0 + 5.0 * ctx.level * random();
+  }
+}
+
+/* Glowing embers: buoyant coals that ride the smoke cloud, gutter as they fade
+ * and leave a dull red trail behind the pad. */
+function psEmitEmbers(system, ctx) {
+  const pool = system.pools.ember;
+  const spec = pool.spec;
+  const count = psDraw(system, pool, ctx.level * 26 * system.tier.scale, ctx.dt);
+  if (count <= 0) return;
+  const random = system.random;
+  const pad = system.pad;
+  for (let n = 0; n < count; n += 1) {
+    const angle = random() * PS_TAU;
+    const r = 3 + random() * 36;
+    const x = pad.x + Math.cos(angle) * r;
+    const z = pad.z + Math.sin(angle) * r;
+    const y = psSurfaceY(system, x, z) + 0.5 + random() * 5.5 + ctx.level * 3;
+    const vx = Math.cos(angle) * (1.5 + 6 * random()) + (random() - 0.5) * 3;
+    const vz = Math.sin(angle) * (1.5 + 6 * random()) + (random() - 0.5) * 3;
+    const vy = 1.2 + 5.5 * random() * (0.4 + ctx.level);
+    const warm = 0.35 + 0.65 * random();
+    const tr = spec.tint[0] + (spec.tintHot[0] - spec.tint[0]) * warm;
+    const tg = spec.tint[1] + (spec.tintHot[1] - spec.tint[1]) * warm;
+    const tb = spec.tint[2] + (spec.tintHot[2] - spec.tint[2]) * warm;
+    const index = psSpawn(system, pool, x, y, z, vx, vy, vz,
+      psRange(random, spec.size), spec.aspect, psRange(random, spec.life),
+      0.7 + 0.3 * random(), tr, tg, tb);
+    if (index < 0) break;
+    pool.rise[index] = 1.0 + 2.4 * ctx.level * random();
+  }
+}
+
+/* Small dust motes: the fine matter that hangs around the launch area and gets
+ * carried outward by the same gust that moves the wall. */
+function psEmitMotes(system, ctx) {
+  const pool = system.pools.mote;
+  const spec = pool.spec;
+  const count = psDraw(system, pool, ctx.level * 22 * system.tier.scale, ctx.dt);
+  if (count <= 0) return;
+  const random = system.random;
+  const pad = system.pad;
+  for (let n = 0; n < count; n += 1) {
+    const angle = random() * PS_TAU;
+    const r = 6 + random() * 78;
+    const x = pad.x + Math.cos(angle) * r;
+    const z = pad.z + Math.sin(angle) * r;
+    const y = psSurfaceY(system, x, z) + 0.6 + random() * 9 + ctx.level * 6;
+    const speed = 0.4 + 2.6 * random();
+    const shade = 0.85 + 0.3 * random();
+    const index = psSpawn(system, pool, x, y, z,
+      Math.cos(angle) * speed, 0.2 + 1.4 * random() * (0.3 + ctx.level), Math.sin(angle) * speed,
+      psRange(random, spec.size), spec.aspect, psRange(random, spec.life),
+      0.5 + 0.5 * random(),
+      spec.tint[0] * shade, spec.tint[1] * shade, spec.tint[2] * shade);
+    if (index < 0) break;
+    pool.rise[index] = 0.2 + 0.8 * ctx.level * random();
+  }
+}
+
+/* Exhaust fragments: hard little chips blown out of the flame trench and the
+ * burner hole, tumbling, bouncing off the concrete and skittering to a stop. */
+function psEmitDebris(system, ctx) {
+  const pool = system.pools.debris;
+  const spec = pool.spec;
+  const count = psDraw(system, pool,
+    Math.pow(ctx.level, 1.2) * (9 + 20 * ctx.level) * system.tier.scale, ctx.dt);
+  if (count <= 0) return;
+  const random = system.random;
+  const pad = system.pad;
+  for (let n = 0; n < count; n += 1) {
+    const fromTrench = random() < 0.7;
+    const angle = random() * PS_TAU;
+    let x; let y; let z; let vx; let vy; let vz;
+    if (fromTrench) {
+      const along = 8 + random() * 40;
+      x = pad.x + pad.trenchSign * along;
+      z = pad.z + (random() - 0.5) * 13;
+      const inCorridor = Math.abs(z - pad.z) <= pad.trenchHalfWidth &&
+        pad.trenchSign * (x - pad.x) < pad.trenchMouth;
+      y = (inCorridor ? pad.trenchFloorY : psSurfaceY(system, x, z)) + 0.3 + random() * 1.8;
+      const speed = (16 + 32 * ctx.level) * (0.55 + 0.6 * random());
+      vx = pad.trenchSign * speed;
+      vz = (random() - 0.5) * 14;
+      vy = 6 + 22 * random() + 8 * ctx.level;
+    } else {
+      const r = 6 + random() * 20;
+      x = pad.x + Math.cos(angle) * r;
+      z = pad.z + Math.sin(angle) * r;
+      y = psSurfaceY(system, x, z) + 0.3 + random() * 1.2;
+      const speed = (10 + 22 * ctx.level) * (0.5 + 0.8 * random());
+      const elevation = 0.5 + random() * 0.8;
+      const horizontal = speed * Math.cos(elevation);
+      vx = Math.cos(angle) * horizontal;
+      vz = Math.sin(angle) * horizontal;
+      vy = speed * Math.sin(elevation);
+    }
+    const shade = 0.85 + 0.3 * random();
+    const index = psSpawn(system, pool, x, y, z, vx, vy, vz,
+      psRange(random, spec.size), spec.aspect, psRange(random, spec.life),
+      0.85 + 0.15 * random(),
+      spec.tint[0] * shade, spec.tint[1] * shade, spec.tint[2] * shade);
+    if (index < 0) break;
+    pool.rise[index] = 1.5 * ctx.level * random();
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Integration: one step for a pool, with the curl field, the gust push, the
+ * ground contact rules and the per-instance attribute write.
+ * ------------------------------------------------------------------------ */
+
+function psStep(system, pool, dt, ctx) {
+  const spec = pool.spec;
+  const pos = pool.pos;
+  const vel = pool.vel;
+  const curlStrength = pool.curlStrength * ctx.curlBoost;
+  const curlVector = system.curlVector;
+  const time = ctx.curlTime;
+  const bounceLimit = spec.bounce;
+  const hug = spec.hug;
+  const deflect = spec.deflect;
+  const flicker = spec.flicker;
+  const cool = spec.cool;
+  const pushActive = spec.push > 0 && ctx.level > 0.02 && ctx.gust > 0.5;
+  const pushScale = spec.push * ctx.level;
+  const outward = PS_SPEC.blast.outward;
+  const lift = PS_SPEC.blast.lift;
+  const windX = PS_SPEC.wind.x * spec.wind;
+  const windZ = PS_SPEC.wind.z * spec.wind;
+  const fadeInRate = spec.fadeIn > 0 ? 1 / spec.fadeIn : 1000;
+  const fadeOutPower = spec.fadeOut;
+  const hover = PS_SPEC.dust.hover;
+  const hoverGrow = PS_SPEC.dust.hoverGrow;
+  const hugMask = PS_SPEC.dust.hugStride - 1;
+
+  for (let i = 0; i < pool.active; ) {
+    const i3 = i * 3;
+    const life = pool.life[i];
+    const age = pool.age[i] + dt;
+    if (age >= life) {
+      psRelease(pool, i);
+      continue;
+    }
+    pool.age[i] = age;
+    const p = age / life;
+
+    let ax = windX;
+    let ay = spec.gravity + pool.rise[i];
+    let az = windZ;
+
+    if (pushActive) {
+      const dx = pos[i3] - ctx.padX;
+      const dz = pos[i3 + 2] - ctx.padZ;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < ctx.gust && dist > 0.001) {
+        const falloff = (1 - dist / ctx.gust) * pushScale;
+        ax += (dx / dist) * falloff * outward;
+        az += (dz / dist) * falloff * outward;
+        ay += falloff * lift;
+      }
+    }
+
+    if (curlStrength > 0) {
+      const seedOffset = pool.seed[i];
+      psCurl(pos[i3] + seedOffset * 0.11, pos[i3 + 1] * 0.85 + seedOffset * 0.07,
+        pos[i3 + 2] - seedOffset * 0.09, time, curlVector);
+      ax += curlVector[0] * curlStrength;
+      ay += curlVector[1] * curlStrength * 0.65;
+      az += curlVector[2] * curlStrength;
+    }
+
+    const damp = 1 / (1 + pool.drag[i] * dt);
+    let vx = (vel[i3] + ax * dt) * damp;
+    let vy = (vel[i3 + 1] + ay * dt) * damp;
+    let vz = (vel[i3 + 2] + az * dt) * damp;
+    let x = pos[i3] + vx * dt;
+    let y = pos[i3 + 1] + vy * dt;
+    let z = pos[i3 + 2] + vz * dt;
+
+    if (hug) {
+      /* Ground dust: re-sample the published terrain and never let a puff sink
+       * below it, so the wall spreads along the ground instead of floating. */
+      if (((i + system.frames) & hugMask) === 0) pool.ground[i] = psSurfaceY(system, x, z);
+      const floor = pool.ground[i] + hover + p * hoverGrow;
+      if (y < floor) {
+        y = floor;
+        if (vy < 0) vy = 0;
+        vx *= 0.985;
+        vz *= 0.985;
+      }
+    } else if (bounceLimit > 0) {
+      /* Sparks and debris: bounce, shed speed and skitter to a stop. */
+      const floor = pool.ground[i] + pool.size[i * 2] * 0.5;
+      if (y <= floor) {
+        y = floor;
+        if (pool.bounce[i] < bounceLimit && vy < -0.8) {
+          pool.bounce[i] += 1;
+          vy = -vy * 0.34;
+          vx *= 0.62;
+          vz *= 0.62;
+          pool.ground[i] = psSurfaceY(system, x, z);
+        } else {
+          vy = 0;
+          vx *= 0.90;
+          vz *= 0.90;
+          if (age < life * 0.82) pool.age[i] = life * 0.82;
+        }
+      }
+    } else if (deflect) {
+      /* The trail splashes sideways where the column meets the pad. */
+      if (y < pool.ground[i] + 4 || y < 4) pool.ground[i] = psSurfaceY(system, x, z);
+      const floor = pool.ground[i] + 0.5;
+      if (y < floor) {
+        y = floor;
+        if (vy < 0) vy = -vy * 0.12;
+        const dx = x - ctx.padX;
+        const dz = z - ctx.padZ;
+        const dist = Math.sqrt(dx * dx + dz * dz) + 0.001;
+        vx += (dx / dist) * 26 * dt;
+        vz += (dz / dist) * 26 * dt;
+      }
+    }
+
+    pos[i3] = x;
+    pos[i3 + 1] = y;
+    pos[i3 + 2] = z;
+    vel[i3] = vx;
+    vel[i3 + 1] = vy;
+    vel[i3 + 2] = vz;
+
+    /* Per-instance attributes: the sprite grows (or shrinks), rolls, fades in
+     * and out, and cooling emitters shift their tint towards dull red. */
+    const width = pool.base[i] * (1 + pool.growK[i] * p);
+    pool.size[i * 2] = width;
+    pool.size[i * 2 + 1] = width * pool.aspect[i];
+    pool.roll[i] += pool.spin[i] * dt;
+    let alpha = pool.peak[i] * Math.min(1, age * fadeInRate) * Math.pow(1 - p, fadeOutPower);
+    if (flicker > 0) alpha *= 1 - flicker * (0.5 + 0.5 * Math.sin(time * 21 + pool.seed[i] * 7.3));
+    pool.alpha[i] = alpha;
+    if (cool) {
+      const k = p * p;
+      pool.tint[i3] = pool.tintA[i3] + (pool.coolR - pool.tintA[i3]) * k;
+      pool.tint[i3 + 1] = pool.tintA[i3 + 1] + (pool.coolG - pool.tintA[i3 + 1]) * k;
+      pool.tint[i3 + 2] = pool.tintA[i3 + 2] + (pool.coolB - pool.tintA[i3 + 2]) * k;
+    }
+    i += 1;
+  }
+
+  pool.mesh.count = pool.active;
+  if (pool.active > 0) {
+    pool.attributes.aOffset.needsUpdate = true;
+    pool.attributes.aSize.needsUpdate = true;
+    pool.attributes.aRoll.needsUpdate = true;
+    pool.attributes.aAlpha.needsUpdate = true;
+    pool.attributes.aTint.needsUpdate = true;
+  }
+}
+
+/* Live budget for a quality tier: the pools are never re-allocated, only the
+ * active limit and the curl strength change. */
+function psApplyTier(system, tier) {
+  const id = tier && tier.id ? tier.id : 'high';
+  const settings = PS_SPEC.tiers[id] || PS_SPEC.tiers.high;
+  system.tier = settings;
+  if (!system.pools) return settings;
+  for (let i = 0; i < PS_POOL_ORDER.length; i += 1) {
+    const pool = system.pools[PS_POOL_ORDER[i]];
+    pool.limit = Math.max(12, Math.min(pool.capacity, Math.round(pool.capacity * settings.scale)));
+    pool.curlStrength = pool.spec.curl * settings.curl;
+    if (pool.active > pool.limit) {
+      pool.active = pool.limit;
+      pool.mesh.count = pool.active;
+    }
+  }
+  return settings;
+}
+
+/* ---------------------------------------------------------------------------
+ * Particles subsystem, registered as 'smoke'.
+ * ------------------------------------------------------------------------ */
+
+const PS_VEC = new THREE.Vector3();
+
+const smokeSystem = {
+  scene: null,
+  group: null,
+  pools: null,
+  textures: null,
+  tier: PS_SPEC.tiers.high,
+  terrain: null,
+  pad: null,
+  emitter: null,
+  curlVector: new Float32Array(3),
+  random: null,
+  clock: 0,
+  frames: 0,
+  ignitionBursts: 0,
+  dustRadius: PS_SPEC.dust.startRadius,
+  lastLevel: 0,
+  lastAltitude: 0,
+  lastGust: 0,
+  lastTrailLength: 0,
+  lastTrailWidth: 0,
+  lastSegments: 0,
+  lastAnchors: 0,
+  textureCount: 0,
+  api: null,
+
+  init(ctx) {
+    this.scene = ctx.scene;
+    this.random = seededRandom(90210);
+
+    /* Pad geometry, read once from the launch-complex handles so the smoke and
+     * the dust wall leave the real deck, apron and trench. */
+    const complex = runtime.handles && runtime.handles.launchComplex
+      ? runtime.handles.launchComplex : null;
+    const padHandle = complex && complex.pad ? complex.pad : null;
+    const trench = padHandle && padHandle.trench ? padHandle.trench : null;
+    const seat = complex && complex.vehicleSeat ? complex.vehicleSeat : null;
+    const pad = {
+      x: seat && Number.isFinite(seat.x) ? seat.x : 0,
+      z: seat && Number.isFinite(seat.z) ? seat.z : 0,
+      deckY: padHandle && Number.isFinite(padHandle.deckTopY) ? padHandle.deckTopY : 2.6,
+      apronY: 0.25,                     // matches the launch-complex apron top
+      deckRadius: padHandle && Number.isFinite(padHandle.deckRadius) ? padHandle.deckRadius : 30,
+      apronRadius: padHandle && Number.isFinite(padHandle.apronRadius) ? padHandle.apronRadius : 45,
+      holeRadius: padHandle && Number.isFinite(padHandle.flameHoleRadius) ? padHandle.flameHoleRadius : 7.8,
+      trenchSign: trench && Number.isFinite(trench.mouthX) && trench.mouthX < 0 ? -1 : 1,
+      trenchMouth: trench && Number.isFinite(trench.mouthX) ? Math.abs(trench.mouthX) : 45.6,
+      trenchHalfWidth: trench && Number.isFinite(trench.halfWidth) ? trench.halfWidth : 6.3,
+      trenchFloorY: trench && Number.isFinite(trench.floorY) ? trench.floorY : -9.7
+    };
+    pad.deckSq = pad.deckRadius * pad.deckRadius;
+    pad.apronSq = pad.apronRadius * pad.apronRadius;
+    this.pad = pad;
+
+    /* Bind the world phase's height sampler now (the world registers before
+     * this subsystem), so ground dust is terrain-aware from the first frame. */
+    const collections = runtime.collections;
+    this.terrain = collections && typeof collections.terrainHeight === 'function'
+      ? collections.terrainHeight : null;
+
+    this.emitter = {
+      dt: 0, time: 0, curlTime: 0, curlBoost: 1, flicker: 1,
+      level: 0, altitude: 0, gust: 0, heat: 0,
+      baseX: pad.x, baseY: pad.deckY, baseZ: pad.z,
+      axisX: 0, axisY: -1, axisZ: 0,
+      rightX: 1, rightY: 0, rightZ: 0,
+      fwdX: 0, fwdY: 0, fwdZ: 1,
+      trailLength: 0, trailWidth: 0, segments: null, anchors: null,
+      padX: pad.x, padZ: pad.z
+    };
+
+    const textures = psCreateTextures();
+    this.textures = textures;
+    this.textureCount = Object.keys(textures).length;
+
+    const group = new THREE.Group();
+    group.name = 'particles-smoke';
+    group.matrixAutoUpdate = false;
+    group.updateMatrix();
+    ctx.scene.add(group);
+    this.group = group;
+
+    const pools = {};
+    for (let i = 0; i < PS_POOL_ORDER.length; i += 1) {
+      const name = PS_POOL_ORDER[i];
+      const pool = psCreatePool(name, PS_POOLS[name], textures);
+      pool.mesh.material.uniforms.uFogColour.value.copy(
+        ctx.scene.fog && ctx.scene.fog.color ? ctx.scene.fog.color : pool.mesh.material.uniforms.uFogColour.value);
+      if (ctx.scene.fog && Number.isFinite(ctx.scene.fog.near)) {
+        pool.mesh.material.uniforms.uFogNear.value = ctx.scene.fog.near;
+        pool.mesh.material.uniforms.uFogFar.value = ctx.scene.fog.far;
+      }
+      group.add(pool.mesh);
+      pools[name] = pool;
+    }
+    this.pools = pools;
+    psApplyTier(this, ctx.quality || quality);
+
+    const shared = ctx.state || state;
+    shared.particles = shared.particles || {
+      smoke: 0, dust: 0, trail: 0, spark: 0, ember: 0, mote: 0, debris: 0,
+      live: 0, capacity: 0, limit: 0, dustRadius: 0, trailLength: 0,
+      gustRadius: 0, thrust: 0, altitude: 0, emitted: 0,
+      frames: 0, pools: PS_POOL_ORDER.length, bursts: 0
+    };
+    this.publish(shared);
+
+    console.log('[LAUNCH_SCENE] particles online - pools=' + PS_POOL_ORDER.length +
+      ' capacity=' + this.capacityTotal() + ' limit=' + this.limitTotal() +
+      ' tier=' + this.tier.id + ' terrain=' + (typeof runtime.collections !== 'undefined' &&
+        runtime.collections && typeof runtime.collections.terrainHeight === 'function' ? 'sampler' : 'flat'));
+  },
+
+  onQualityChange(tier) {
+    psApplyTier(this, tier);
+  },
+
+  update(dt, sharedState) {
+    const delta = Math.max(0, Math.min(0.25, Number(dt) || 0));
+    this.frames += 1;
+    if (delta <= 0 || !this.pools) return;
+    this.clock += delta;
+
+    const shared = sharedState || runtime.state;
+    const emit = this.emitter;
+    const pads = this.pad;
+
+    /* ---- the one signal: the published exhaust data --------------------- */
+    const exhaust = runtime.exhaust;
+    const level = clamp01(exhaust ? exhaust.level : shared.thrust);
+    const altitude = Math.max(0, Number(shared.altitude) || 0);
+    emit.dt = delta;
+    emit.time = this.clock;
+    emit.curlTime = this.clock * PS_SPEC.curl.drift;
+    emit.curlBoost = 0.5 + 0.5 * level;
+    emit.level = level;
+    emit.altitude = altitude;
+    emit.gust = exhaust ? Math.max(0, exhaust.gustRadius) : level * 22;
+    emit.heat = exhaust ? Math.max(0, exhaust.heat.radius) : 0;
+    emit.flicker = exFlicker(this.clock, 0, 3.3);
+    emit.padX = pads.x;
+    emit.padZ = pads.z;
+
+    if (exhaust) {
+      const base = exhaust.plumeBase;
+      const axis = exhaust.plumeAxis;
+      emit.baseX = base.x;
+      emit.baseY = base.y;
+      emit.baseZ = base.z;
+      emit.axisX = axis.x;
+      emit.axisY = axis.y;
+      emit.axisZ = axis.z;
+      emit.trailLength = Math.max(0, exhaust.plumeLength);
+      emit.trailWidth = Math.max(0.5, exhaust.plumeWidth);
+      emit.segments = exhaust.plumeSegments;
+      emit.anchors = exhaust.anchors;
+    } else {
+      emit.baseX = pads.x;
+      emit.baseY = pads.deckY + 5;
+      emit.baseZ = pads.z;
+      emit.axisX = 0;
+      emit.axisY = -1;
+      emit.axisZ = 0;
+      emit.trailLength = level > 0.01 ? 3.2 + 44 * level : 0;
+      emit.trailWidth = 3.3 * (0.72 + 0.34 * level);
+      emit.segments = null;
+      emit.anchors = null;
+    }
+
+    /* Screen basis of the plume, for the lateral scatter of the trail. */
+    let rightX = -emit.axisZ;
+    let rightY = 0;
+    let rightZ = emit.axisX;
+    let rightLength = Math.sqrt(rightX * rightX + rightZ * rightZ);
+    if (rightLength < 1e-4) {
+      rightX = 1;
+      rightY = 0;
+      rightZ = 0;
+      rightLength = 1;
+    }
+    rightX /= rightLength;
+    rightZ /= rightLength;
+    emit.rightX = rightX;
+    emit.rightY = rightY;
+    emit.rightZ = rightZ;
+    emit.fwdX = rightY * emit.axisZ - rightZ * emit.axisY;
+    emit.fwdY = rightZ * emit.axisX - rightX * emit.axisZ;
+    emit.fwdZ = rightX * emit.axisY - rightY * emit.axisX;
+
+    /* ---- ignition thump, exactly once per ignition ---------------------- */
+    if (level >= PS_SPEC.ignition.burstLevel && this.lastLevel < PS_SPEC.ignition.burstLevel) {
+      this.ignitionBursts += 1;
+      psIgnitionBurst(this);
+    }
+    this.lastLevel = level;
+
+    /* ---- emit, then integrate ------------------------------------------ */
+    psEmitSmoke(this, emit);
+    psEmitDust(this, emit);
+    psEmitTrail(this, emit);
+    psEmitSparks(this, emit);
+    psEmitEmbers(this, emit);
+    psEmitMotes(this, emit);
+    psEmitDebris(this, emit);
+
+    const pools = this.pools;
+    for (let i = 0; i < PS_POOL_ORDER.length; i += 1) {
+      psStep(this, pools[PS_POOL_ORDER[i]], delta, emit);
+    }
+
+    this.lastAltitude = altitude;
+    this.lastGust = emit.gust;
+    this.lastTrailLength = emit.trailLength;
+    this.lastTrailWidth = emit.trailWidth;
+    this.lastSegments = emit.segments ? emit.segments.length : 0;
+    this.lastAnchors = emit.anchors ? emit.anchors.length : 0;
+    this.publish(shared);
+  },
+
+  /* Mirror the live counts into the shared state (numeric, allocation free),
+   * so any consumer or console session can watch the pools recycle. */
+  publish(shared) {
+    const target = shared.particles;
+    if (!target || !this.pools) return;
+    const pools = this.pools;
+    let live = 0;
+    for (let i = 0; i < PS_POOL_ORDER.length; i += 1) {
+      const name = PS_POOL_ORDER[i];
+      const pool = pools[name];
+      target[name] = pool.active;
+      live += pool.active;
+    }
+    target.live = live;
+    target.capacity = this.capacityTotal();
+    target.limit = this.limitTotal();
+    target.dustRadius = Math.round(this.dustRadius * 100) / 100;
+    target.trailLength = Math.round(this.lastTrailLength * 100) / 100;
+    target.gustRadius = Math.round(this.lastGust * 100) / 100;
+    target.thrust = Math.round(this.lastLevel * 1000) / 1000;
+    target.altitude = Math.round(this.lastAltitude * 100) / 100;
+    target.emitted = this.emittedTotal();
+    target.frames = this.frames;
+    target.bursts = this.ignitionBursts;
+  },
+
+  active(name) {
+    const pool = this.pools ? this.pools[name] : null;
+    return pool ? pool.active : 0;
+  },
+
+  poolReport(name) {
+    const pool = this.pools ? this.pools[name] : null;
+    if (!pool) return null;
+    return {
+      name: pool.name,
+      active: pool.active,
+      limit: pool.limit,
+      capacity: pool.capacity,
+      emitted: pool.emitted,
+      drawCount: pool.mesh.count,
+      additive: pool.spec.additive,
+      visible: pool.mesh.count > 0
+    };
+  },
+
+  liveCount() {
+    if (!this.pools) return 0;
+    let live = 0;
+    for (let i = 0; i < PS_POOL_ORDER.length; i += 1) live += this.pools[PS_POOL_ORDER[i]].active;
+    return live;
+  },
+
+  capacityTotal() {
+    if (!this.pools) return 0;
+    let total = 0;
+    for (let i = 0; i < PS_POOL_ORDER.length; i += 1) total += this.pools[PS_POOL_ORDER[i]].capacity;
+    return total;
+  },
+
+  limitTotal() {
+    if (!this.pools) return 0;
+    let total = 0;
+    for (let i = 0; i < PS_POOL_ORDER.length; i += 1) total += this.pools[PS_POOL_ORDER[i]].limit;
+    return total;
+  },
+
+  emittedTotal() {
+    if (!this.pools) return 0;
+    let total = 0;
+    for (let i = 0; i < PS_POOL_ORDER.length; i += 1) total += this.pools[PS_POOL_ORDER[i]].emitted;
+    return total;
+  },
+
+  /* Numbers-only snapshot: this is what a console session (or a test) samples
+   * over time to prove the pools recycle and the counts stay bounded. */
+  getState() {
+    const pools = this.pools;
+    const report = {};
+    if (pools) {
+      for (let i = 0; i < PS_POOL_ORDER.length; i += 1) {
+        const name = PS_POOL_ORDER[i];
+        report[name] = this.poolReport(name);
+      }
+    }
+    return {
+      registered: runtime.has('smoke'),
+      subsystem: 'smoke',
+      version: PS_VERSION,
+      terrainSampler: !!this.terrain,
+      quality: quality.id,
+      tier: this.tier.id,
+      tierScale: this.tier.scale,
+      frames: this.frames,
+      thrust: Math.round(this.lastLevel * 1000) / 1000,
+      altitude: Math.round(this.lastAltitude * 100) / 100,
+      gustRadius: Math.round(this.lastGust * 100) / 100,
+      dustRadius: Math.round(this.dustRadius * 100) / 100,
+      trailLength: Math.round(this.lastTrailLength * 100) / 100,
+      trailWidth: Math.round(this.lastTrailWidth * 100) / 100,
+      plumeSegments: this.lastSegments,
+      engineAnchors: this.lastAnchors,
+      ignitionBursts: this.ignitionBursts,
+      live: this.liveCount(),
+      limit: this.limitTotal(),
+      capacity: this.capacityTotal(),
+      emitted: this.emittedTotal(),
+      pools: report,
+      textureCount: this.textureCount,
+      meshCount: PS_POOL_ORDER.length,
+      allocationsPerFrame: 0,
+      errors: runtime.state.errors.length
+    };
+  },
+
+  dispose(ctx) {
+    if (this.group && ctx && ctx.scene) ctx.scene.remove(this.group);
+    if (this.pools) {
+      for (let i = 0; i < PS_POOL_ORDER.length; i += 1) {
+        const pool = this.pools[PS_POOL_ORDER[i]];
+        if (pool.geometry) pool.geometry.dispose();
+        if (pool.material) pool.material.dispose();
+        pool.mesh.count = 0;
+        pool.active = 0;
+      }
+    }
+    if (this.textures) {
+      const names = Object.keys(this.textures);
+      for (let i = 0; i < names.length; i += 1) {
+        if (this.textures[names[i]] && this.textures[names[i]].dispose) this.textures[names[i]].dispose();
+      }
+    }
+    this.pools = null;
+    this.textures = null;
+    this.group = null;
+    this.pad = null;
+    this.emitter = null;
+    this.terrain = null;
+    this.random = null;
+    this.dustRadius = PS_SPEC.dust.startRadius;
+    this.frames = 0;
+    this.clock = 0;
+    this.lastLevel = 0;
+    this.lastTrailLength = 0;
+    this.lastGust = 0;
+    if (runtime.state) runtime.state.particles = null;
+    if (runtime.particles === this.api) runtime.particles = null;
+    this.api = null;
+  }
+};
+
+/* The interface published as LAUNCH_SCENE.smoke: live pooled systems, live
+ * counts and the last published exhaust numbers. */
+function psCreateApi(system) {
+  return {
+    version: PS_VERSION,
+    subsystem: 'smoke',
+    poolNames: PS_POOL_ORDER.slice(),
+    getState: function () { return system.getState(); },
+    active: function (name) { return system.active(name); },
+    poolReport: function (name) { return system.poolReport(name); },
+    get pools() { return system.pools; },
+    get live() { return system.liveCount(); },
+    get capacity() { return system.capacityTotal(); },
+    get limit() { return system.limitTotal(); },
+    get dustRadius() { return system.dustRadius; },
+    get trailLength() { return system.lastTrailLength; },
+    get thrust() { return system.lastLevel; },
+    get system() { return system; }
+  };
+}
+
+smokeSystem.api = psCreateApi(smokeSystem);
+runtime.particles = smokeSystem.api;
+runtime.smoke = smokeSystem.api;
+runtime.register('smoke', smokeSystem);
 
 /* ---------------------------------------------------------------------------
  * SECTION: reactive - extension point (dynamic lighting, shockwave, FX that
