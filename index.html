@@ -429,54 +429,99 @@ const runtime = {
 window.LAUNCH_SCENE = runtime;
 
 /* ---------------------------------------------------------------------------
- * SECTION: world - placeholder sky, sunlight, ground and clouds
- * Owner of the world phase: sky, sunlight, layered terrain, hills and clouds.
- * The scaffolding below is a deliberate bright daylight placeholder and is
- * expected to be replaced (not reordered) from inside this marker.
+ * SECTION: world - bright daytime environment: sky, sun, terrain and clouds
+ * ---------------------------------------------------------------------------
+ * The whole launch plays inside this subsystem. It owns:
+ *   - a procedural gradient sky dome (GLSL, no texture, no image URL) with a
+ *     sharp sun disc, a wide warm halo and a bright haze band on the horizon;
+ *   - a strong warm key light with a soft-shadow camera plus hemisphere fill;
+ *   - a 4.2 km radial terrain heightfield with saturated colour bands, canvas
+ *     ground detail and distant hills that fade into the daytime haze;
+ *   - instanced grass tufts, trees and loose props (rocks/crates/barrels), all
+ *     published with their per-instance base transforms for the reaction phase;
+ *   - four cloud layers at distinct altitudes (430 / 820 / 1280 / 1850 m) built
+ *     from canvas-soft puff sprites that drift slowly around the launch axis.
+ *
+ * Every texture is generated at runtime with canvas 2D or in a shader; this
+ * file never references an image URL, so the CDN host allowlist stays CDN-only.
+ *
+ * PUBLISHED HANDLES - LAUNCH_SCENE.collections (and runtime.collections)
+ *   terrainHeight(x, z)   world-Y of the levelled, reactive ground surface
+ *   terrain               group holding the near + far terrain meshes
+ *   terrainMeshes         [nearMesh, farMesh] (vertex colours + detail map)
+ *   terrainMaterial       the shared ground material
+ *   foliage[]             { name, mesh (InstancedMesh), count, base, restore() }
+ *                         grass tuft patches, tree trunks, tree canopies
+ *   props[]               loose rocks / crates / barrels, same handle shape
+ *   cloudLayers[]         { name, group, altitude, thickness, driftSpeed,
+ *                           sprites, material }
+ *   cloudAltitudes[]      the altitude bands an ascent passes through
+ *   instanced[]           every InstancedMesh handle (foliage then props)
+ *   layers[]              the raw cloud layer groups, in altitude order
+ *   sun / sunLight / sunDirection / skyDome / skyMaterial / skyRig / group
+ * ------------------------------------------------------------------------ */
+// ==== SECTION: world ====
+
+/* ---------------------------------------------------------------------------
+ * World configuration
  * ------------------------------------------------------------------------ */
 
-function disposeMaterial(material) {
-  Object.keys(material).forEach(function (key) {
-    const value = material[key];
-    if (value && value.isTexture && typeof value.dispose === 'function') value.dispose();
-  });
-  material.dispose();
-}
+/* ~46 degrees of elevation: strong, high-contrast midday sunlight. */
+const SUN_DIRECTION = new THREE.Vector3(-0.42, 0.72, -0.55).normalize();
+const SUN_DISTANCE = 900;
+const SKY_RADIUS = 5000;
 
-function disposeTree(root) {
-  root.traverse(function (object) {
-    if (object.geometry && typeof object.geometry.dispose === 'function') object.geometry.dispose();
-    if (Array.isArray(object.material)) object.material.forEach(disposeMaterial);
-    else if (object.material) disposeMaterial(object.material);
-    if (object.isLight) {
-      if (object.shadow && object.shadow.map) object.shadow.map.dispose();
-      if (typeof object.dispose === 'function') object.dispose();
-    }
-  });
-}
+const TERRAIN = {
+  radius: 4200,          // outer radius of the heightfield (fades into haze)
+  nearRadius: 360,       // radius of the finer near-field mesh around the pad
+  thetaSegments: 168,    // angular resolution shared by both meshes (seamless)
+  nearPhiSegments: 48,   // radial rings of the near mesh (~7.5 m steps)
+  farPhiSegments: 56,    // radial rings of the far mesh (~69 m steps)
+  padFlattenRadius: 64,  // fully levelled launch apron, terrainHeight() == 0
+  padBlendRadius: 170,   // graded cut/fill blend back into the natural ground
+  clearingRadius: 64,    // gravel clearing tint, matched to the levelled apron
+  ridgeStart: 760,       // where the ground starts lifting into distant hills
+  ridgeFull: 2400,       // hills fully developed from here outward
+  detailTile: 96         // metres covered by one tile of the ground detail map
+};
 
-/* Vertical blue-daylight gradient painted into an offscreen canvas; no asset. */
-function createSkyTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 8;
-  canvas.height = 256;
-  const context = canvas.getContext('2d');
-  const gradient = context.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0.00, '#1a63c8');
-  gradient.addColorStop(0.42, '#57a8ec');
-  gradient.addColorStop(0.70, '#a8d6f7');
-  gradient.addColorStop(0.88, '#e6f3ff');
-  gradient.addColorStop(1.00, '#ffffff');
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.needsUpdate = true;
-  return texture;
-}
+/* Seven saturated colour bands; the ramp blends softly so the layers read as
+ * painted strata rather than hard contour lines. */
+const TERRAIN_RAMP = [
+  { y0: -4000, y1: -18, color: new THREE.Color(0x2f6f3f) },  // shaded valley green
+  { y0: -18, y1: 3, color: new THREE.Color(0x86b83c) },      // low meadow green
+  { y0: 3, y1: 26, color: new THREE.Color(0x55a12b) },       // saturated grass
+  { y0: 26, y1: 80, color: new THREE.Color(0x2f8a2c) },      // deep green slope
+  { y0: 80, y1: 160, color: new THREE.Color(0xc4822e) },     // sunlit ochre
+  { y0: 160, y1: 260, color: new THREE.Color(0xa54e28) },    // rust rock
+  { y0: 260, y1: 360, color: new THREE.Color(0x8d7f6a) },    // grey rock
+  { y0: 360, y1: 1e9, color: new THREE.Color(0xdae5ea) }     // pale highland
+];
+const TERRAIN_CLEARING_COLOR = new THREE.Color(0xc9a86a);    // warm gravel apron tint
 
+/* Grass blade and foliage colours are per-instance tints; every texture below
+ * is painted near-white so these saturated tints survive the multiply. */
+const GRASS_TINTS = [0x79bb2f, 0x8ecb3c, 0x5ba428, 0x9ed245, 0x4d9226, 0xa8c93f];
+const CANOPY_TINTS = [0x3f9128, 0x57a72f, 0x2f7c36, 0x78b43a, 0x9ab63c, 0xc08a30, 0x2b6b45];
+const BOULDER_TINTS = [0x8b8377, 0x9a8d7c, 0x776f63, 0xa79a86, 0x6e6a63];
+const CRATE_TINTS = [0xb5803c, 0xc2903f, 0x8f6a34, 0xa87b3d];
+const BARREL_TINTS = [0xd05a24, 0xb84a1e, 0x9aa3a8, 0xd9a02b];
+
+/* Cloud layers at distinct altitudes. The ascent climbs through all of them;
+ * the first clusters of every layer sit near the launch axis on purpose. */
+const CLOUD_LAYER_SPECS = [
+  { name: 'cloud-layer-low-cumulus', altitude: 430, thickness: 55, width: 210, flatten: 0.42, drift: 0.0040, opacity: 0.98, tint: 0xfffdf6, seed: 8101, radiusMin: 900, radiusMax: 2700 },
+  { name: 'cloud-layer-mid-cumulus', altitude: 820, thickness: 85, width: 300, flatten: 0.36, drift: -0.0029, opacity: 0.96, tint: 0xffffff, seed: 8102, radiusMin: 1500, radiusMax: 3200 },
+  { name: 'cloud-layer-high-altocumulus', altitude: 1280, thickness: 120, width: 400, flatten: 0.30, drift: 0.0022, opacity: 0.92, tint: 0xfbfeff, seed: 8103, radiusMin: 2300, radiusMax: 3600 },
+  { name: 'cloud-layer-cirrus-veil', altitude: 1850, thickness: 150, width: 540, flatten: 0.20, drift: -0.0015, opacity: 0.68, tint: 0xeef7ff, seed: 8104, radiusMin: 3100, radiusMax: 4400 }
+];
+
+/* ---------------------------------------------------------------------------
+ * Shared helpers (deterministic, allocation free)
+ * ------------------------------------------------------------------------ */
+
+/* Small deterministic PRNG: every scatter, texture speck and cloud puff in the
+ * world is reproducible, so the launch site looks identical on every load. */
 function seededRandom(seed) {
   let value = seed >>> 0;
   return function random() {
@@ -488,140 +533,857 @@ function seededRandom(seed) {
   };
 }
 
-const worldStub = {
+function smootherstep(t) {
+  const x = t < 0 ? 0 : t > 1 ? 1 : t;
+  return x * x * x * (x * (x * 6 - 15) + 10);
+}
+
+function hash2D(x, y) {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+function valueNoise2D(x, y) {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const u = smootherstep(x - xi);
+  const v = smootherstep(y - yi);
+  const a = hash2D(xi, yi);
+  const b = hash2D(xi + 1, yi);
+  const c = hash2D(xi, yi + 1);
+  const d = hash2D(xi + 1, yi + 1);
+  const top = a + (b - a) * u;
+  const bottom = c + (d - c) * u;
+  return top + (bottom - top) * v;
+}
+
+/* Fractal value noise in 0..1, used by the terrain and the colour bands. */
+function fbm(x, y, octaves, seed) {
+  const offset = seed * 1.37;
+  let amplitude = 1;
+  let frequency = 1;
+  let sum = 0;
+  let norm = 0;
+  for (let i = 0; i < octaves; i += 1) {
+    sum += valueNoise2D(x * frequency + offset, y * frequency - offset) * amplitude;
+    norm += amplitude;
+    amplitude *= 0.5;
+    frequency *= 2.06;
+  }
+  return sum / norm;
+}
+
+function signedFbm(x, y, octaves, seed) {
+  return fbm(x, y, octaves, seed) * 2 - 1;
+}
+
+/* The sky is a raw ShaderMaterial, so its colour goes straight to the
+ * framebuffer without the working-colour-space conversion three applies to
+ * built-in materials. These swatches are therefore authored in display space,
+ * which keeps the daytime blue exactly as vivid as it is written here. */
+function skySwatch(hex) {
+  return new THREE.Color().setHex(hex, THREE.LinearSRGBColorSpace);
+}
+
+/* ---------------------------------------------------------------------------
+ * Terrain heightfield - the single source of truth every phase reuses
+ * ------------------------------------------------------------------------ */
+
+/* Natural relief: broad landforms, medium rolls, fine ground detail and the
+ * distant hill wall, all levelled flat across the launch apron. */
+function terrainHeight(x, z) {
+  const radius = Math.sqrt(x * x + z * z);
+  let height = signedFbm(x / 1150, z / 1150, 4, 11.7) * 34;
+  height += signedFbm(x / 330, z / 330, 3, 41.3) * 9.5;
+  height += signedFbm(x / 96, z / 96, 2, 7.9) * 1.6;
+  height += signedFbm(x / 26, z / 26, 1, 3.1) * 0.35;
+
+  /* Distant hills: the ground lifts away from the launch site so the horizon
+   * is a ranged ridge line that fades into the haze. */
+  const ridge = smootherstep((radius - TERRAIN.ridgeStart) / (TERRAIN.ridgeFull - TERRAIN.ridgeStart));
+  height += ridge * (110 + fbm(x / 900, z / 900, 3, 23.4) * 260 + radius * 0.02);
+
+  /* Levelled launch apron: exactly y = 0 inside the pad radius, graded back
+   * into the natural ground over the blend band. */
+  const levelled = 1 - smootherstep((radius - TERRAIN.padFlattenRadius) /
+    (TERRAIN.padBlendRadius - TERRAIN.padFlattenRadius));
+  return height * (1 - levelled);
+}
+
+/* Rise over run of the heightfield, sampled analytically (no mesh readback). */
+function terrainSlope(x, z) {
+  const step = 4;
+  const dx = terrainHeight(x + step, z) - terrainHeight(x - step, z);
+  const dz = terrainHeight(x, z + step) - terrainHeight(x, z - step);
+  return Math.sqrt(dx * dx + dz * dz) / (2 * step);
+}
+
+/* Banded colour ramp with soft transitions between neighbouring bands. */
+function sampleTerrainRamp(height, target) {
+  for (let i = 0; i < TERRAIN_RAMP.length; i += 1) {
+    const band = TERRAIN_RAMP[i];
+    if (height < band.y1) {
+      const previous = i > 0 ? TERRAIN_RAMP[i - 1] : null;
+      if (!previous) return target.copy(band.color);
+      const span = Math.max(1, band.y1 - band.y0);
+      return target.copy(previous.color).lerp(band.color, smootherstep((height - band.y0) / (span * 0.5)));
+    }
+  }
+  return target.copy(TERRAIN_RAMP[TERRAIN_RAMP.length - 1].color);
+}
+
+/* ---------------------------------------------------------------------------
+ * Procedural canvas textures (never an image URL)
+ * ------------------------------------------------------------------------ */
+
+function makeCanvasTexture(size, width, height, draw) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width || size;
+  canvas.height = height || size;
+  draw(canvas.getContext('2d'), canvas.width, canvas.height);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/* Mottled, near-white ground detail: multiplied by the band vertex colours so
+ * the terrain keeps its saturation while losing its flatness. */
+function createGroundDetailTexture() {
+  return makeCanvasTexture(512, 512, 512, function (context, width, height) {
+    const random = seededRandom(20260921);
+    context.fillStyle = '#f2f2f0';
+    context.fillRect(0, 0, width, height);
+
+    /* Soft mottling: lighter and darker patches of soil and dry grass. */
+    for (let i = 0; i < 1200; i += 1) {
+      const x = random() * width;
+      const y = random() * height;
+      const radius = 5 + random() * 30;
+      const light = random() > 0.5;
+      const gradient = context.createRadialGradient(x, y, 0, x, y, radius);
+      gradient.addColorStop(0, light ? 'rgba(255,255,255,0.22)' : 'rgba(88,74,50,0.22)');
+      gradient.addColorStop(1, 'rgba(255,255,255,0)');
+      context.fillStyle = gradient;
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fill();
+    }
+
+    /* Fine grain so the ground never looks like flat paint. */
+    for (let i = 0; i < 26000; i += 1) {
+      const dark = random() > 0.5;
+      context.fillStyle = dark ? 'rgba(74,64,46,0.14)' : 'rgba(255,255,252,0.16)';
+      context.fillRect(random() * width, random() * height, 1 + random() * 2, 1 + random() * 2);
+    }
+
+    /* Faint tiling seams would show, so break the edges with a little noise. */
+    for (let i = 0; i < 400; i += 1) {
+      context.fillStyle = 'rgba(255,255,255,0.05)';
+      context.fillRect(0, random() * height, width, 1);
+      context.fillRect(random() * width, 0, 1, height);
+    }
+  });
+}
+
+/* Bright, near-white blades: the per-instance tint supplies the green. */
+function createGrassBladeTexture() {
+  return makeCanvasTexture(128, 128, 128, function (context, width, height) {
+    const random = seededRandom(31337);
+    context.clearRect(0, 0, width, height);
+    for (let i = 0; i < 13; i += 1) {
+      const baseX = 12 + random() * (width - 24);
+      const baseY = height;
+      const tipX = baseX + (random() - 0.5) * 46;
+      const tipY = 8 + random() * 52;
+      const bendX = baseX + (random() - 0.5) * 30;
+      const bladeWidth = 5 + random() * 7;
+      const gradient = context.createLinearGradient(baseX, baseY, tipX, tipY);
+      gradient.addColorStop(0, 'rgba(214,232,186,0.98)');
+      gradient.addColorStop(0.55, 'rgba(238,248,216,0.98)');
+      gradient.addColorStop(1, 'rgba(252,255,238,0.98)');
+      context.fillStyle = gradient;
+      context.beginPath();
+      context.moveTo(baseX - bladeWidth * 0.5, baseY);
+      context.quadraticCurveTo(bendX - bladeWidth * 0.25, (baseY + tipY) * 0.5, tipX - 1.5, tipY);
+      context.lineTo(tipX + 1.5, tipY);
+      context.quadraticCurveTo(bendX + bladeWidth * 0.25, (baseY + tipY) * 0.5, baseX + bladeWidth * 0.5, baseY);
+      context.closePath();
+      context.fill();
+    }
+  });
+}
+
+/* Soft procedural puff: a bright core with billowy lobes and a slightly cooler
+ * underside, so the sprite edge dissolves instead of ending on a hard disc. */
+function createCloudPuffTexture() {
+  return makeCanvasTexture(256, 256, 256, function (context, width, height) {
+    const random = seededRandom(50777);
+    const centre = width * 0.5;
+    const core = context.createRadialGradient(centre, centre, 0, centre, centre, centre);
+    core.addColorStop(0.0, 'rgba(255,255,255,1)');
+    core.addColorStop(0.42, 'rgba(255,255,255,0.94)');
+    core.addColorStop(0.72, 'rgba(246,251,255,0.44)');
+    core.addColorStop(1.0, 'rgba(238,247,255,0)');
+    context.fillStyle = core;
+    context.fillRect(0, 0, width, height);
+
+    context.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 28; i += 1) {
+      const angle = random() * Math.PI * 2;
+      const distance = random() * centre * 0.62;
+      const x = centre + Math.cos(angle) * distance;
+      const y = centre + Math.sin(angle) * distance * 0.72;
+      const radius = width * (0.09 + random() * 0.17);
+      const lobe = context.createRadialGradient(x, y, 0, x, y, radius);
+      lobe.addColorStop(0, 'rgba(255,255,255,0.60)');
+      lobe.addColorStop(0.62, 'rgba(252,254,255,0.22)');
+      lobe.addColorStop(1, 'rgba(248,252,255,0)');
+      context.fillStyle = lobe;
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fill();
+    }
+
+    context.globalCompositeOperation = 'source-atop';
+    const shade = context.createLinearGradient(0, 0, 0, height);
+    shade.addColorStop(0, 'rgba(255,255,255,0)');
+    shade.addColorStop(0.60, 'rgba(228,240,252,0.10)');
+    shade.addColorStop(1, 'rgba(202,222,244,0.34)');
+    context.fillStyle = shade;
+    context.fillRect(0, 0, width, height);
+  });
+}
+
+/* Wide sun halo; the sharp solar disc itself is a small emissive sphere. */
+function createSunGlowTexture() {
+  return makeCanvasTexture(256, 256, 256, function (context, width, height) {
+    const centre = width * 0.5;
+    const glow = context.createRadialGradient(centre, centre, 0, centre, centre, centre);
+    glow.addColorStop(0.0, 'rgba(255,252,236,1)');
+    glow.addColorStop(0.22, 'rgba(255,246,212,0.55)');
+    glow.addColorStop(0.55, 'rgba(255,240,198,0.16)');
+    glow.addColorStop(1.0, 'rgba(255,238,196,0)');
+    context.fillStyle = glow;
+    context.fillRect(0, 0, width, height);
+  });
+}
+
+/* ---------------------------------------------------------------------------
+ * Geometry helpers
+ * ------------------------------------------------------------------------ */
+
+/* Two crossed quads, base on y = 0, height 1 - the classic grass tuft. */
+function createGrassTuftGeometry() {
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array([
+    -0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0,
+    0, 0, -0.5, 0, 0, 0.5, 0, 1, 0.5, 0, 1, -0.5
+  ]);
+  const uvs = new Float32Array([
+    0, 0, 1, 0, 1, 1, 0, 1,
+    0, 0, 1, 0, 1, 1, 0, 1
+  ]);
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geometry.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/* Radial heightfield ring: polar vertices displaced by terrainHeight(), with
+ * world-space UVs so the detail map tiles without a polar pinwheel. */
+function createTerrainMesh(name, innerRadius, outerRadius, phiSegments, material) {
+  const geometry = new THREE.RingGeometry(innerRadius, outerRadius, TERRAIN.thetaSegments, phiSegments);
+  geometry.rotateX(-Math.PI / 2); // lie flat in XZ, +Y up
+
+  const position = geometry.attributes.position;
+  const uv = geometry.attributes.uv;
+  const colors = new Float32Array(position.count * 3);
+  const color = new THREE.Color();
+
+  for (let i = 0; i < position.count; i += 1) {
+    const x = position.getX(i);
+    const z = position.getZ(i);
+    const height = terrainHeight(x, z);
+    position.setY(i, height);
+
+    /* Colour band by height, jittered by noise so the bands interlock. */
+    const radius = Math.sqrt(x * x + z * z);
+    const jitter = signedFbm(x / 120, z / 120, 2, 17.2) * 6 + signedFbm(x / 520, z / 520, 2, 5.5) * 26;
+    sampleTerrainRamp(height + jitter, color);
+    if (radius < TERRAIN.clearingRadius + 60) {
+      const clearing = 1 - smootherstep((radius - TERRAIN.clearingRadius) / 60);
+      color.lerp(TERRAIN_CLEARING_COLOR, clearing * 0.9);
+    }
+    colors[i * 3] = color.r;
+    colors[i * 3 + 1] = color.g;
+    colors[i * 3 + 2] = color.b;
+
+    uv.setXY(i, x / TERRAIN.detailTile, z / TERRAIN.detailTile);
+  }
+
+  position.needsUpdate = true;
+  uv.needsUpdate = true;
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+
+  /* Slope shading, so ridges catch the sun and hollows stay readable. */
+  const normal = geometry.attributes.normal;
+  const colorAttribute = geometry.attributes.color;
+  for (let i = 0; i < position.count; i += 1) {
+    const up = Math.min(1, Math.max(0, normal.getY(i)));
+    const shade = 0.78 + 0.34 * up;
+    colorAttribute.setXYZ(i, colorAttribute.getX(i) * shade, colorAttribute.getY(i) * shade, colorAttribute.getZ(i) * shade);
+  }
+  colorAttribute.needsUpdate = true;
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = name;
+  mesh.receiveShadow = true;
+  mesh.matrixAutoUpdate = false;
+  mesh.updateMatrix();
+  return mesh;
+}
+
+/* ---------------------------------------------------------------------------
+ * Instanced scatter - every handle keeps its per-instance base transform so
+ * the reaction phase can displace instances and restore them cheaply.
+ * ------------------------------------------------------------------------ */
+
+function createInstancedHandle(name, geometry, material, transforms, tintColors) {
+  const count = transforms.length;
+  const mesh = new THREE.InstancedMesh(geometry, material, count);
+  mesh.name = name;
+  const matrix = new THREE.Matrix4();
+  const color = new THREE.Color();
+  for (let i = 0; i < count; i += 1) {
+    matrix.fromArray(transforms[i]);
+    mesh.setMatrixAt(i, matrix);
+    if (tintColors) {
+      color.setHex(tintColors[i % tintColors.length]);
+      mesh.setColorAt(i, color);
+    }
+  }
+  /* Per-instance transforms are rewritten every frame once the exhaust phase
+   * is attached, so the attribute is flagged as dynamic. */
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+  const base = new Float32Array(count * 16);
+  for (let i = 0; i < count; i += 1) {
+    for (let element = 0; element < 16; element += 1) base[i * 16 + element] = transforms[i][element];
+  }
+
+  return {
+    name: name,
+    mesh: mesh,
+    count: count,
+    base: base,                         // Float32Array(count * 16), the rest pose
+    basePositions: (function () {
+      const positions = new Float32Array(count * 3);
+      for (let i = 0; i < count; i += 1) {
+        positions[i * 3] = base[i * 16 + 12];
+        positions[i * 3 + 1] = base[i * 16 + 13];
+        positions[i * 3 + 2] = base[i * 16 + 14];
+      }
+      return positions;
+    })(),
+    restore: function () {
+      mesh.instanceMatrix.array.set(base);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+  };
+}
+
+/* Compose a transform array from scattered ground positions. */
+function scatterTransforms(count, seed, options) {
+  const random = seededRandom(seed);
+  const transforms = [];
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  const matrix = new THREE.Matrix4();
+  const up = new THREE.Vector3(0, 1, 0);
+  const tintSource = options.tints || [0xffffff];
+  const tints = [];
+  const minRadius = options.minRadius;
+  const maxRadius = options.maxRadius;
+  const power = options.radiusPower || 1;
+  const sink = options.sink || 0;
+  let attempts = 0;
+
+  while (transforms.length < count && attempts < count * 40) {
+    attempts += 1;
+    const angle = random() * Math.PI * 2;
+    const radius = minRadius + Math.pow(random(), power) * (maxRadius - minRadius);
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    if (terrainSlope(x, z) > options.maxSlope) continue;
+    const size = options.minScale + random() * (options.maxScale - options.minScale);
+    position.set(x, terrainHeight(x, z) - sink, z);
+    quaternion.setFromAxisAngle(up, random() * Math.PI * 2);
+    scale.set(size * (options.widthJitter ? 0.8 + random() * 0.4 : 1), size, size * (options.widthJitter ? 0.8 + random() * 0.4 : 1));
+    matrix.compose(position, quaternion, scale);
+    transforms.push(matrix.clone().toArray());
+    tints.push(tintSource[Math.floor(random() * tintSource.length)]);
+  }
+  return { transforms: transforms, tints: tints };
+}
+
+/* Grass grows in patches with a scattered fringe, which reads as ground cover
+ * instead of a uniform drizzle of blades. */
+function scatterGrassTransforms(count, seed) {
+  const random = seededRandom(seed);
+  const patchCount = Math.max(8, Math.round(count / 26));
+  const patches = [];
+  for (let i = 0; i < patchCount; i += 1) {
+    const angle = random() * Math.PI * 2;
+    const radius = 92 + Math.pow(random(), 0.8) * 780;
+    patches.push({ x: Math.cos(angle) * radius, z: Math.sin(angle) * radius, spread: 26 + random() * 52 });
+  }
+
+  const transforms = [];
+  const tints = [];
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  const matrix = new THREE.Matrix4();
+  const up = new THREE.Vector3(0, 1, 0);
+  let attempts = 0;
+
+  while (transforms.length < count && attempts < count * 25) {
+    attempts += 1;
+    const inPatch = random() < 0.82;
+    const patch = patches[Math.floor(random() * patches.length)];
+    const spread = inPatch ? patch.spread : 900;
+    const x = (inPatch ? patch.x : 0) + (random() - 0.5) * spread * 2;
+    const z = (inPatch ? patch.z : 0) + (random() - 0.5) * spread * 2;
+    const radius = Math.sqrt(x * x + z * z);
+    if (radius < TERRAIN.clearingRadius || radius > 1400) continue;
+    if (terrainSlope(x, z) > 0.6) continue;
+    const size = 0.9 + random() * 1.5;
+    position.set(x, terrainHeight(x, z) - 0.12, z);
+    quaternion.setFromAxisAngle(up, random() * Math.PI * 2);
+    scale.set(size * (0.85 + random() * 0.4), size * (0.8 + random() * 0.8), size);
+    matrix.compose(position, quaternion, scale);
+    transforms.push(matrix.clone().toArray());
+    tints.push(GRASS_TINTS[Math.floor(random() * GRASS_TINTS.length)]);
+  }
+  return { transforms: transforms, tints: tints };
+}
+
+/* ---------------------------------------------------------------------------
+ * World subsystem
+ * ------------------------------------------------------------------------ */
+
+const collections = {
   group: null,
+  skyRig: null,
+  skyDome: null,
+  skyMaterial: null,
   sun: null,
-  clouds: null,
+  sunLight: null,
+  sunDirection: SUN_DIRECTION.clone(),
+  terrain: null,
+  terrainMeshes: [],
+  terrainMaterial: null,
+  terrainHeight: terrainHeight,
+  terrainSlope: terrainSlope,
+  foliage: [],
+  props: [],
+  cloudLayers: [],
+  cloudAltitudes: [],
+  instanced: []                      // every InstancedMesh handle, for quality trims
+};
+
+const worldSystem = {
+  group: null,
+  skyRig: null,
+  sun: null,
+  layers: null,
+  instanced: null,
+  textures: null,
 
   init(ctx) {
     const group = new THREE.Group();
-    group.name = 'world-placeholder';
+    group.name = 'world';
 
-    const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(2800, 32, 16),
-      new THREE.MeshBasicMaterial({
-        map: createSkyTexture(),
-        side: THREE.BackSide,
-        depthWrite: false,
-        fog: false,
-        toneMapped: false
-      })
-    );
-    sky.name = 'sky-dome-placeholder';
-    sky.renderOrder = -1000;
-    group.add(sky);
+    /* ---------------- sky: procedural gradient dome + sun --------------- */
+    const skyMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uZenith: { value: skySwatch(0x1461d8) },
+        uMid: { value: skySwatch(0x4fa4f2) },
+        uHorizon: { value: skySwatch(0xd8ecff) },
+        uHaze: { value: skySwatch(0xf4fbff) },
+        uWarm: { value: skySwatch(0xffeccd) },
+        uSunGlow: { value: skySwatch(0xfff5dc) },
+        uSunDirection: { value: SUN_DIRECTION.clone() }
+      },
+      vertexShader: [
+        'varying vec3 vDirection;',
+        'void main() {',
+        '  vDirection = position;',
+        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+        '}'
+      ].join('\n'),
+      fragmentShader: [
+        'uniform vec3 uZenith;',
+        'uniform vec3 uMid;',
+        'uniform vec3 uHorizon;',
+        'uniform vec3 uHaze;',
+        'uniform vec3 uWarm;',
+        'uniform vec3 uSunGlow;',
+        'uniform vec3 uSunDirection;',
+        'varying vec3 vDirection;',
+        'void main() {',
+        '  vec3 dir = normalize(vDirection);',
+        '  float up = clamp(dir.y, 0.0, 1.0);',
+        '  float down = clamp(-dir.y, 0.0, 1.0);',
+        '  float t = pow(up, 0.65);',
+        '  vec3 color = mix(uHorizon, uMid, smoothstep(0.0, 0.5, t));',
+        '  color = mix(color, uZenith, smoothstep(0.45, 1.0, t));',
+        '  color = mix(color, uHaze, pow(1.0 - up, 9.0) * 0.9);',
+        '  color = mix(color, uHaze, down * 0.85);',
+        '  vec3 flatDir = normalize(vec3(dir.x, 0.0, dir.z) + vec3(1e-5));',
+        '  vec3 flatSun = normalize(vec3(uSunDirection.x, 0.0, uSunDirection.z) + vec3(1e-5));',
+        '  float sunSide = pow(max(dot(flatDir, flatSun), 0.0), 4.0) * pow(1.0 - up, 4.0);',
+        '  color = mix(color, uWarm, sunSide * 0.28);',
+        '  float sun = max(dot(dir, normalize(uSunDirection)), 0.0);',
+        '  color += uSunGlow * pow(sun, 24.0) * 0.22;',
+        '  color += uSunGlow * pow(sun, 3500.0) * 1.8;',
+        '  gl_FragColor = vec4(color, 1.0);',
+        '}'
+      ].join('\n'),
+      side: THREE.BackSide,
+      depthWrite: false,
+      depthTest: false,
+      fog: false,
+      toneMapped: false
+    });
 
-    /* Visual sun disc, matched to the key light direction below. */
-    const sunDirection = new THREE.Vector3(-420, 520, -560).normalize();
+    const skyRig = new THREE.Group();
+    skyRig.name = 'sky-rig';
+    const skyDome = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 48, 32), skyMaterial);
+    skyDome.name = 'sky-dome';
+    skyDome.renderOrder = -1000;
+    skyDome.frustumCulled = false;
+    skyRig.add(skyDome);
+
     const sunDisc = new THREE.Mesh(
-      new THREE.SphereGeometry(70, 24, 16),
-      new THREE.MeshBasicMaterial({ color: 0xfff8e6, fog: false, toneMapped: false })
+      new THREE.SphereGeometry(110, 20, 12),
+      new THREE.MeshBasicMaterial({ color: 0xfff8e8, fog: false, toneMapped: false, depthWrite: false })
     );
-    sunDisc.name = 'sun-disc-placeholder';
-    sunDisc.position.copy(sunDirection).multiplyScalar(2300);
-    group.add(sunDisc);
+    sunDisc.name = 'sun-disc';
+    sunDisc.position.copy(SUN_DIRECTION).multiplyScalar(4400);
+    skyRig.add(sunDisc);
 
-    /* Key light: strong, warm, soft-shadowed. */
-    const sun = new THREE.DirectionalLight(0xfff3e2, 3.1);
-    sun.name = 'sun-placeholder';
-    sun.position.copy(sunDirection).multiplyScalar(880);
-    sun.castShadow = ctx.quality.shadows;
+    const sunGlowTexture = createSunGlowTexture();
+    const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: sunGlowTexture,
+      color: 0xfff3d6,
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false,
+      fog: false,
+      toneMapped: false
+    }));
+    sunGlow.name = 'sun-glow';
+    sunGlow.position.copy(SUN_DIRECTION).multiplyScalar(4300);
+    sunGlow.scale.set(1500, 1500, 1);
+    skyRig.add(sunGlow);
+    group.add(skyRig);
+
+    /* ---------------- light: strong sun + bright sky fill --------------- */
+    const sun = new THREE.DirectionalLight(0xfff2dd, 3.5);
+    sun.name = 'sun-light';
+    sun.position.copy(SUN_DIRECTION).multiplyScalar(SUN_DISTANCE);
+    sun.castShadow = !!ctx.quality.shadows;
     sun.shadow.mapSize.set(ctx.quality.shadowMapSize, ctx.quality.shadowMapSize);
     sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 1900;
-    sun.shadow.camera.left = -330;
-    sun.shadow.camera.right = 330;
-    sun.shadow.camera.top = 330;
-    sun.shadow.camera.bottom = -330;
-    sun.shadow.bias = -0.0005;
-    sun.shadow.normalBias = 0.6;
-    sun.target.position.set(0, 10, 0);
+    sun.shadow.camera.far = 2400;
+    sun.shadow.camera.left = -360;
+    sun.shadow.camera.right = 360;
+    sun.shadow.camera.top = 360;
+    sun.shadow.camera.bottom = -360;
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.7;
+    sun.target.position.set(0, 0, 0);
     group.add(sun);
     group.add(sun.target);
 
-    const ambient = new THREE.HemisphereLight(0x9fc9ff, 0x6b7a4a, 0.9);
-    ambient.name = 'sky-ambient-placeholder';
-    group.add(ambient);
+    const skyFill = new THREE.HemisphereLight(0xbcd8ff, 0x6f7d4a, 1.25);
+    skyFill.name = 'sky-fill';
+    group.add(skyFill);
 
-    /* Ground plane plus a cleared apron, both receiving the soft shadows. */
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(9000, 9000),
-      new THREE.MeshStandardMaterial({ color: 0x6f9d4d, roughness: 1, metalness: 0 })
-    );
-    ground.name = 'ground-placeholder';
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    group.add(ground);
+    /* ---------------- terrain: saturated layered heightfield ------------ */
+    const groundDetail = createGroundDetailTexture();
+    groundDetail.anisotropy = ctx.renderer ? Math.min(4, ctx.renderer.capabilities.getMaxAnisotropy()) : 1;
+    const terrainMaterial = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      map: groundDetail,
+      roughness: 0.96,
+      metalness: 0
+    });
+    terrainMaterial.name = 'terrain-material';
 
-    const apron = new THREE.Mesh(
-      new THREE.CircleGeometry(34, 64),
-      new THREE.MeshStandardMaterial({ color: 0xc7b184, roughness: 1, metalness: 0 })
-    );
-    apron.name = 'pad-apron-placeholder';
-    apron.rotation.x = -Math.PI / 2;
-    apron.position.y = 0.06;
-    apron.receiveShadow = true;
-    group.add(apron);
+    const nearMesh = createTerrainMesh('terrain-near', 0.001, TERRAIN.nearRadius, TERRAIN.nearPhiSegments, terrainMaterial);
+    const farMesh = createTerrainMesh('terrain-far', TERRAIN.nearRadius, TERRAIN.radius, TERRAIN.farPhiSegments, terrainMaterial);
+    const terrain = new THREE.Group();
+    terrain.name = 'terrain';
+    terrain.add(nearMesh);
+    terrain.add(farMesh);
+    group.add(terrain);
 
-    /* Colourful white cloud puffs; the closest ones cast the visible shadows. */
-    const random = seededRandom(20260921);
-    const puffGeometry = new THREE.SphereGeometry(1, 14, 10);
-    const cloudMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.98, metalness: 0 });
-    const clouds = new THREE.Group();
-    clouds.name = 'clouds-placeholder';
-    const puffCount = ctx.quality.cloudPuffs;
-    for (let index = 0; index < puffCount; index += 1) {
-      const near = index < 4; // first clouds sit inside the shadow frustum
-      const angle = random() * Math.PI * 2;
-      const radius = near ? 80 + random() * 140 : 340 + random() * 900;
-      const height = near ? 105 + random() * 60 : 170 + random() * 220;
-      const scale = near ? 18 + random() * 12 : 26 + random() * 30;
-      const cloud = new THREE.Group();
-      cloud.position.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius);
-      const blobs = 4 + Math.floor(random() * 3);
-      for (let blob = 0; blob < blobs; blob += 1) {
-        const puff = new THREE.Mesh(puffGeometry, cloudMaterial);
-        puff.position.set((random() - 0.5) * scale * 1.9, (random() - 0.5) * scale * 0.5, (random() - 0.5) * scale * 1.3);
-        const size = scale * (0.55 + random() * 0.6);
-        puff.scale.set(size, size * 0.75, size);
-        puff.castShadow = near;
-        cloud.add(puff);
+    /* ---------------- instanced grass, foliage and loose props ---------- */
+    const bladeTexture = createGrassBladeTexture();
+    const bladeMaterial = new THREE.MeshStandardMaterial({
+      map: bladeTexture,
+      transparent: false,
+      alphaTest: 0.45,
+      side: THREE.DoubleSide,
+      roughness: 0.9,
+      metalness: 0
+    });
+    bladeMaterial.name = 'grass-blade-material';
+
+    const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x7a5334, roughness: 0.95, metalness: 0 });
+    const canopyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0, flatShading: true });
+    const boulderMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0 });
+    const crateMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0.05 });
+    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.35 });
+
+    const trunkGeometry = new THREE.CylinderGeometry(0.32, 0.52, 4.2, 6, 1);
+    trunkGeometry.translate(0, 2.1, 0);
+    const canopyGeometry = new THREE.IcosahedronGeometry(2.9, 0);
+    canopyGeometry.translate(0, 5.4, 0);
+    const boulderGeometry = new THREE.DodecahedronGeometry(1, 0);
+    boulderGeometry.translate(0, 0.72, 0);
+    const crateGeometry = new THREE.BoxGeometry(1.7, 1.7, 1.7);
+    crateGeometry.translate(0, 0.85, 0);
+    const barrelGeometry = new THREE.CylinderGeometry(0.52, 0.52, 1.35, 10, 1);
+    barrelGeometry.translate(0, 0.68, 0);
+
+    const puffs = Math.max(5, Math.round(ctx.quality.cloudPuffs));
+    const grassCount = Math.round(900 + puffs * 130);          // ~2720 at high
+    const treeCount = Math.round(120 + puffs * 8);             // ~232 at high
+    const boulderCount = Math.round(120 + puffs * 6);          // ~204 at high
+    const crateCount = 40;
+    const barrelCount = 24;
+
+    const grassScatter = scatterGrassTransforms(grassCount, 6151);
+    const grass = createInstancedHandle('foliage-grass', createGrassTuftGeometry(), bladeMaterial, grassScatter.transforms, grassScatter.tints);
+    grass.mesh.receiveShadow = false;
+    grass.mesh.castShadow = false;
+
+    const treeScatter = scatterTransforms(treeCount, 7331, {
+      minRadius: 150, maxRadius: 2600, radiusPower: 0.9, maxSlope: 0.42,
+      minScale: 0.75, maxScale: 2.1, sink: 0.4, widthJitter: true, tints: CANOPY_TINTS
+    });
+    const trunks = createInstancedHandle('foliage-tree-trunks', trunkGeometry, trunkMaterial, treeScatter.transforms, null);
+    const canopies = createInstancedHandle('foliage-tree-canopies', canopyGeometry, canopyMaterial, treeScatter.transforms, treeScatter.tints);
+    trunks.mesh.castShadow = true;
+    trunks.mesh.receiveShadow = true;
+    canopies.mesh.castShadow = true;
+    canopies.mesh.receiveShadow = true;
+
+    const boulderScatter = scatterTransforms(boulderCount, 9104, {
+      minRadius: 96, maxRadius: 2600, radiusPower: 1.0, maxSlope: 0.7,
+      minScale: 0.55, maxScale: 2.6, sink: 0.35, widthJitter: true, tints: BOULDER_TINTS
+    });
+    const crateScatter = scatterTransforms(crateCount, 4231, {
+      minRadius: 130, maxRadius: 620, radiusPower: 0.85, maxSlope: 0.3,
+      minScale: 0.8, maxScale: 1.35, sink: 0.55, widthJitter: true, tints: CRATE_TINTS
+    });
+    const barrelScatter = scatterTransforms(barrelCount, 5507, {
+      minRadius: 112, maxRadius: 460, radiusPower: 0.9, maxSlope: 0.3,
+      minScale: 0.85, maxScale: 1.4, sink: 0.5, widthJitter: true, tints: BARREL_TINTS
+    });
+
+    const boulders = createInstancedHandle('prop-boulders', boulderGeometry, boulderMaterial, boulderScatter.transforms, boulderScatter.tints);
+    const crates = createInstancedHandle('prop-crates', crateGeometry, crateMaterial, crateScatter.transforms, crateScatter.tints);
+    const barrels = createInstancedHandle('prop-barrels', barrelGeometry, barrelMaterial, barrelScatter.transforms, barrelScatter.tints);
+    [boulders, crates, barrels].forEach(function (handle) {
+      handle.mesh.castShadow = true;
+      handle.mesh.receiveShadow = true;
+    });
+
+    const foliage = [grass, trunks, canopies];
+    const props = [boulders, crates, barrels];
+    foliage.forEach(function (handle) { group.add(handle.mesh); });
+    props.forEach(function (handle) { group.add(handle.mesh); });
+
+    /* ---------------- cloud layers at distinct altitudes ---------------- */
+    const puffTexture = createCloudPuffTexture();
+    const clusterCount = Math.max(6, Math.min(10, Math.round(puffs * 0.65) + 2));
+    const puffsPerCluster = Math.max(5, Math.min(7, Math.round(puffs * 0.15) + 4));
+    const layers = [];
+    const layerGroups = [];
+
+    CLOUD_LAYER_SPECS.forEach(function (spec, index) {
+      const material = new THREE.SpriteMaterial({
+        map: puffTexture,
+        color: spec.tint,
+        transparent: true,
+        opacity: spec.opacity,
+        depthWrite: false,
+        fog: true,
+        toneMapped: false
+      });
+      material.name = spec.name + '-material';
+
+      const layerGroup = new THREE.Group();
+      layerGroup.name = spec.name;
+      layerGroup.position.y = spec.altitude;
+
+      const random = seededRandom(spec.seed);
+      const sprites = [];
+      for (let c = 0; c < clusterCount; c += 1) {
+        /* The first clusters hug the launch axis so the ascent flies through
+         * the layer; the rest spread out to the horizon. */
+        const nearAxis = c < 2;
+        const angle = random() * Math.PI * 2;
+        const radius = nearAxis
+          ? 40 + random() * 150
+          : spec.radiusMin + Math.pow(random(), 0.6) * (spec.radiusMax - spec.radiusMin);
+        const cluster = new THREE.Group();
+        cluster.name = spec.name + '-cluster-' + c;
+        cluster.position.set(
+          Math.cos(angle) * radius,
+          (random() - 0.5) * spec.thickness,
+          Math.sin(angle) * radius
+        );
+
+        const width = spec.width * (0.7 + random() * 0.7);
+        for (let p = 0; p < puffsPerCluster; p += 1) {
+          const sprite = new THREE.Sprite(material);
+          sprite.name = spec.name + '-puff';
+          sprite.position.set(
+            (random() - 0.5) * width,
+            (random() - 0.5) * width * spec.flatten * 0.9,
+            (random() - 0.5) * width * 0.7
+          );
+          const size = width * (0.45 + random() * 0.55);
+          sprite.scale.set(size, size * spec.flatten, 1);
+          sprite.renderOrder = 10 + index;
+          cluster.add(sprite);
+          sprites.push(sprite);
+        }
+        layerGroup.add(cluster);
       }
-      clouds.add(cloud);
-    }
-    group.add(clouds);
+
+      group.add(layerGroup);
+      layerGroups.push(layerGroup);
+      layers.push({
+        name: spec.name,
+        group: layerGroup,
+        altitude: spec.altitude,
+        thickness: spec.thickness,
+        driftSpeed: spec.drift,
+        opacity: spec.opacity,
+        spriteCount: sprites.length,
+        sprites: sprites,
+        material: material,
+        phase: index * 1.7
+      });
+    });
+
+    /* ---------------- wire up and publish the handles -------------------- */
+    ctx.scene.add(group);
 
     this.group = group;
+    this.skyRig = skyRig;
     this.sun = sun;
-    this.clouds = clouds;
-    ctx.scene.add(group);
+    this.layers = layers;
+    this.instanced = foliage.concat(props);
+    this.textures = [groundDetail, bladeTexture, puffTexture, sunGlowTexture];
+
+    collections.group = group;
+    collections.skyRig = skyRig;
+    collections.skyDome = skyDome;
+    collections.skyMaterial = skyMaterial;
+    collections.sun = sunDisc;
+    collections.sunLight = sun;
+    collections.sunDirection = SUN_DIRECTION.clone();
+    collections.terrain = terrain;
+    collections.terrainMeshes = [nearMesh, farMesh];
+    collections.terrainMaterial = terrainMaterial;
+    collections.foliage = foliage;
+    collections.props = props;
+    collections.cloudLayers = layers;
+    collections.cloudAltitudes = layers.map(function (layer) { return layer.altitude; });
+    collections.instanced = foliage.concat(props);
+    collections.layers = layerGroups;
+
+    runtime.collections = collections;
+    runtime.world = worldSystem;
+    window.LAUNCH_SCENE.collections = collections;
   },
 
+  /* Light and shadow budget follow the active quality tier. */
   onQualityChange(qualityTier) {
-    if (!this.sun) return;
-    this.sun.castShadow = qualityTier.shadows;
-    this.sun.shadow.mapSize.set(qualityTier.shadowMapSize, qualityTier.shadowMapSize);
-    if (this.sun.shadow.map) {
-      this.sun.shadow.map.dispose();
-      this.sun.shadow.map = null;
+    if (this.sun) {
+      this.sun.castShadow = !!qualityTier.shadows;
+      if (this.sun.shadow.mapSize.x !== qualityTier.shadowMapSize) {
+        this.sun.shadow.mapSize.set(qualityTier.shadowMapSize, qualityTier.shadowMapSize);
+        if (this.sun.shadow.map) {
+          this.sun.shadow.map.dispose();
+          this.sun.shadow.map = null;
+        }
+      }
     }
+    const scale = qualityTier.id === 'high' ? 1 : qualityTier.id === 'medium' ? 0.7 : 0.45;
+    (this.instanced || []).forEach(function (handle) {
+      handle.mesh.count = Math.max(1, Math.round(handle.count * scale));
+      handle.mesh.instanceMatrix.needsUpdate = true;
+    });
   },
 
   update(dt) {
-    if (this.clouds) this.clouds.rotation.y += dt * 0.0015; // slow high-altitude drift
+    /* The sky rig rides with the camera so the gradient and the sun keep their
+     * bearings while the camera orbits or climbs. */
+    if (this.skyRig) this.skyRig.position.copy(camera.position);
+
+    const layers = this.layers;
+    if (!layers) return;
+    for (let i = 0; i < layers.length; i += 1) {
+      const layer = layers[i];
+      layer.group.rotation.y += dt * layer.driftSpeed;   // slow high-altitude drift
+      layer.group.position.y = layer.altitude + Math.sin((state.elapsed + layer.phase) * 0.05) * 6;
+    }
   },
 
   dispose(ctx) {
-    if (!this.group) return;
-    disposeTree(this.group);
-    ctx.scene.remove(this.group);
+    if (this.group) {
+      disposeTree(this.group);
+      ctx.scene.remove(this.group);
+    }
+    if (this.textures) this.textures.forEach(function (texture) { texture.dispose(); });
+    if (this.instanced) this.instanced.forEach(function (handle) { handle.restore(); });
+    collections.group = null;
+    collections.skyRig = null;
+    collections.terrain = null;
+    collections.terrainMeshes = [];
+    collections.foliage = [];
+    collections.props = [];
+    collections.cloudLayers = [];
+    collections.cloudAltitudes = [];
+    collections.instanced = [];
     this.group = null;
+    this.skyRig = null;
     this.sun = null;
-    this.clouds = null;
+    this.layers = null;
+    this.instanced = null;
+    this.textures = null;
   }
 };
 
-runtime.register('world', worldStub);
+runtime.register('world', worldSystem);
 
 /* ---------------------------------------------------------------------------
  * SECTION: launch-complex - extension point (pad, flame trench, tower,
