@@ -8604,61 +8604,617 @@ runtime.reactive = reactiveSystem.api;
 runtime.register('reactive', reactiveSystem);
 
 /* ---------------------------------------------------------------------------
- * SECTION: director - launch timeline stub
- * Owns phase transitions and the shared thrust/altitude/velocity choreography.
- * The stub holds the vehicle on the pad during pre-launch; the director phase
- * fills in countdown, ignition, liftoff, ascent, staging and orbit.
+ * SECTION: director - the single authoritative launch performance
+ * ---------------------------------------------------------------------------
+ * One delta-time driven state machine plays the whole launch, automatically and
+ * with no interaction, in exactly the required order:
+ *
+ *   prelaunch -> ignition -> flameIntensify -> smokeExpansion -> vibration
+ *   -> clampRelease -> liftoff -> ascent (then unending)
+ *
+ * The director authors exactly ONE curve - the throttle - and derives every
+ * other number from it plus the handles published by the hardware phases, so the
+ * flames, the plume, the smoke, the dust, the foliage reaction, the shake and
+ * the climb can never desynchronise:
+ *
+ *   thrust     eased, monotone 0 -> 1, keyframed per phase (smoothstep inside
+ *              each beat and zero slope at every boundary, so ignition and the
+ *              ramp have no visible steps)
+ *   vibration  a 0..1 request plus the thrust coupling, fed to the published
+ *              rocket-rig-handles vibration API; the rig node itself is posed by
+ *              the rocket phase, never by this section
+ *   altitude   an integrated climb that stays exactly zero until the
+ *              clampRelease phase has completed, after which a net acceleration
+ *              rising with the throttle excess above the documented liftoff
+ *              threshold keeps the climb smooth, monotone and accelerating
+ *   clamps     the published launch-complex setClampRelease(t) travel, started
+ *              only once thrust has crossed the documented hold-down threshold
+ *              and run over the published clampReleaseDuration
+ *   warning    the published warning-light bank: winking through the pad hold, a
+ *              faster chase as the engines light, steady through the release,
+ *              dark once the vehicle is flying
+ *   shake      a decaying camera-shake impulse fired at the physical beats
+ *              (ignition, hold-down crossing, clamp release, arms clear, first
+ *              motion)
+ *
+ * The vehicle is driven ONLY through the handles published by the rocket phase:
+ * the root group is translated for altitude with x/z pinned to the pad seat (so
+ * the path is vertical, with no lateral drift) and the vibration rig is driven
+ * through the published vibration API. Nothing here creates, clones, re-parents
+ * or hard-codes a second rocket reference.
+ *
+ * PUBLISHED CONTRACT - LAUNCH_SCENE.timeline (launch-timeline-contract)
+ *   phases[]            the ordered phase ids exactly as played
+ *   phase / phaseIndex  the current phase id and its index in that order
+ *   time                seconds since the sequence started
+ *   phaseElapsed        seconds inside the current phase
+ *   missionTime         seconds relative to ignition (negative before it)
+ *   thrust              0..1 throttle currently authored
+ *   altitude            metres above the pad seat (0 until release completes)
+ *   velocity            m/s vertical speed
+ *   clampReleased       true once every clamp is clear of the vehicle
+ *   clampRelease        0..1 clamp travel actually applied
+ *   holdDownThreshold   thrust level that authorises the clamp release
+ *   liftoffThreshold    thrust level the climb acceleration is derived from
+ *   vibration           0..1 rig shake requested by the director
+ *   rigVibration        0..1 shake level the rocket rig actually applied
+ *   shake               0..1 decaying camera-shake impulse
+ *   flight              true once the vehicle is free to climb
+ *   getState()          numbers-only snapshot, also mirrored onto state.timeline
+ * The former stub methods (setPhase / setThrust / setAltitude / setVelocity)
+ * remain on LAUNCH_SCENE.director as manual overrides for tests and tools: using
+ * one hands the curve to the caller until resume() is called.
+ * ------------------------------------------------------------------------ */
+// ==== SECTION: director ====
+
+/* Tunables. Times in seconds, lengths in metres, accelerations in m/s^2. */
+const DR_VERSION = '1.0.0-director';
+
+const DR_SPEC = {
+  holdDownThrust: 0.85,  // thrust that authorises the clamp release
+  liftoffThrust: 0.90,   // thrust the climb acceleration is derived from
+  liftoffAccel: 9.6,     // net climb acceleration at full throttle
+  releaseEase: 0.7,      // seconds for the released stack to reach full accel
+  shakeTau: 0.55,        // seconds a published shake impulse decays over
+  rigCoupling: 0.85,     // thrust -> rig shake coupling while still clamped
+  releaseFallback: 1.25, // used only if the complex publishes no duration
+  tremorGain: 0.05       // high-frequency detail on a held vibration request
+};
+
+/* THE ORDERED PERFORMANCE. Every beat authors a throttle span, a vibration
+ * span, the warning-light state, the impulses fired on entry and whether the
+ * vehicle is free to climb during it. `duration` is the beat length; the
+ * clampRelease beat additionally waits for the hardware travel to finish, and
+ * the last beat has no duration: once the stack is flying it keeps climbing. */
+const DR_PHASES = [
+  {
+    id: 'prelaunch', duration: 3.0,
+    thrust: [0.00, 0.00], vibration: [0.00, 0.00],
+    warning: { mode: 'blink', rate: 1.15, pattern: 'chase', intensity: 0.8 },
+    note: 'pad hold: clamps closed, warning bank winking, calm air'
+  },
+  {
+    id: 'ignition', duration: 3.0,
+    thrust: [0.00, 0.30], vibration: [0.00, 0.10],
+    warning: { mode: 'blink', rate: 2.2, pattern: 'chase', intensity: 1 },
+    impulse: 0.15, shake: 0.18,
+    note: 'engines ignite gradually: the fire catches and thrust leaves zero'
+  },
+  {
+    id: 'flameIntensify', duration: 2.8,
+    thrust: [0.30, 0.55], vibration: [0.10, 0.24],
+    warning: { mode: 'blink', rate: 3.0, pattern: 'alternate', intensity: 1 },
+    shake: 0.14,
+    note: 'flames intensify: core, glow and trail lengthen, warm light rises'
+  },
+  {
+    id: 'smokeExpansion', duration: 2.6,
+    thrust: [0.55, 0.72], vibration: [0.24, 0.40],
+    warning: { mode: 'blink', rate: 3.8, pattern: 'alternate', intensity: 1 },
+    impulse: 0.18, shake: 0.20,
+    note: 'smoke and dust expand rapidly across the pad, apron and trench'
+  },
+  {
+    id: 'vibration', duration: 2.6,
+    thrust: [0.72, 0.88], vibration: [0.40, 1.00],
+    warning: { mode: 'blink', rate: 4.6, pattern: 'synchronised', intensity: 1 },
+    impulse: 0.30, shake: 0.30,
+    note: 'hold-down: the stack shakes hard against the closed clamps'
+  },
+  {
+    id: 'clampRelease', duration: 2.6,
+    thrust: [0.88, 0.97], vibration: [1.00, 0.60],
+    warning: { mode: 'steady', rate: 0, pattern: 'synchronised', intensity: 1 },
+    impulse: 0.45, shake: 0.45, release: true,
+    note: 'clamps release: the arms swing clear, altitude still exactly zero'
+  },
+  {
+    id: 'liftoff', duration: 3.0,
+    thrust: [0.97, 1.00], vibration: [0.20, 0.00],
+    warning: { mode: 'off' },
+    impulse: 0.55, shake: 0.90, flight: true,
+    note: 'liftoff: first motion, the released rig settles out as it climbs'
+  },
+  {
+    id: 'ascent', duration: Infinity,
+    thrust: [1.00, 1.00], vibration: [0.00, 0.00],
+    warning: { mode: 'off' },
+    shake: 0.35, flight: true,
+    note: 'ascent: unending accelerating vertical climb into the clouds'
+  }
+];
+
+const LAUNCH_PHASES = DR_PHASES.map(function (phase) { return phase.id; });
+
+/* Ignition begins where the pad-hold beat ends: mission time 0. */
+const DR_IGNITION_TIME = DR_PHASES[0].duration;
+
+/* Smoothstep: the throttle ramp starts and ends every beat with zero slope, so
+ * the authored curve is C1 continuous across all eight phase boundaries. */
+function drSmooth(t) {
+  const x = clamp01(t);
+  return x * x * (3 - 2 * x);
+}
+
+/* Deterministic high-frequency tremor helper: pure function of the director
+ * clock, allocation free, reads as life on a held throttle request. */
+function drWobble(time, seed) {
+  return 0.5 + 0.5 * Math.sin(time * 23.7 + seed) * Math.cos(time * 11.3 + seed * 0.7);
+}
+
+function drPhaseProgress(phase) {
+  const duration = Number(phase.duration);
+  if (!Number.isFinite(duration) || duration <= 0) return 1;
+  return clamp01(state.phaseElapsed / duration);
+}
+
+/* A beat is over when its clock has run out; the release beat additionally
+ * waits until the clamps have physically finished travelling clear. */
+function drPhaseComplete(phase, complex) {
+  const duration = Number(phase.duration);
+  if (!Number.isFinite(duration)) return false;
+  if (state.phaseElapsed < duration) return false;
+  if (phase.release) {
+    const travel = complex ? clamp01(complex.clampRelease) : 1;
+    return travel >= 0.999;
+  }
+  return true;
+}
+
+/* The handles published by the hardware phases - re-read every frame so a
+ * re-registered subsystem can never leave the director pointing at a dead rig. */
+function drRocketHandles() {
+  return runtime.handles && runtime.handles.rocket ? runtime.handles.rocket : null;
+}
+
+function drComplexHandles() {
+  return runtime.handles && runtime.handles.launchComplex ? runtime.handles.launchComplex : null;
+}
+
+const DR_ANCHOR = new THREE.Vector3();
+
+function drEngineAnchor() {
+  const rocket = drRocketHandles();
+  if (!rocket || !rocket.engineAnchors || !rocket.engineAnchors.length) return null;
+  return rocket.engineAnchors[0].anchor || null;
+}
+
+/* ---------------------------------------------------------------------------
+ * Director subsystem: owns the clock, the throttle curve and every derived
+ * number. All other subsystems stay reactive to the state it publishes.
  * ------------------------------------------------------------------------ */
 
-const LAUNCH_PHASES = ['prelaunch', 'countdown', 'ignition', 'liftoff', 'ascent', 'staging', 'orbit'];
-
-const directorStub = {
+const directorSystem = {
+  version: DR_VERSION,
+  api: null,
   phases: LAUNCH_PHASES,
+  phaseList: DR_PHASES,
+  phaseIndex: 0,
+  time: 0,             // seconds since the performance started
+  updates: 0,
+  thrust: 0,
+  vibration: 0,
+  shake: 0,
+  altitude: 0,
+  velocity: 0,
+  clampRelease: 0,
+  released: false,
+  authorised: false,
+  flightTime: 0,       // seconds since the stack became free to climb
+  overridden: false,
+  holdDownKicked: false,
+  armsClearKicked: false,
 
   init() {
-    state.phase = 'prelaunch';
+    this.phaseIndex = 0;
+    this.time = 0;
+    this.updates = 0;
+    this.thrust = 0;
+    this.vibration = 0;
+    this.shake = 0;
+    this.altitude = 0;
+    this.velocity = 0;
+    this.clampRelease = 0;
+    this.released = false;
+    this.authorised = false;
+    this.flightTime = 0;
+    this.overridden = false;
+    this.holdDownKicked = false;
+    this.armsClearKicked = false;
+
+    state.phase = DR_PHASES[0].id;
     state.phaseElapsed = 0;
-    state.missionTime = 0;
+    state.missionTime = -DR_IGNITION_TIME;
+    state.thrust = 0;
+    state.altitude = 0;
+    state.velocity = 0;
+    state.clampRelease = 0;
+    state.clampReleased = false;
+    state.vibration = 0;
+    state.shake = 0;
+
+    /* Numbers-only mirror, allocated once and mutated in place every frame. */
+    state.timeline = {
+      phase: state.phase,
+      phaseIndex: 0,
+      time: 0,
+      phaseElapsed: 0,
+      missionTime: state.missionTime,
+      thrust: 0,
+      altitude: 0,
+      velocity: 0,
+      clampRelease: 0,
+      clampReleased: false,
+      vibration: 0,
+      rigVibration: 0,
+      shake: 0,
+      flight: false,
+      overridden: false
+    };
+
+    drEnterPhase(this, 0);
+
+    console.log('[LAUNCH_SCENE] director armed: phases=' + LAUNCH_PHASES.join('>') +
+      ' holdDown=' + DR_SPEC.holdDownThrust + ' liftoff=' + DR_SPEC.liftoffThrust);
   },
 
+  /* Jump the performance to a phase (keeps playing from there). */
   setPhase(phaseId) {
-    if (LAUNCH_PHASES.indexOf(phaseId) === -1) {
+    const index = LAUNCH_PHASES.indexOf(String(phaseId));
+    if (index === -1) {
       throw new RangeError('director.setPhase: unknown phase "' + phaseId + '"');
     }
-    return setPhase(phaseId);
+    drEnterPhase(this, index);
+    return state.phase;
   },
 
+  /* Manual overrides for tests and tools: the first call hands the curve to the
+   * caller (the schedule stands still) until resume() returns to the automatic
+   * performance. The vehicle is still driven through the published handles. */
   setThrust(value) {
-    state.thrust = clamp01(value);
-    return state.thrust;
+    this.overridden = true;
+    this.thrust = clamp01(value);
+    state.thrust = this.thrust;
+    return this.thrust;
   },
 
   setAltitude(metres) {
-    state.altitude = Math.max(0, Number(metres) || 0);
-    return state.altitude;
+    this.overridden = true;
+    this.altitude = Math.max(0, Number(metres) || 0);
+    state.altitude = this.altitude;
+    return this.altitude;
   },
 
   setVelocity(metresPerSecond) {
-    state.velocity = Number(metresPerSecond) || 0;
-    return state.velocity;
+    this.overridden = true;
+    this.velocity = Number(metresPerSecond) || 0;
+    state.velocity = this.velocity;
+    return this.velocity;
   },
 
-  update(dt) {
-    state.phaseElapsed += dt;
+  resume() {
+    this.overridden = false;
+    return this.overridden;
+  },
+
+  /* The shake amplitude the published rocket rig actually applied. */
+  rigLevel() {
+    const rocket = drRocketHandles();
+    return rocket && rocket.vibration ? rocket.vibration.level : this.vibration;
+  },
+
+  update(dt, currentState) {
+    const delta = Math.max(0, Math.min(0.25, Number(dt) || 0));
+    const shared = currentState || state;
+    this.updates += 1;
+    this.time += delta;
+    state.phaseElapsed += delta;
+
+    const complex = drComplexHandles();
+    const rocket = drRocketHandles();
+
+    if (this.overridden) {
+      /* A caller owns throttle/altitude/velocity; only publish and drive. */
+      this.thrust = clamp01(shared.thrust);
+      this.altitude = Math.max(0, Number(shared.altitude) || 0);
+      this.velocity = Number(shared.velocity) || 0;
+      this.vibration = clamp01(shared.vibration);
+    } else {
+      /* 1. advance the ordered sequence (one beat at a time, never backwards) */
+      let phase = DR_PHASES[this.phaseIndex];
+      if (this.phaseIndex < DR_PHASES.length - 1 && drPhaseComplete(phase, complex)) {
+        drEnterPhase(this, this.phaseIndex + 1);
+        phase = DR_PHASES[this.phaseIndex];
+      }
+
+      /* 2. the one throttle/vibration curve for the active beat */
+      const eased = drSmooth(drPhaseProgress(phase));
+      this.thrust = phase.thrust[0] + (phase.thrust[1] - phase.thrust[0]) * eased;
+      this.vibration = phase.vibration[0] + (phase.vibration[1] - phase.vibration[0]) * eased;
+      if (this.vibration > 1e-3) {
+        this.vibration = clamp01(this.vibration +
+          DR_SPEC.tremorGain * this.vibration * (drWobble(this.time, 1.7) - 0.5));
+      }
+
+      /* 3. hold-down beats: the threshold thump plus the release authority */
+      if (!this.holdDownKicked && this.thrust >= DR_SPEC.holdDownThrust) {
+        this.holdDownKicked = true;
+        this.shake = Math.max(this.shake, 0.5);
+        if (rocket && typeof rocket.addImpulse === 'function') rocket.addImpulse(0.35);
+      }
+      this.authorised = this.thrust >= DR_SPEC.holdDownThrust;
+
+      /* 4. clamp travel: authorised by the threshold, over the published time */
+      if (phase.release) {
+        const duration = complex && Number.isFinite(Number(complex.clampReleaseDuration)) &&
+          Number(complex.clampReleaseDuration) > 0
+          ? Number(complex.clampReleaseDuration)
+          : DR_SPEC.releaseFallback;
+        const target = this.authorised ? clamp01(state.phaseElapsed / duration) : 0;
+        if (complex && typeof complex.setClampRelease === 'function') complex.setClampRelease(target);
+      }
+      this.clampRelease = complex ? clamp01(complex.clampRelease) : 1;
+      this.released = this.clampRelease >= 0.999;
+      if (!this.armsClearKicked && this.released) {
+        this.armsClearKicked = true;
+        this.shake = Math.max(this.shake, 0.8);
+      }
+
+      /* 5. flight: altitude is EXACTLY zero until the release beat completed */
+      if (phase.flight) {
+        this.flightTime += delta;
+        const excess = clamp01((this.thrust - DR_SPEC.liftoffThrust) / (1 - DR_SPEC.liftoffThrust));
+        const ease = drSmooth(this.flightTime / DR_SPEC.releaseEase);
+        const accel = DR_SPEC.liftoffAccel * excess * ease;
+        this.velocity += accel * delta;
+        this.altitude += this.velocity * delta;
+      } else {
+        this.flightTime = 0;
+        this.velocity = 0;
+        this.altitude = 0;
+      }
+    }
+
+    /* 6. the published shake impulse decays every frame */
+    this.shake = this.shake > 1e-4 ? Math.max(0, this.shake * Math.exp(-delta / DR_SPEC.shakeTau)) : 0;
+
+    /* 7. drive the vehicle through the published rocket-rig-handles only */
+    if (rocket) {
+      const seat = rocket.seat || { x: 0, y: 0, z: 0 };
+      if (rocket.root) {
+        /* vertical only: x/z pinned to the pad seat, y translated for altitude */
+        rocket.root.position.set(seat.x, seat.y + this.altitude, seat.z);
+      }
+      if (typeof rocket.setVibration === 'function') {
+        const coupling = DR_PHASES[this.phaseIndex].flight ? 0 : DR_SPEC.rigCoupling;
+        rocket.setVibration(this.vibration, { thrustCoupling: coupling });
+      }
+    }
+
+    /* 8. publish the timer contract for the camera and integration phases */
+    drPublish(this);
+  },
+
+  getState() {
+    const rocket = drRocketHandles();
+    const complex = drComplexHandles();
+    const rig = rocket && rocket.vibration ? rocket.vibration : null;
+    const root = rocket && rocket.root ? rocket.root : null;
+    const seat = rocket && rocket.seat ? rocket.seat : { x: 0, y: 0, z: 0 };
+    const anchor = drEngineAnchor();
+    let anchorWorldY = null;
+    if (anchor) {
+      anchor.getWorldPosition(DR_ANCHOR);
+      anchorWorldY = Number(DR_ANCHOR.y.toFixed(4));
+    }
+    let rocketRoots = 0;
+    scene.traverse(function (object) {
+      if (object.name === 'rocket-vehicle') rocketRoots += 1;
+    });
+    return {
+      registered: runtime.has('director'),
+      version: DR_VERSION,
+      phases: LAUNCH_PHASES.slice(),
+      phase: state.phase,
+      phaseIndex: this.phaseIndex,
+      phaseElapsed: Number(state.phaseElapsed.toFixed(4)),
+      time: Number(this.time.toFixed(4)),
+      missionTime: Number(state.missionTime.toFixed(4)),
+      thrust: Number(this.thrust.toFixed(5)),
+      altitude: Number(this.altitude.toFixed(4)),
+      velocity: Number(this.velocity.toFixed(4)),
+      clampRelease: Number(this.clampRelease.toFixed(4)),
+      clampReleased: this.released,
+      clampAuthorised: this.authorised,
+      holdDownThreshold: DR_SPEC.holdDownThrust,
+      liftoffThreshold: DR_SPEC.liftoffThrust,
+      vibration: Number(this.vibration.toFixed(5)),
+      rigVibration: Number(this.rigLevel().toFixed(5)),
+      rigOffset: rig ? Number(Math.hypot(rig.offset.x, rig.offset.y, rig.offset.z).toFixed(5)) : null,
+      shake: Number(this.shake.toFixed(5)),
+      flight: !!DR_PHASES[this.phaseIndex].flight,
+      overridden: this.overridden,
+      rocketRoots: rocketRoots,
+      rootWorldY: root ? Number(root.position.y.toFixed(4)) : null,
+      rootLateral: root
+        ? Number(Math.hypot(root.position.x - seat.x, root.position.z - seat.z).toFixed(6))
+        : null,
+      engineAnchorWorldY: anchorWorldY,
+      warningMode: complex && complex.warningLights ? complex.warningLights.mode : null,
+      frames: this.updates,
+      errors: runtime.state.errors.length
+    };
   },
 
   dispose() {
+    const complex = drComplexHandles();
+    const rocket = drRocketHandles();
+    if (complex) {
+      if (typeof complex.setClampRelease === 'function') complex.setClampRelease(0, true);
+      if (complex.warningLights && typeof complex.warningLights.setState === 'function') {
+        complex.warningLights.setState({ mode: 'blink', rate: 1.15, pattern: 'chase', intensity: 1 });
+      }
+    }
+    if (rocket) {
+      if (typeof rocket.setVibration === 'function') rocket.setVibration(0, { thrustCoupling: DR_SPEC.rigCoupling });
+      if (typeof rocket.returnToRest === 'function') rocket.returnToRest(true);
+      if (typeof rocket.resetRig === 'function') rocket.resetRig();
+    }
+
+    this.phaseIndex = 0;
+    this.time = 0;
+    this.updates = 0;
+    this.thrust = 0;
+    this.vibration = 0;
+    this.shake = 0;
+    this.altitude = 0;
+    this.velocity = 0;
+    this.clampRelease = 0;
+    this.released = false;
+    this.authorised = false;
+    this.flightTime = 0;
+    this.overridden = false;
+    this.holdDownKicked = false;
+    this.armsClearKicked = false;
+
     state.phase = 'prelaunch';
     state.phaseElapsed = 0;
     state.missionTime = 0;
     state.thrust = 0;
     state.altitude = 0;
     state.velocity = 0;
+    state.vibration = 0;
+    state.shake = 0;
+    state.clampRelease = 0;
+    state.clampReleased = false;
+    state.timeline = null;
+    if (runtime.timeline === this.api) runtime.timeline = null;
+    if (runtime.director === this) runtime.director = null;
+    this.api = null;
   }
 };
 
-runtime.director = directorStub;
-runtime.register('director', directorStub);
+/* Entering a beat: reset the clock, drive the warning bank, fire the beat's
+ * impulses. Called once per transition (and once from init). */
+function drEnterPhase(system, index) {
+  const phase = DR_PHASES[index];
+  system.phaseIndex = index;
+  runtime.setPhase(phase.id);
+  state.phaseElapsed = 0;
+
+  const complex = drComplexHandles();
+  const rocket = drRocketHandles();
+  if (complex && complex.warningLights && typeof complex.warningLights.setState === 'function') {
+    const warning = phase.warning || { mode: 'off' };
+    complex.warningLights.setState({
+      mode: warning.mode,
+      rate: warning.rate === undefined ? 0 : warning.rate,
+      intensity: warning.intensity === undefined ? 1 : warning.intensity,
+      pattern: warning.pattern === undefined ? 'chase' : warning.pattern
+    });
+  }
+  if (phase.impulse && rocket && typeof rocket.addImpulse === 'function') {
+    rocket.addImpulse(phase.impulse);
+  }
+  if (phase.shake) system.shake = Math.max(system.shake, phase.shake);
+  return phase.id;
+}
+
+/* Publish the numbers-only mirror of the contract (state.timeline). */
+function drPublish(system) {
+  const mirror = state.timeline;
+  const rocket = drRocketHandles();
+  const rigLevel = rocket && rocket.vibration ? rocket.vibration.level : system.vibration;
+
+  state.thrust = system.thrust;
+  state.altitude = system.altitude;
+  state.velocity = system.velocity;
+  state.missionTime = system.time - DR_IGNITION_TIME;
+  state.clampRelease = system.clampRelease;
+  state.clampReleased = system.released;
+  state.vibration = system.vibration;
+  state.shake = system.shake;
+
+  if (!mirror) return null;
+  mirror.phase = state.phase;
+  mirror.phaseIndex = system.phaseIndex;
+  mirror.time = system.time;
+  mirror.phaseElapsed = state.phaseElapsed;
+  mirror.missionTime = state.missionTime;
+  mirror.thrust = system.thrust;
+  mirror.altitude = system.altitude;
+  mirror.velocity = system.velocity;
+  mirror.clampRelease = system.clampRelease;
+  mirror.clampReleased = system.released;
+  mirror.vibration = system.vibration;
+  mirror.rigVibration = rigLevel;
+  mirror.shake = system.shake;
+  mirror.flight = !!DR_PHASES[system.phaseIndex].flight;
+  mirror.overridden = system.overridden;
+  return mirror;
+}
+
+/* The interface published as LAUNCH_SCENE.timeline: the ordered phase list, the
+ * live phase/thrust/altitude/clamp/vibration/shake numbers and the manual
+ * override hooks. Every field is a live read, so a consumer can sample it at
+ * any time and always see the current frame. */
+function drCreateApi(system) {
+  return {
+    version: DR_VERSION,
+    subsystem: 'director',
+    phases: LAUNCH_PHASES.slice(),
+    phaseList: DR_PHASES,
+    setPhase: function (phaseId) { return system.setPhase(phaseId); },
+    setThrust: function (value) { return system.setThrust(value); },
+    setAltitude: function (metres) { return system.setAltitude(metres); },
+    setVelocity: function (metresPerSecond) { return system.setVelocity(metresPerSecond); },
+    resume: function () { return system.resume(); },
+    getState: function () { return system.getState(); },
+    get phase() { return state.phase; },
+    get phaseIndex() { return system.phaseIndex; },
+    get time() { return system.time; },
+    get phaseElapsed() { return state.phaseElapsed; },
+    get missionTime() { return state.missionTime; },
+    get thrust() { return system.thrust; },
+    get altitude() { return system.altitude; },
+    get velocity() { return system.velocity; },
+    get clampReleased() { return system.released; },
+    get clampRelease() { return system.clampRelease; },
+    get clampAuthorised() { return system.authorised; },
+    get holdDownThreshold() { return DR_SPEC.holdDownThrust; },
+    get liftoffThreshold() { return DR_SPEC.liftoffThrust; },
+    get vibration() { return system.vibration; },
+    get rigVibration() { return system.rigLevel(); },
+    get shake() { return system.shake; },
+    get flight() { return !!DR_PHASES[system.phaseIndex].flight; },
+    get system() { return system; }
+  };
+}
+
+directorSystem.api = drCreateApi(directorSystem);
+runtime.timeline = directorSystem.api;
+runtime.director = directorSystem;
+runtime.register('director', directorSystem);
 
 /* ---------------------------------------------------------------------------
  * SECTION: camera - cinematic camera rig stub
