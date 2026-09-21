@@ -3622,8 +3622,1282 @@ function lcApplyRelease(system) {
 runtime.register('launchComplex', launchComplexSystem);
 
 /* ---------------------------------------------------------------------------
- * SECTION: rocket - extension point (vehicle geometry, materials, staging).
+ * SECTION: rocket - the launch vehicle: the central object of the scene.
+ * ---------------------------------------------------------------------------
+ * A procedural multi-stage heavy-lift rocket standing on the pad deck at the
+ * seat published by the launch complex (handles.launchComplex.vehicleSeat) and
+ * gripped by the three closed clamp arms of the integration tower. Nothing is
+ * loaded from disk: every mesh is generated here and every surface map is
+ * painted into a canvas at load time, so the file stays single-source and the
+ * CDN host allowlist stays CDN-only.
+ *
+ * Surface layout, metres above the deck seat (launch axis at x = z = 0):
+ *    0.00        four hold-down posts on the deck (az 45/135/225/315)
+ *    1.40- 3.50  engine bay: seven bells on one shared lathe profile
+ *    3.40- 8.20  aft skirt, radius 4.2 - flange ring, ribs and bolt ring
+ *    8.20-26.40  core stage, radius 4.2 - the radius the clamps close on
+ *   26.40-29.00  interstage with two accent separation bands
+ *   29.00-35.60  second stage wrapped in gold thermal foil
+ *   35.60-37.00  stage joint ring
+ *   37.00-38.60  cobalt trim band with portholes
+ *   38.60-47.50  lathed elliptical nose cone, crimson cap from y = 46.25
+ *    4.20-15.60  four swept fins at azimuth 33/123/213/303, tips at r = 7.6
+ *
+ * Canvas maps: a hull sheet (bright ivory paint, panel lines, rivets, livery
+ * emblems, stencils and weathering streaks), a matching roughness and bump
+ * map, a ribbed steel sheet, a bell sheet with a heat band at the exit and a
+ * gold foil sheet. Geometry detail repeats through InstancedMesh only - one
+ * geometry and one material per repeated part, so the frame budget is safe.
+ *
+ * PUBLISHED HANDLES - LAUNCH_SCENE.handles.rocket (rocket-rig-handles)
+ *   root        'rocket-vehicle' group: the world transform of the whole stack
+ *               (the director translates/rotates this node for ascent)
+ *   rig         'rocket-vibration-rig': the dedicated pre-liftoff node. The
+ *               director phase shakes it; geometry is never rebuilt.
+ *   body        'rocket-body': every mesh of the vehicle, child of rig
+ *   rest        { position, quaternion, scale } - the exact rig rest pose
+ *   seat        { x, y, z } world position of the base (= pad deck top)
+ *   baseY / height / radius / finTipRadius / bounds  vehicle dimensions
+ *   engineAnchors[]  one named anchor per engine bell:
+ *               { name, index, anchor (Object3D sitting on the bell exit
+ *                 plane), bellMesh (shared InstancedMesh), bellInstanceIndex,
+ *                 exitRadius, throatRadius, localPosition, direction (0,-1,0) }
+ *               anchor.getWorldPosition(v) is the world-space flame/plume
+ *               attach point; it follows root and rig, and every run builds
+ *               exactly one rig, so a consumer can never find a duplicate.
+ *   engineAnchor(name) / engineBellMesh / engineCount
+ *   vibration   live readout { request, target, level, thrustCoupling,
+ *               maxOffset, maxTilt, attack, release, returnTau, offset, tilt,
+ *               settled } plus
+ *               setVibration(amount, options)  0..1 pre-liftoff shake request
+ *               addImpulse(amount)             ignition-thump kick
+ *               returnToRest(immediate)        release the rig back to rest
+ *               resetRig()                     immediate exact rest pose
+ *   rigHold     set true to park an externally authored rig pose
+ *   setAltitude(m) / altitude / autoAltitude   ascent translation
+ *   stages[] / fins / parts / instanced[] / getState() / contactReport()
+ * The clamp code is only consumed, never edited: init() reads the published
+ * seat and calls handles.launchComplex.setClampReach(radius) so the jaws close
+ * on the real aft body instead of the configured default.
  * ------------------------------------------------------------------------ */
+// ==== SECTION: rocket ====
+
+const RK_DEG = Math.PI / 180;
+
+/* Layout: metres above the deck seat, launch axis at x = z = 0. */
+const RK_LAYOUT = {
+  seatY: 2.6,                  // replaced by the launch-complex deck top in init()
+  radius: 4.2,                 // aft-body radius: exactly what the clamps grip
+  tipY: 47.5,                  // nose-cone tip above the seat
+  bell: { count: 7, ringRadius: 2.45, exitY: 1.4, topY: 3.5, exitRadius: 1.05, throatRadius: 0.62 },
+  skirt: { y0: 3.4, y1: 8.2, radius: 4.2 },
+  core: { y0: 8.2, y1: 26.4, radius: 4.2 },
+  interstage: { y0: 26.4, y1: 29.0, radius: 4.24 },
+  stage2: { y0: 29.0, y1: 35.6, radius: 3.8 },
+  joint: { y0: 35.6, y1: 37.0, radius: 3.85 },
+  trim: { y0: 37.0, y1: 38.6, radius: 3.35 },
+  fairing: { y0: 38.6, tipY: 47.5, capY: 46.25, radius: 3.35 },
+  posts: { azimuthDeg: [45, 135, 225, 315], radius: 3.925, size: 0.55, y0: 0, y1: 3.5 },
+  fins: {
+    count: 4, azimuthDeg: [33, 123, 213, 303], rootRadius: 3.6,
+    tipRadius: 7.6, yBottom: 4.2, yTop: 15.6, thickness: 0.36
+  },
+  racewayAzimuthDeg: 18
+};
+
+/* Elliptical nose profile: u = 0 at the fairing base, 1 at the tip. */
+function rkFairingRadius(u) {
+  const t = Math.min(1, Math.max(0, u));
+  return RK_LAYOUT.fairing.radius * Math.sqrt(Math.max(0, 1 - t * t));
+}
+
+/* ---------------------------------------------------------------------------
+ * Procedural canvas maps: panel lines, livery, weathering, ribbed steel,
+ * engine-bell metal and gold foil. No image file is ever referenced.
+ * ------------------------------------------------------------------------ */
+
+/* Panel seams in normalised surface coordinates. */
+function rkSeams(columns, rows) {
+  const verticals = [];
+  const horizontals = [];
+  for (let c = 0; c <= columns; c += 1) verticals.push(c / columns);
+  for (let r = 0; r <= rows; r += 1) horizontals.push(r / rows);
+  return { verticals: verticals, horizontals: horizontals };
+}
+
+function rkDrawSeams(context, width, height, seams, style, lineWidth) {
+  context.strokeStyle = style;
+  context.lineWidth = lineWidth;
+  context.beginPath();
+  for (let c = 0; c < seams.verticals.length; c += 1) {
+    const x = seams.verticals[c] * width;
+    context.moveTo(x, 0);
+    context.lineTo(x, height);
+  }
+  for (let r = 0; r < seams.horizontals.length; r += 1) {
+    const y = seams.horizontals[r] * height;
+    context.moveTo(0, y);
+    context.lineTo(width, y);
+  }
+  context.stroke();
+}
+
+function rkDrawRivets(context, width, height, seams, style) {
+  const spacing = 18;
+  context.fillStyle = style;
+  for (let c = 0; c < seams.verticals.length; c += 1) {
+    const x = seams.verticals[c] * width - 3;
+    for (let y = 4; y < height; y += spacing) context.fillRect(x, y, 2.4, 2.4);
+  }
+  for (let r = 0; r < seams.horizontals.length; r += 1) {
+    const y = seams.horizontals[r] * height - 3;
+    for (let x = 4; x < width; x += spacing) context.fillRect(x, y, 2.4, 2.4);
+  }
+}
+
+/* Livery emblem: crimson ring, ivory core, cobalt chevron. */
+function rkDrawInsignia(context, centreX, centreY, radius) {
+  context.save();
+  context.translate(centreX, centreY);
+  context.fillStyle = '#d8382a';
+  context.beginPath();
+  context.arc(0, 0, radius, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = '#f8f5ec';
+  context.beginPath();
+  context.arc(0, 0, radius * 0.74, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = '#2f6ec8';
+  context.beginPath();
+  context.moveTo(0, -radius * 0.6);
+  context.lineTo(radius * 0.56, radius * 0.44);
+  context.lineTo(0, radius * 0.14);
+  context.lineTo(-radius * 0.56, radius * 0.44);
+  context.closePath();
+  context.fill();
+  context.strokeStyle = '#d8382a';
+  context.lineWidth = Math.max(1, radius * 0.1);
+  context.beginPath();
+  context.arc(0, 0, radius * 0.88, 0, Math.PI * 2);
+  context.stroke();
+  context.restore();
+}
+
+/* Hull albedo: bright ivory paint, panel lines, rivets, stencils, four
+ * circumferential emblems and vertical weathering streaks. */
+function rkHullAlbedo() {
+  const seams = rkSeams(8, 10);
+  return makeCanvasTexture(1024, 1024, 1024, function (context, width, height) {
+    const random = seededRandom(20260923);
+
+    const base = context.createLinearGradient(0, 0, 0, height);
+    base.addColorStop(0, '#fdfaf3');
+    base.addColorStop(0.5, '#f2eee3');
+    base.addColorStop(1, '#e4dfd0');
+    context.fillStyle = base;
+    context.fillRect(0, 0, width, height);
+
+    /* per-panel sheen so the cylinder never reads as flat paint */
+    for (let c = 0; c < 8; c += 1) {
+      const x = (width / 8) * c;
+      const sheen = context.createLinearGradient(x, 0, x + width / 8, 0);
+      sheen.addColorStop(0, 'rgba(255,255,255,0.18)');
+      sheen.addColorStop(0.45, 'rgba(255,255,255,0.02)');
+      sheen.addColorStop(1, 'rgba(126,134,146,0.14)');
+      context.fillStyle = sheen;
+      context.fillRect(x, 0, width / 8, height);
+    }
+
+    /* brushed-metal streaks */
+    for (let i = 0; i < 220; i += 1) {
+      context.fillStyle = random() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(140,146,156,0.05)';
+      context.fillRect(0, random() * height, width, 1 + random() * 2);
+    }
+
+    /* stencilled technical markings */
+    context.save();
+    context.fillStyle = 'rgba(70,84,104,0.62)';
+    context.font = 'bold 40px "Helvetica Neue", Arial, sans-serif';
+    context.fillText('AU-9   AURORA HEAVY', width * 0.05, height * 0.17);
+    context.font = 'bold 30px "Helvetica Neue", Arial, sans-serif';
+    context.fillText('LOX / RP-1   STAGE 1', width * 0.52, height * 0.87);
+    context.fillText('NO STEP', width * 0.06, height * 0.63);
+    context.fillText('CRYO VENT', width * 0.31, height * 0.35);
+    context.restore();
+
+    /* livery emblems wrapping the circumference */
+    for (let i = 0; i < 4; i += 1) {
+      rkDrawInsignia(context, (0.125 + i * 0.25) * width, height * 0.40, width * 0.075);
+    }
+
+    /* accent service band low on the sheet */
+    context.fillStyle = 'rgba(216,56,42,0.92)';
+    context.fillRect(0, height * 0.962, width, height * 0.024);
+
+    /* panel lines, then rivets along them */
+    rkDrawSeams(context, width, height, seams, 'rgba(146,154,166,0.62)', 3);
+    rkDrawSeams(context, width, height, rkSeams(8, 5), 'rgba(120,128,140,0.5)', 2);
+    rkDrawRivets(context, width, height, seams, 'rgba(128,136,148,0.55)');
+
+    /* weathering: streaks, scuffs and grimy patches */
+    for (let i = 0; i < 150; i += 1) {
+      const x = random() * width;
+      const y = random() * height;
+      const length = 40 + random() * 260;
+      const streak = context.createLinearGradient(x, y, x, y + length);
+      streak.addColorStop(0, 'rgba(120,110,92,0.16)');
+      streak.addColorStop(1, 'rgba(120,110,92,0)');
+      context.fillStyle = streak;
+      context.fillRect(x, y, 3 + random() * 9, length);
+    }
+    for (let i = 0; i < 70; i += 1) {
+      context.fillStyle = 'rgba(150,140,120,' + (0.04 + random() * 0.07).toFixed(3) + ')';
+      context.beginPath();
+      context.arc(random() * width, random() * height, 6 + random() * 34, 0, Math.PI * 2);
+      context.fill();
+    }
+  });
+}
+
+/* Matching roughness map: painted panels mid-rough, livery glossier, weather
+ * and seams rougher. Consumed as a multiplier, so material.roughness stays 1. */
+function rkHullRoughness() {
+  const seams = rkSeams(8, 10);
+  const texture = makeCanvasTexture(512, 512, 512, function (context, width, height) {
+    const random = seededRandom(4242);
+    context.fillStyle = '#9e9e9e';
+    context.fillRect(0, 0, width, height);
+    for (let i = 0; i < 4; i += 1) {
+      context.fillStyle = '#666666';
+      context.beginPath();
+      context.arc((0.125 + i * 0.25) * width, height * 0.40, width * 0.075, 0, Math.PI * 2);
+      context.fill();
+    }
+    for (let i = 0; i < 120; i += 1) {
+      context.fillStyle = 'rgba(214,214,214,' + (0.05 + random() * 0.2).toFixed(3) + ')';
+      context.beginPath();
+      context.arc(random() * width, random() * height, 5 + random() * 30, 0, Math.PI * 2);
+      context.fill();
+    }
+    for (let i = 0; i < 90; i += 1) {
+      context.fillStyle = 'rgba(92,92,92,' + (0.04 + random() * 0.12).toFixed(3) + ')';
+      context.fillRect(random() * width, random() * height, 2 + random() * 6, 20 + random() * 120);
+    }
+    rkDrawSeams(context, width, height, seams, '#e6e6e6', 5);
+    rkDrawSeams(context, width, height, rkSeams(8, 5), '#d0d0d0', 3);
+  });
+  texture.colorSpace = THREE.NoColorSpace;
+  return texture;
+}
+
+/* Bump map: seam grooves and rivet crowns, a few centimetres of relief. */
+function rkHullBump() {
+  const seams = rkSeams(8, 10);
+  const texture = makeCanvasTexture(512, 512, 512, function (context, width, height) {
+    context.fillStyle = '#808080';
+    context.fillRect(0, 0, width, height);
+    rkDrawSeams(context, width, height, seams, '#3c3c3c', 5);
+    rkDrawSeams(context, width, height, rkSeams(8, 5), '#5a5a5a', 3);
+    context.fillStyle = '#d2d2d2';
+    for (let c = 0; c < seams.verticals.length; c += 1) {
+      const x = seams.verticals[c] * width - 2;
+      for (let y = 3; y < height; y += 18) {
+        context.beginPath();
+        context.arc(x, y, 2.2, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+    for (let r = 0; r < seams.horizontals.length; r += 1) {
+      const y = seams.horizontals[r] * height - 2;
+      for (let x = 3; x < width; x += 18) {
+        context.beginPath();
+        context.arc(x, y, 2.2, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+  });
+  texture.colorSpace = THREE.NoColorSpace;
+  return texture;
+}
+
+/* Ribbed bright steel: the aft skirt, the interstage and the joint rings. */
+function rkRibbedTexture() {
+  return makeCanvasTexture(512, 256, 512, function (context, width, height) {
+    const random = seededRandom(515);
+    context.fillStyle = '#dfe4ea';
+    context.fillRect(0, 0, width, height);
+    const ribs = 32;
+    for (let i = 0; i < ribs; i += 1) {
+      const x = (width / ribs) * i;
+      context.fillStyle = 'rgba(255,255,255,0.55)';
+      context.fillRect(x + 3, 0, 2.5, height);
+      context.fillStyle = 'rgba(112,122,134,0.35)';
+      context.fillRect(x + 9, 0, 3, height);
+    }
+    for (let r = 0; r <= 2; r += 1) {
+      const y = (height / 2) * r;
+      context.fillStyle = 'rgba(110,120,132,0.42)';
+      context.fillRect(0, y - 1.5, width, 3);
+      context.fillStyle = 'rgba(255,255,255,0.4)';
+      context.fillRect(0, y + 1.5, width, 1.5);
+    }
+    for (let i = 0; i < 400; i += 1) {
+      context.fillStyle = 'rgba(120,116,104,' + (0.03 + random() * 0.06).toFixed(3) + ')';
+      context.fillRect(random() * width, random() * height, 2 + random() * 4, 2 + random() * 4);
+    }
+  });
+}
+
+/* Bright nickel bell with cooling ribs and a warm heat band at the exit
+ * (v = 0 sits at the exit plane of the lathed profile). */
+function rkBellTexture() {
+  return makeCanvasTexture(512, 512, 512, function (context, width, height) {
+    const random = seededRandom(861);
+    const base = context.createLinearGradient(0, 0, 0, height);
+    base.addColorStop(0, '#e8eef4');
+    base.addColorStop(0.55, '#cdd6df');
+    base.addColorStop(0.86, '#c6b8a6');
+    base.addColorStop(1, '#dcb98d');
+    context.fillStyle = base;
+    context.fillRect(0, 0, width, height);
+    for (let i = 0; i < 48; i += 1) {
+      const x = (width / 48) * i;
+      context.fillStyle = 'rgba(255,255,255,0.35)';
+      context.fillRect(x + 2, 0, 2, height);
+      context.fillStyle = 'rgba(112,120,130,0.3)';
+      context.fillRect(x + 6, 0, 2.5, height);
+    }
+    for (let i = 0; i < 260; i += 1) {
+      const y = height - random() * height * 0.55;
+      context.fillStyle = 'rgba(96,92,88,' + (0.02 + random() * 0.07).toFixed(3) + ')';
+      context.beginPath();
+      context.arc(random() * width, y, 3 + random() * 16, 0, Math.PI * 2);
+      context.fill();
+    }
+  });
+}
+
+/* Gold thermal foil wrapped around the second stage. */
+function rkFoilTexture() {
+  return makeCanvasTexture(256, 256, 256, function (context, width, height) {
+    const random = seededRandom(9119);
+    const tints = ['#f6dd8a', '#d8ab3c', '#f1cd63', '#c9992f', '#ffe9a8'];
+    context.fillStyle = '#e9c352';
+    context.fillRect(0, 0, width, height);
+    for (let i = 0; i < 420; i += 1) {
+      const x = random() * width;
+      const y = random() * height;
+      const size = 8 + random() * 30;
+      context.globalAlpha = 0.25 + random() * 0.5;
+      context.fillStyle = tints[Math.floor(random() * tints.length)];
+      context.beginPath();
+      context.moveTo(x, y);
+      context.lineTo(x + size, y + (random() - 0.5) * size);
+      context.lineTo(x + size * 0.4, y + size);
+      context.closePath();
+      context.fill();
+    }
+    context.globalAlpha = 1;
+    context.strokeStyle = 'rgba(255,246,214,0.55)';
+    context.lineWidth = 1.5;
+    for (let i = 0; i < 90; i += 1) {
+      const x = random() * width;
+      const y = random() * height;
+      context.beginPath();
+      context.moveTo(x, y);
+      context.lineTo(x + (random() - 0.5) * 60, y + (random() - 0.5) * 60);
+      context.stroke();
+    }
+  });
+}
+
+function rkCreateTextures() {
+  return {
+    hull: rkHullAlbedo(),
+    hullRough: rkHullRoughness(),
+    hullBump: rkHullBump(),
+    ribbed: rkRibbedTexture(),
+    bell: rkBellTexture(),
+    foil: rkFoilTexture()
+  };
+}
+
+/* Tiling clones share the source canvas but keep their own repeat; every clone
+ * is recorded in the sink so dispose() can release it. */
+let rkTextureSink = null;
+
+function rkRepeat(texture, x, y) {
+  const clone = texture.clone();
+  clone.wrapS = THREE.RepeatWrapping;
+  clone.wrapT = THREE.RepeatWrapping;
+  clone.repeat.set(x, y);
+  clone.needsUpdate = true;
+  if (rkTextureSink) rkTextureSink.push(clone);
+  return clone;
+}
+
+/* Bright stylized PBR metals: strong sun highlight, readable albedo, nothing
+ * unlit or near black. */
+function rkCreateMaterials(textures, sink) {
+  rkTextureSink = Array.isArray(sink) ? sink : null;
+  const materials = {};
+
+  /* painted hull, modulated per texel by the roughness map */
+  materials.hull = new THREE.MeshStandardMaterial({
+    map: rkRepeat(textures.hull, 1, 1),
+    bumpMap: rkRepeat(textures.hullBump, 1, 1),
+    roughnessMap: rkRepeat(textures.hullRough, 1, 1),
+    color: 0xffffff,
+    roughness: 1,
+    metalness: 0.38,
+    bumpScale: 0.09
+  });
+  materials.skirt = new THREE.MeshStandardMaterial({
+    map: rkRepeat(textures.ribbed, 14, 1), color: 0xdfe5ea, roughness: 0.44, metalness: 0.65
+  });
+  materials.ribbed = new THREE.MeshStandardMaterial({
+    map: rkRepeat(textures.ribbed, 10, 1), color: 0xe9eef2, roughness: 0.4, metalness: 0.6
+  });
+  materials.foil = new THREE.MeshStandardMaterial({
+    map: rkRepeat(textures.foil, 5, 1), color: 0xffffff, roughness: 0.3, metalness: 0.92
+  });
+  /* double sided: the bells are open nozzles and their interiors are visible */
+  materials.bell = new THREE.MeshStandardMaterial({
+    map: rkRepeat(textures.bell, 1, 1), color: 0xffffff, roughness: 0.34, metalness: 0.9,
+    side: THREE.DoubleSide
+  });
+  materials.accent = new THREE.MeshStandardMaterial({ color: 0xd8382a, roughness: 0.42, metalness: 0.3 });
+  materials.accentCool = new THREE.MeshStandardMaterial({ color: 0x2f6ec8, roughness: 0.38, metalness: 0.36 });
+  materials.trim = new THREE.MeshStandardMaterial({ color: 0xa8b2bd, roughness: 0.48, metalness: 0.72 });
+  materials.warn = new THREE.MeshStandardMaterial({ color: 0xf2c317, roughness: 0.62, metalness: 0.16 });
+  materials.glow = new THREE.MeshStandardMaterial({
+    color: 0xbfefff, emissive: 0x46c6ff, emissiveIntensity: 1.25, roughness: 0.28, metalness: 0.1
+  });
+  rkTextureSink = null;
+  return materials;
+}
+
+/* ---------------------------------------------------------------------------
+ * Build helpers (shared unit geometries, instancing, surface placement)
+ * ------------------------------------------------------------------------ */
+
+const RK_GEO = {
+  box: new THREE.BoxGeometry(1, 1, 1),
+  cylinder: new THREE.CylinderGeometry(0.5, 0.5, 1, 12, 1),
+  bolt: new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1),
+  sphere: new THREE.SphereGeometry(0.5, 12, 8)
+};
+
+const rkScratchPosition = new THREE.Vector3();
+const rkScratchEuler = new THREE.Euler();
+const rkScratchQuaternion = new THREE.Quaternion();
+const rkScratchScale = new THREE.Vector3();
+
+function rkCompose(matrix, item) {
+  const p = item.p || [0, 0, 0];
+  const r = item.r || [0, 0, 0];
+  const s = item.s || [1, 1, 1];
+  rkScratchPosition.set(p[0], p[1], p[2]);
+  rkScratchEuler.set(r[0], r[1], r[2]);
+  rkScratchQuaternion.setFromEuler(rkScratchEuler);
+  rkScratchScale.set(s[0], s[1], s[2]);
+  return matrix.compose(rkScratchPosition, rkScratchQuaternion, rkScratchScale);
+}
+
+/* One InstancedMesh per repeated part: repeated detail never costs a draw call
+ * per copy and the frame budget stays flat. */
+function rkInstances(parent, name, geometry, material, items, options) {
+  const mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, items.length));
+  const matrix = new THREE.Matrix4();
+  for (let i = 0; i < items.length; i += 1) {
+    rkCompose(matrix, items[i]);
+    mesh.setMatrixAt(i, matrix);
+  }
+  mesh.count = items.length;
+  mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.name = name;
+  const settings = options || {};
+  mesh.castShadow = settings.castShadow !== false;
+  mesh.receiveShadow = settings.receiveShadow !== false;
+  parent.add(mesh);
+  return mesh;
+}
+
+function rkMesh(parent, geometry, material, name) {
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = name || '';
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+/* Detail item on the hull surface: local +X faces outward from the launch
+ * axis, so a box is sized [radial, vertical, tangential]. 'radial' turns the
+ * item so its local +Y (a cylinder's length) points outward instead. */
+function rkSurfaceItem(radius, y, azimuth, size, kind) {
+  return {
+    p: [Math.cos(azimuth) * radius, y, Math.sin(azimuth) * radius],
+    r: [0, -azimuth, kind === 'radial' ? -Math.PI / 2 : 0],
+    s: size
+  };
+}
+
+/* ---------------------------------------------------------------------------
+ * Vehicle geometry
+ * ------------------------------------------------------------------------ */
+
+/* Stage stack: skirt, core, interstage, upper stages, nose cone and the
+ * surface greebles that make the hull read as a real vehicle. */
+function rkBuildStack(body, materials) {
+  const L = RK_LAYOUT;
+  const stages = [];
+  const parts = {};
+
+  function stackCylinder(name, spec, material, segments) {
+    const mesh = rkMesh(body,
+      new THREE.CylinderGeometry(spec.radius, spec.radius, spec.y1 - spec.y0, segments, 1, false),
+      material, name);
+    mesh.position.y = (spec.y0 + spec.y1) / 2;
+    stages.push({ name: name, y0: spec.y0, y1: spec.y1, radius: spec.radius, mesh: mesh });
+    return mesh;
+  }
+
+  function stackRing(name, radius, y, tube, material) {
+    const ring = rkMesh(body, new THREE.TorusGeometry(radius, tube, 8, 64), material, name);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = y;
+    return ring;
+  }
+
+  /* ---- aft skirt: ribbed steel with a flange, ribs and a bolt ring ------ */
+  parts.skirt = stackCylinder('rocket-aft-skirt', L.skirt, materials.skirt, 48);
+  parts.skirtFlange = stackRing('rocket-skirt-flange', L.skirt.radius + 0.06, L.skirt.y0 + 0.14, 0.18, materials.trim);
+
+  const skirtRibs = [];
+  for (let i = 0; i < 24; i += 1) {
+    const azimuth = (i / 24) * Math.PI * 2;
+    skirtRibs.push(rkSurfaceItem(L.skirt.radius + 0.1, (L.skirt.y0 + L.skirt.y1) / 2, azimuth,
+      [0.22, (L.skirt.y1 - L.skirt.y0) - 0.6, 0.3]));
+  }
+  rkInstances(body, 'rocket-skirt-ribs', RK_GEO.box, materials.trim, skirtRibs);
+
+  const skirtBolts = [];
+  for (let i = 0; i < 40; i += 1) {
+    const azimuth = (i / 40) * Math.PI * 2;
+    skirtBolts.push(rkSurfaceItem(L.skirt.radius + 0.03, L.skirt.y0 + 0.55, azimuth, [0.13, 0.16, 0.13], 'radial'));
+  }
+  rkInstances(body, 'rocket-skirt-bolts', RK_GEO.bolt, materials.bell, skirtBolts, { castShadow: false });
+
+  /* ---- hold-down posts: the deck fittings the hold-down jaws grip ------- */
+  const posts = [];
+  const postFeet = [];
+  for (let i = 0; i < L.posts.azimuthDeg.length; i += 1) {
+    const azimuth = L.posts.azimuthDeg[i] * RK_DEG;
+    const x = Math.cos(azimuth) * L.posts.radius;
+    const z = Math.sin(azimuth) * L.posts.radius;
+    posts.push({ p: [x, (L.posts.y0 + L.posts.y1) / 2, z], r: [0, -azimuth, 0], s: [L.posts.size, L.posts.y1 - L.posts.y0, L.posts.size] });
+    postFeet.push({ p: [x, 0.16, z], r: [0, -azimuth, 0], s: [L.posts.size + 0.3, 0.32, L.posts.size + 0.3] });
+  }
+  rkInstances(body, 'rocket-hold-down-posts', RK_GEO.box, materials.trim, posts);
+  rkInstances(body, 'rocket-hold-down-feet', RK_GEO.box, materials.warn, postFeet);
+
+  /* ---- core stage: the hull the clamps close on ------------------------- */
+  parts.core = stackCylinder('rocket-core-stage', L.core, materials.hull, 56);
+
+  const racewayAz = L.racewayAzimuthDeg * RK_DEG;
+  const racewayX = Math.cos(racewayAz) * (L.core.radius + 0.24);
+  const racewayZ = Math.sin(racewayAz) * (L.core.radius + 0.24);
+  const raceway = rkMesh(body, RK_GEO.box, materials.accentCool, 'rocket-raceway');
+  raceway.position.set(racewayX, (L.core.y0 + L.core.y1) / 2, racewayZ);
+  raceway.rotation.y = -racewayAz;
+  raceway.scale.set(0.4, (L.core.y1 - L.core.y0) * 0.94, 0.62);
+  parts.raceway = raceway;
+
+  const racewayClamps = [];
+  for (let y = L.core.y0 + 1.4; y < L.core.y1 - 1.0; y += 2.2) {
+    racewayClamps.push(rkSurfaceItem(L.core.radius + 0.18, y, racewayAz, [0.52, 0.26, 0.94]));
+  }
+  rkInstances(body, 'rocket-raceway-clamps', RK_GEO.box, materials.trim, racewayClamps);
+
+  /* ---- interstage and the two separation bands -------------------------- */
+  parts.interstage = stackCylinder('rocket-interstage', L.interstage, materials.ribbed, 48);
+  stackRing('rocket-interstage-ring-a', L.interstage.radius + 0.05, L.interstage.y0 + 0.24, 0.15, materials.accent);
+  stackRing('rocket-interstage-ring-b', L.interstage.radius + 0.05, L.interstage.y1 - 0.24, 0.15, materials.accent);
+
+  /* ---- upper stages: gold foil, joint ring and trim band ---------------- */
+  parts.stage2 = stackCylinder('rocket-stage-2', L.stage2, materials.foil, 44);
+  stackRing('rocket-stage-2-band', L.stage2.radius + 0.05, L.stage2.y0 + 0.38, 0.16, materials.accent);
+  stackRing('rocket-stage-2-top', L.stage2.radius + 0.04, L.stage2.y1 - 0.22, 0.13, materials.trim);
+
+  parts.joint = stackCylinder('rocket-stage-joint', L.joint, materials.ribbed, 40);
+  parts.trim = stackCylinder('rocket-trim-band', L.trim, materials.accentCool, 40);
+
+  /* ---- nose cone: lathed elliptical ogive plus a crimson cap ------------ */
+  const span = L.fairing.tipY - L.fairing.y0;
+  const fairingPoints = [];
+  const fairingSteps = 22;
+  for (let i = 0; i <= fairingSteps; i += 1) {
+    const theta = (i / fairingSteps) * (Math.PI / 2);
+    fairingPoints.push(new THREE.Vector2(
+      Math.max(0.0015, L.fairing.radius * Math.cos(theta)),
+      L.fairing.y0 + span * Math.sin(theta)
+    ));
+  }
+  parts.fairing = rkMesh(body, new THREE.LatheGeometry(fairingPoints, 48), materials.hull, 'rocket-nose-cone');
+  stages.push({ name: 'rocket-nose-cone', y0: L.fairing.y0, y1: L.fairing.tipY, radius: L.fairing.radius, mesh: parts.fairing });
+
+  const capTheta = Math.asin(Math.min(0.999, (L.fairing.capY - L.fairing.y0) / span));
+  const capPoints = [];
+  const capSteps = 8;
+  for (let i = 0; i <= capSteps; i += 1) {
+    const theta = capTheta + (i / capSteps) * ((Math.PI / 2) - capTheta);
+    capPoints.push(new THREE.Vector2(
+      Math.max(0.0015, L.fairing.radius * Math.cos(theta)),
+      L.fairing.y0 + span * Math.sin(theta)
+    ));
+  }
+  parts.noseCap = rkMesh(body, new THREE.LatheGeometry(capPoints, 48), materials.accent, 'rocket-nose-cap');
+  parts.noseCap.scale.set(1.006, 1, 1.006);
+
+  /* four fairing seam ribs hugging the cone */
+  const ribU = 0.42;
+  const ribTheta = Math.asin(ribU);
+  const ribRadius = L.fairing.radius * Math.cos(ribTheta);
+  const ribY = L.fairing.y0 + span * Math.sin(ribTheta);
+  const ribTilt = Math.atan((L.fairing.radius / span) * Math.tan(ribTheta));
+  const fairingRibs = [];
+  for (let i = 0; i < 4; i += 1) {
+    const azimuth = (45 + i * 90) * RK_DEG;
+    fairingRibs.push({
+      p: [Math.cos(azimuth) * (ribRadius + 0.05), ribY, Math.sin(azimuth) * (ribRadius + 0.05)],
+      r: [0, -azimuth, ribTilt],
+      s: [0.1, span * 0.5, 0.26]
+    });
+  }
+  rkInstances(body, 'rocket-fairing-ribs', RK_GEO.box, materials.trim, fairingRibs);
+  stackRing('rocket-fairing-seam', L.fairing.radius + 0.02, L.fairing.y0 + 0.28, 0.13, materials.accentCool);
+
+  return { stages: stages, parts: parts };
+}
+
+/* Engine cluster: seven bells on one lathed profile, one anchor each, the
+ * anchors sitting exactly on the bell exit planes. */
+function rkBuildEngines(body, materials) {
+  const B = RK_LAYOUT.bell;
+  const profile = [];
+  const steps = 12;
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;                                  // 0 at the exit, 1 at the throat
+    profile.push(new THREE.Vector2(
+      B.exitRadius + (B.throatRadius - B.exitRadius) * Math.pow(t, 1.7),
+      (B.topY - B.exitY) * t
+    ));
+  }
+  const bellGeometry = new THREE.LatheGeometry(profile, 36);
+
+  const items = [];
+  const positions = [];
+  items.push({ p: [0, B.exitY, 0], r: [0, 0, 0], s: [1, 1, 1] });
+  positions.push(new THREE.Vector3(0, B.exitY, 0));
+  const ringCount = B.count - 1;
+  for (let i = 0; i < ringCount; i += 1) {
+    const azimuth = (i / ringCount) * Math.PI * 2 + Math.PI / ringCount;
+    const x = Math.cos(azimuth) * B.ringRadius;
+    const z = Math.sin(azimuth) * B.ringRadius;
+    items.push({ p: [x, B.exitY, z], r: [0, 0, 0], s: [1, 1, 1] });
+    positions.push(new THREE.Vector3(x, B.exitY, z));
+  }
+  const bellMesh = rkInstances(body, 'rocket-engine-bells', bellGeometry, materials.bell, items);
+
+  const anchors = [];
+  const direction = new THREE.Vector3(0, -1, 0);
+  for (let i = 0; i < positions.length; i += 1) {
+    const anchor = new THREE.Object3D();
+    anchor.name = 'engine-bell-anchor-' + (i + 1);
+    anchor.position.copy(positions[i]);
+    anchor.userData = {
+      engine: anchor.name,
+      index: i,
+      exitRadius: B.exitRadius,
+      throatRadius: B.throatRadius,
+      direction: [0, -1, 0]
+    };
+    body.add(anchor);
+    anchors.push({
+      name: anchor.name,
+      index: i,
+      anchor: anchor,
+      bellMesh: bellMesh,
+      bellInstanceIndex: i,
+      exitRadius: B.exitRadius,
+      throatRadius: B.throatRadius,
+      localPosition: positions[i].clone(),
+      direction: direction.clone()
+    });
+  }
+
+  return { bellMesh: bellMesh, anchors: anchors, count: positions.length, geometry: bellGeometry };
+}
+
+/* Four swept aerodynamic fins, one extruded profile instance per azimuth. */
+function rkBuildFins(body, materials) {
+  const F = RK_LAYOUT.fins;
+  const shape = new THREE.Shape();
+  shape.moveTo(F.rootRadius, F.yTop);
+  shape.lineTo(F.tipRadius, F.yBottom + (F.yTop - F.yBottom) * 0.52);
+  shape.lineTo(F.tipRadius, F.yBottom + 0.9);
+  shape.lineTo(F.rootRadius, F.yBottom);
+  shape.closePath();
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: F.thickness, bevelEnabled: true, bevelThickness: 0.05,
+    bevelSize: 0.07, bevelSegments: 1, curveSegments: 1
+  });
+  geometry.translate(0, 0, -F.thickness / 2);
+
+  const items = [];
+  for (let i = 0; i < F.azimuthDeg.length; i += 1) {
+    items.push({ p: [0, 0, 0], r: [0, -F.azimuthDeg[i] * RK_DEG, 0], s: [1, 1, 1] });
+  }
+  const mesh = rkInstances(body, 'rocket-fins', geometry, materials.accent, items);
+
+  return {
+    mesh: mesh, count: F.azimuthDeg.length, azimuthDeg: F.azimuthDeg.slice(),
+    rootRadius: F.rootRadius, tipRadius: F.tipRadius, y0: F.yBottom, y1: F.yTop
+  };
+}
+
+/* Fine greebles: hatches, RCS pods, portholes, antennas and hazard plates.
+ * Kept in their own group so the low quality tier can drop the small pieces
+ * without touching the silhouette. */
+function rkBuildDetails(body, materials) {
+  const L = RK_LAYOUT;
+  const fine = new THREE.Group();
+  fine.name = 'rocket-detail-greebles';
+  body.add(fine);
+
+  /* access hatches and inspection plates on the core stage */
+  const hatches = [];
+  const hatchSpecs = [
+    [10.5, 62, 1.5, 1.1], [13.2, 300, 1.2, 0.9], [16.0, 150, 1.6, 1.2],
+    [19.4, 20, 1.1, 0.9], [22.0, 245, 1.4, 1.0], [24.6, 105, 1.2, 1.4],
+    [11.8, 200, 0.9, 0.9], [17.4, 350, 1.0, 0.8]
+  ];
+  for (let i = 0; i < hatchSpecs.length; i += 1) {
+    const spec = hatchSpecs[i];
+    hatches.push(rkSurfaceItem(L.core.radius + 0.07, spec[0], spec[1] * RK_DEG, [0.16, spec[2], spec[3]]));
+  }
+  rkInstances(fine, 'rocket-hatches', RK_GEO.box, materials.trim, hatches);
+
+  /* hazard plates low on the aft skirt, clear of the clamps and fins */
+  const plates = [];
+  const plateAzimuths = [78, 198, 258, 348];
+  for (let i = 0; i < plateAzimuths.length; i += 1) {
+    plates.push(rkSurfaceItem(L.skirt.radius + 0.06, 5.2, plateAzimuths[i] * RK_DEG, [0.14, 0.6, 1.1]));
+  }
+  rkInstances(fine, 'rocket-hazard-plates', RK_GEO.box, materials.warn, plates);
+
+  /* RCS pods around the second-stage top, with radial control nozzles */
+  const podAzimuths = [40, 130, 220, 310];
+  const pods = [];
+  const nozzles = [];
+  for (let i = 0; i < podAzimuths.length; i += 1) {
+    const azimuth = podAzimuths[i] * RK_DEG;
+    pods.push(rkSurfaceItem(L.stage2.radius + 0.42, 34.9, azimuth, [0.7, 0.7, 0.9]));
+    nozzles.push(rkSurfaceItem(L.stage2.radius + 0.72, 35.15, azimuth, [0.34, 0.44, 0.34], 'radial'));
+  }
+  rkInstances(fine, 'rocket-rcs-pods', RK_GEO.box, materials.trim, pods);
+  rkInstances(fine, 'rocket-rcs-nozzles', RK_GEO.cylinder, materials.bell, nozzles, { castShadow: false });
+
+  /* portholes and a pair of docking windows, emissive and bright */
+  const windows = [];
+  const windowSpecs = [
+    [31.8, 55], [31.8, 175], [34.4, 235], [34.4, 15], [37.8, 95], [37.8, 275]
+  ];
+  for (let i = 0; i < windowSpecs.length; i += 1) {
+    const spec = windowSpecs[i];
+    const radius = spec[0] > 37 ? L.trim.radius : L.stage2.radius;
+    windows.push(rkSurfaceItem(radius + 0.06, spec[0], spec[1] * RK_DEG, [0.2, 0.34, 0.34], 'radial'));
+  }
+  rkInstances(fine, 'rocket-portholes', RK_GEO.cylinder, materials.glow, windows, { castShadow: false, receiveShadow: false });
+
+  /* beacon antennas on the fairing base with lit tips */
+  const masts = [];
+  const tips = [];
+  const mastAzimuths = [135, 255, 15];
+  for (let i = 0; i < mastAzimuths.length; i += 1) {
+    const azimuth = mastAzimuths[i] * RK_DEG;
+    masts.push(rkSurfaceItem(2.5, L.fairing.y0 + 0.9, azimuth, [0.09, 1.7, 0.09]));
+    tips.push(rkSurfaceItem(2.5, L.fairing.y0 + 1.8, azimuth, [0.24, 0.24, 0.24]));
+  }
+  rkInstances(fine, 'rocket-antennas', RK_GEO.cylinder, materials.trim, masts);
+  rkInstances(fine, 'rocket-antenna-tips', RK_GEO.sphere, materials.glow, tips, { castShadow: false, receiveShadow: false });
+
+  return { group: fine, fine: fine };
+}
+
+/* ---------------------------------------------------------------------------
+ * Rocket subsystem: placement on the pad, the vibration rig and the published
+ * rocket-rig-handles contract.
+ * ------------------------------------------------------------------------ */
+
+const rocketSystem = {
+  root: null,
+  rig: null,
+  body: null,
+  handles: null,
+  textures: null,
+  materials: null,
+  materialTextures: [],
+  instanced: [],
+  stages: [],
+  parts: null,
+  fins: null,
+  anchors: [],
+  details: null,
+  seat: new THREE.Vector3(0, RK_LAYOUT.seatY, 0),
+  restPose: { position: new THREE.Vector3(), quaternion: new THREE.Quaternion(), scale: new THREE.Vector3(1, 1, 1) },
+  radius: RK_LAYOUT.radius,
+  height: RK_LAYOUT.tipY,
+  finTipRadius: RK_LAYOUT.fins.tipRadius,
+  altitude: 0,
+  autoAltitude: true,
+  rigHold: false,
+  time: 0,
+  vibration: {
+    request: 0,          // what a consumer asked for
+    target: 0,           // request combined with the thrust coupling
+    level: 0,            // smoothed amplitude actually applied
+    thrustCoupling: 0.85,// how much of state.thrust feeds the shake
+    maxOffset: 0.22,     // metres of lateral sway at full amplitude
+    maxTilt: 0.005,      // radians of attitude wobble at full amplitude
+    attack: 0.22,        // seconds to spin up
+    release: 0.55,       // seconds to spin down
+    returnTau: 0.6,      // seconds the released rig takes to settle home
+    offset: new THREE.Vector3(),
+    tilt: 0,
+    settled: true
+  },
+
+  init(ctx) {
+    const launchComplex = runtime.handles && runtime.handles.launchComplex
+      ? runtime.handles.launchComplex : null;
+
+    /* Seat on the published pad deck - never guess, never float. */
+    let seatX = 0;
+    let seatY = RK_LAYOUT.seatY;
+    let seatZ = 0;
+    if (launchComplex && launchComplex.vehicleSeat) {
+      seatX = launchComplex.vehicleSeat.x;
+      seatY = launchComplex.vehicleSeat.y;
+      seatZ = launchComplex.vehicleSeat.z;
+    } else if (launchComplex && launchComplex.pad) {
+      seatY = launchComplex.pad.deckTopY;
+    }
+    this.seat.set(seatX, seatY, seatZ);
+
+    const textures = rkCreateTextures();
+    const materialTextures = [];
+    const materials = rkCreateMaterials(textures, materialTextures);
+
+    /* root (director) -> rig (vibration) -> body (geometry) */
+    const root = new THREE.Group();
+    root.name = 'rocket-vehicle';
+    root.position.set(seatX, seatY, seatZ);
+    const rig = new THREE.Group();
+    rig.name = 'rocket-vibration-rig';
+    root.add(rig);
+    const body = new THREE.Group();
+    body.name = 'rocket-body';
+    rig.add(body);
+
+    const stack = rkBuildStack(body, materials);
+    const engines = rkBuildEngines(body, materials);
+    const fins = rkBuildFins(body, materials);
+    const details = rkBuildDetails(body, materials);
+
+    ctx.scene.add(root);
+
+    const instanced = [];
+    body.traverse(function (object) {
+      if (object.isInstancedMesh) instanced.push({ name: object.name, mesh: object, count: object.count });
+    });
+
+    this.root = root;
+    this.rig = rig;
+    this.body = body;
+    this.group = root;          // generic name for consumers that look for a root
+    this.vehicle = body;
+    this.textures = textures;
+    this.materials = materials;
+    this.materialTextures = materialTextures;
+    this.instanced = instanced;
+    this.stages = stack.stages;
+    this.parts = stack.parts;
+    this.fins = fins;
+    this.anchors = engines.anchors;
+    this.bellMesh = engines.bellMesh;
+    this.details = details;
+    this.time = 0;
+    this.altitude = 0;
+    this.restPose.position.copy(rig.position);
+    this.restPose.quaternion.copy(rig.quaternion);
+    this.restPose.scale.copy(rig.scale);
+    this.snapRigToRest();
+
+    /* Consume the launch-complex clamp API: the jaws close on the real aft
+     * body radius instead of the configured default, so they touch the hull. */
+    if (launchComplex && typeof launchComplex.setClampReach === 'function') {
+      launchComplex.setClampReach(this.radius);
+    }
+
+    const vibration = this.vibration;
+    const handles = {
+      root: root,
+      rig: rig,
+      body: body,
+      rest: this.restPose,
+      seat: { x: seatX, y: seatY, z: seatZ },
+      baseY: seatY,
+      height: this.height,
+      radius: this.radius,
+      finTipRadius: this.finTipRadius,
+      bounds: {
+        minY: seatY,
+        maxY: seatY + this.height,
+        minRadius: 0,
+        maxRadius: this.finTipRadius
+      },
+      engineCount: engines.count,
+      engineAnchors: engines.anchors,
+      engineBellMesh: engines.bellMesh,
+      engineAnchor: function (name) { return rocketSystem.engineAnchor(name); },
+      vibration: vibration,
+      setVibration: function (amount, options) { return rocketSystem.setVibration(amount, options); },
+      addImpulse: function (amount) { return rocketSystem.addImpulse(amount); },
+      returnToRest: function (immediate) { return rocketSystem.returnToRest(immediate); },
+      resetRig: function () { return rocketSystem.snapRigToRest(); },
+      setAltitude: function (metres) { return rocketSystem.setAltitude(metres); },
+      rigHold: false,
+      autoAltitude: true,
+      stages: this.stages,
+      parts: this.parts,
+      fins: this.fins,
+      instanced: instanced,
+      instancedCount: instanced.length,
+      contactReport: function () { return rocketSystem.contactReport(); },
+      getState: function () { return rocketSystem.getState(); }
+    };
+
+    this.handles = handles;
+    if (!runtime.handles) runtime.handles = {};
+    runtime.handles.rocket = handles;
+    runtime.rocket = this;
+
+    state.rocket = state.rocket || {};
+    state.rocket.seatY = seatY;
+    state.rocket.radius = this.radius;
+    state.rocket.height = this.height;
+    state.rocket.engineCount = engines.count;
+    state.rocket.level = 0;
+    state.rocket.settled = true;
+    state.rocket.altitude = 0;
+    state.rocket.instancedCount = instanced.length;
+    state.rocket.rigOffset = state.rocket.rigOffset || new THREE.Vector3();
+
+    console.log('[LAUNCH_SCENE] rocket seated at y=' + seatY.toFixed(2) +
+      ' radius=' + this.radius + ' height=' + this.height +
+      ' engines=' + engines.count + ' instanced=' + instanced.length);
+  },
+
+  engineAnchor(name) {
+    for (let i = 0; i < this.anchors.length; i += 1) {
+      if (this.anchors[i].name === name || this.anchors[i].index === Number(name)) return this.anchors[i];
+    }
+    return null;
+  },
+
+  /* Stack radius at a height measured above the deck seat: how wide the hull is
+   * where a clamp arm or hold-down grips it, and 0 where nothing is. */
+  radiusAtHeight(localY) {
+    const L = RK_LAYOUT;
+    const y = Number(localY);
+    if (!Number.isFinite(y)) return 0;
+    if (y >= L.skirt.y0 && y <= L.skirt.y1) return L.skirt.radius;
+    if (y >= L.core.y0 && y <= L.core.y1) return L.core.radius;
+    if (y >= L.interstage.y0 && y <= L.interstage.y1) return L.interstage.radius;
+    if (y >= L.stage2.y0 && y <= L.stage2.y1) return L.stage2.radius;
+    if (y >= L.joint.y0 && y <= L.joint.y1) return L.joint.radius;
+    if (y >= L.trim.y0 && y <= L.trim.y1) return L.trim.radius;
+    /* the four hold-down posts are the only structure at deck level, and their
+     * outer faces are at exactly the aft-body radius the jaws close on */
+    if (y >= L.posts.y0 && y <= L.posts.y1) return L.posts.radius + L.posts.size * 0.5;
+    if (y >= L.fairing.y0 && y <= L.fairing.tipY) {
+      return rkFairingRadius((y - L.fairing.y0) / (L.fairing.tipY - L.fairing.y0));
+    }
+    return 0;
+  },
+
+  /* Where the vehicle meets the launch complex: deck height, base gap and, for
+   * every clamp arm, the radius the closed jaws reach versus the hull radius
+   * at that arm's height. */
+  contactReport() {
+    const launchComplex = runtime.handles && runtime.handles.launchComplex
+      ? runtime.handles.launchComplex : null;
+    const deckTopY = launchComplex && launchComplex.pad ? launchComplex.pad.deckTopY : null;
+    const report = {
+      seatY: this.seat.y,
+      rootWorldY: this.root ? this.root.position.y : null,
+      deckTopY: deckTopY,
+      gap: deckTopY === null ? null : Number((this.seat.y - deckTopY).toFixed(4)),
+      upright: true,          // the stack is built along +Y: nose cone up
+      arms: []
+    };
+    if (!launchComplex) return report;
+    const rigs = launchComplex.clampRigs.concat(launchComplex.holdDownRigs);
+    for (let i = 0; i < rigs.length; i += 1) {
+      const rig = rigs[i];
+      const localY = deckTopY === null ? rig.height : rig.height - deckTopY;
+      const contactRadius = rig.pivotRadius - rig.armLength - 0.6;
+      report.arms.push({
+        id: rig.id,
+        kind: rig.kind,
+        deckLocalY: Number(localY.toFixed(3)),
+        closedRadius: Number(contactRadius.toFixed(3)),
+        hullRadius: Number(this.radiusAtHeight(localY).toFixed(3)),
+        clearance: Number((contactRadius - this.radiusAtHeight(localY)).toFixed(3))
+      });
+    }
+    return report;
+  },
+
+  getState() {
+    const world = new THREE.Vector3();
+    if (this.root) this.root.getWorldPosition(world);
+    return {
+      registered: runtime.has('rocket'),
+      seatY: this.seat.y,
+      rootWorld: { x: Number(world.x.toFixed(3)), y: Number(world.y.toFixed(3)), z: Number(world.z.toFixed(3)) },
+      height: this.height,
+      radius: this.radius,
+      tipWorldY: Number((this.seat.y + this.height + this.altitude).toFixed(3)),
+      altitude: this.altitude,
+      engines: this.anchors.length,
+      stages: this.stages.length,
+      instancedCount: this.instanced.length,
+      vibration: {
+        request: this.vibration.request,
+        target: this.vibration.target,
+        level: Number(this.vibration.level.toFixed(5)),
+        settled: this.vibration.settled,
+        offset: this.vibration.offset.clone(),
+        tilt: this.vibration.tilt
+      },
+      rigPosition: this.rig ? this.rig.position.clone() : null,
+      rigRotation: this.rig ? { x: this.rig.rotation.x, y: this.rig.rotation.y, z: this.rig.rotation.z } : null,
+      rest: this.restPose.position.clone()
+    };
+  },
+
+  /* ---- vibration rig ---------------------------------------------------- */
+
+  setVibration(amount, options) {
+    const settings = options || {};
+    const v = this.vibration;
+    v.request = clamp01(amount);
+    if (settings.thrustCoupling !== undefined) v.thrustCoupling = clamp01(settings.thrustCoupling);
+    if (settings.attack !== undefined) v.attack = Math.max(0, Number(settings.attack) || 0);
+    if (settings.release !== undefined) v.release = Math.max(0, Number(settings.release) || 0);
+    if (settings.returnTau !== undefined) v.returnTau = Math.max(0, Number(settings.returnTau) || 0);
+    if (settings.immediate === true) {
+      v.level = v.request;
+      this.applyRigPose(0);
+    }
+    return v.request;
+  },
+
+  /* Momentary kick: the level jumps now and decays with the release tau. */
+  addImpulse(amount) {
+    const v = this.vibration;
+    v.level = clamp01(v.level + clamp01(amount));
+    v.request = Math.max(v.request, v.level);
+    this.applyRigPose(0);
+    return v.level;
+  },
+
+  returnToRest(immediate) {
+    const v = this.vibration;
+    v.request = 0;
+    v.target = 0;
+    if (immediate === true) return this.snapRigToRest();
+    return v.level;
+  },
+
+  /* Exact rest pose: position, quaternion and scale copied from the published
+   * rest transform, with every vibration readout cleared. */
+  snapRigToRest() {
+    if (!this.rig) return false;
+    this.rig.position.copy(this.restPose.position);
+    this.rig.quaternion.copy(this.restPose.quaternion);
+    this.rig.scale.copy(this.restPose.scale);
+    const v = this.vibration;
+    v.level = 0;
+    v.target = 0;
+    v.request = 0;
+    v.offset.set(0, 0, 0);
+    v.tilt = 0;
+    v.settled = true;
+    return true;
+  },
+
+  setAltitude(metres) {
+    const value = Math.max(0, Number(metres) || 0);
+    state.altitude = value;
+    this.altitude = value;
+    if (this.root && !this.autoAltitude) this.root.position.y = this.seat.y + value;
+    return value;
+  },
+
+  /* Pose the rig: procedural shake while vibrating, a damped trip home to the
+   * published rest pose once released, and hands off when a consumer holds it. */
+  applyRigPose(delta) {
+    const rig = this.rig;
+    if (!rig) return;
+    const rest = this.restPose;
+    const v = this.vibration;
+    const level = v.level;
+
+    if (level > 1e-4) {
+      const t = this.time;
+      const amp = level * v.maxOffset;
+      const ox = Math.sin(t * 41.3) * amp;
+      const oy = Math.sin(t * 33.1 + 2.6) * amp * 0.35;
+      const oz = Math.sin(t * 57.7 + 1.7) * amp * 0.9;
+      const tilt = level * v.maxTilt;
+      rig.position.set(rest.position.x + ox, rest.position.y + oy, rest.position.z + oz);
+      rig.quaternion.setFromEuler(rkScratchEuler.set(Math.sin(t * 47.1 + 0.6) * tilt, 0, Math.sin(t * 53.3 + 2.1) * tilt));
+      v.offset.set(ox, oy, oz);
+      v.tilt = tilt;
+      v.settled = false;
+      return;
+    }
+
+    v.tilt = 0;
+    if (this.rigHold) {
+      v.offset.copy(rig.position).sub(rest.position);
+      v.settled = v.offset.lengthSq() < 1e-8;
+      return;
+    }
+
+    /* released: drift home, then snap to the exact rest transform */
+    const tau = v.returnTau;
+    const k = tau > 0 ? 1 - Math.exp(-Math.max(0, delta) / tau) : 1;
+    rig.position.lerp(rest.position, k);
+    rig.quaternion.slerp(rest.quaternion, k);
+    rig.scale.lerp(rest.scale, k);
+    if (rig.position.distanceToSquared(rest.position) < 1e-6) rig.position.copy(rest.position);
+    if (1 - Math.abs(rig.quaternion.dot(rest.quaternion)) < 1e-8) rig.quaternion.copy(rest.quaternion);
+    v.offset.copy(rig.position).sub(rest.position);
+    v.settled = v.offset.lengthSq() < 1e-8 && rig.quaternion.equals(rest.quaternion);
+  },
+
+  update(dt, currentState) {
+    const delta = Math.max(0, Number(dt) || 0);
+    const shared = currentState || state;
+    this.time += delta;
+
+    /* consumer overrides published on the handles object */
+    if (this.handles) {
+      if (typeof this.handles.autoAltitude === 'boolean') this.autoAltitude = this.handles.autoAltitude;
+      this.rigHold = this.handles.rigHold === true;
+    }
+
+    /* ascent translation: the shared director state owns altitude, the root
+     * follows it until a consumer takes manual control. */
+    if (this.root && this.autoAltitude) {
+      const altitude = Math.max(0, Number(shared.altitude) || 0);
+      this.altitude = altitude;
+      this.root.position.y = this.seat.y + altitude;
+    } else if (this.root) {
+      this.altitude = Math.max(0, this.root.position.y - this.seat.y);
+    }
+
+    /* shake request plus the thrust coupling the director drives */
+    const v = this.vibration;
+    const target = clamp01(Math.max(clamp01(v.request), clamp01(shared.thrust) * clamp01(v.thrustCoupling)));
+    v.target = target;
+    const tau = target > v.level ? v.attack : v.release;
+    if (tau > 0) v.level += (target - v.level) * (1 - Math.exp(-delta / tau));
+    else v.level = target;
+    if (target <= 1e-4 && v.level <= 1e-4) v.level = 0;
+
+    this.applyRigPose(delta);
+
+    if (shared.rocket) {
+      shared.rocket.level = v.level;
+      shared.rocket.settled = v.settled;
+      shared.rocket.altitude = this.altitude;
+      if (shared.rocket.rigOffset) shared.rocket.rigOffset.copy(v.offset);
+    }
+  },
+
+  onQualityChange(qualityTier) {
+    /* the small greebles are pure decoration: drop them on the lowest tier and
+     * keep the silhouette, the panels and the engine cluster intact. */
+    if (this.details && this.details.fine) {
+      this.details.fine.visible = qualityTier.id !== 'low';
+    }
+  },
+
+  dispose(ctx) {
+    if (this.root && ctx && ctx.scene) ctx.scene.remove(this.root);
+    if (this.root) {
+      this.root.traverse(function (object) {
+        if (object.isMesh || object.isInstancedMesh) {
+          if (object.geometry) object.geometry.dispose();
+        }
+      });
+    }
+    Object.keys(RK_GEO).forEach(function (key) {
+      if (RK_GEO[key] && RK_GEO[key].dispose) RK_GEO[key].dispose();
+    });
+    if (this.materials) {
+      Object.keys(this.materials).forEach(function (key) {
+        if (this.materials[key] && this.materials[key].dispose) this.materials[key].dispose();
+      }, this);
+    }
+    if (this.textures) {
+      Object.keys(this.textures).forEach(function (key) {
+        if (this.textures[key] && this.textures[key].dispose) this.textures[key].dispose();
+      }, this);
+    }
+    this.materialTextures.forEach(function (texture) { if (texture && texture.dispose) texture.dispose(); });
+
+    this.root = null;
+    this.rig = null;
+    this.body = null;
+    this.group = null;
+    this.vehicle = null;
+    this.textures = null;
+    this.materials = null;
+    this.materialTextures = [];
+    this.instanced = [];
+    this.stages = [];
+    this.parts = null;
+    this.fins = null;
+    this.anchors = [];
+    this.bellMesh = null;
+    this.details = null;
+    this.handles = null;
+    this.snapRigToRest();
+    if (runtime.handles) runtime.handles.rocket = null;
+    runtime.rocket = null;
+  }
+};
+
+runtime.register('rocket', rocketSystem);
 
 /* ---------------------------------------------------------------------------
  * SECTION: exhaust - extension point (engine plume and flame).
