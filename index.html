@@ -45,7 +45,7 @@
  *   SECTION: particles       sparks, smoke, dust, debris
  *   SECTION: reactive        dynamic lighting, shockwave, camera-facing FX
  *   SECTION: director        launch timeline, phases, thrust/altitude
- *   SECTION: camera          cinematic rig, shots, shake
+ *   SECTION: camera          cinematic rig: damped follow, shake, reveal
  *   SECTION: perf            quality tier, fps sampling, launch-status channel
  * A later phase appends exactly one subsystem inside its own marker without
  * reordering existing code, e.g.
@@ -65,8 +65,16 @@
  *   state        shared director state (see the literal below)
  *   quality      active quality tier { id, pixelRatioCap, shadowMapSize, ... }
  *   setQuality(id) / setPhase(id)   hooks for the perf and director phases
- *   cameraRig / director / perf     scaffold stubs, replaced by later phases
+ *   cameraRig / director / perf     live subsystem instances
  *   renderer / scene / camera / THREE
+ *
+ * CAMERA RIG - LAUNCH_SCENE.cameraRig (SECTION: camera)
+ *   the registered 'camera' subsystem: one damped cinematic follow driven by
+ *   LAUNCH_SCENE.timeline, with bounded ignition/liftoff shake, a subtle engine
+ *   tremor, the landscape/cloud/horizon reveal, and no overlay or control UI
+ *   report()   live framing metrics: vehicle screen height, effect-envelope
+ *              containment, terrain/structure clearance, sight-line occlusion,
+ *              shake and the reveal mix (also mirrored into state.camera)
  * ========================================================================== */
 
 import * as THREE from 'three';
@@ -124,7 +132,20 @@ const state = {
   altitude: 0,           // metres above the pad
   velocity: 0,           // m/s vertical speed
   quality: 'high',       // active quality tier id
-  camera: { mode: 'cinematic', shot: 'pad-establish', shake: 0 },
+  camera: {
+    mode: 'cinematic',     // the authored rig is the only camera director
+    shot: 'pad-establish', // named framing beat (see the SECTION: camera block)
+    shake: 0,              // 0..1 shake impulse applied this frame
+    vibration: 0,          // 0..1 engine tremor applied this frame
+    reveal: 0,             // 0..1 framing reveal mix (pad -> ascent)
+    distance: 0,           // metres from the camera to the vehicle centre
+    radius: 0,             // metres from the camera to the launch axis
+    screenHeight: 0,       // the body's projected height, viewport fractions
+    horizon: 0.5,          // viewport fraction the horizon line sits at
+    clearance: 0,          // metres above the terrain sampler
+    occluded: false,       // terrain/structure cutting the sight line
+    status: ''             // compact camera read-out for the launch-status meta
+  },
   errors: []             // { source, message, at } caught subsystem failures
 };
 
@@ -198,7 +219,9 @@ function publishStatus(force) {
     ' frames=' + state.frame +
     ' thrust=' + state.thrust.toFixed(3) +
     ' alt=' + state.altitude.toFixed(1) +
-    ' quality=' + state.quality);
+    ' quality=' + state.quality +
+    /* the camera phase appends its live framing read-out (state.camera.status) */
+    (state.camera && state.camera.status ? ' ' + state.camera.status : ''));
 }
 
 function initEntry(entry) {
@@ -9224,89 +9247,811 @@ runtime.director = directorSystem;
 runtime.register('director', directorSystem);
 
 /* ---------------------------------------------------------------------------
- * SECTION: camera - cinematic camera rig stub
- * Named shots on a damped orbit around the launch axis. The camera phase adds
- * follow shots, ignition shake and the landscape/cloud reveal on top of this.
+ * SECTION: camera - authored cinematic camera director
+ * ---------------------------------------------------------------------------
+ * The single scaffold PerspectiveCamera is driven from here by one authored
+ * performance that reads LAUNCH_SCENE.timeline (launch-timeline-contract) and
+ * the vehicle transform published by the rocket phase (rocket-rig-handles).
+ * Nothing in this section creates a camera, a render pass, an overlay, a gizmo
+ * or an interactive control: the rig can only move the scaffold camera and the
+ * shared state.camera block. Manual controls are intentionally omitted - an
+ * orbit gizmo would fight the authored composition the sequence needs.
+ *
+ * THE SHOT, beat by beat:
+ *   pad hold    the camera sits low (about 10 m) and close (about 104 m) at a
+ *               sunlit three-quarter azimuth, looking slightly up: the stack
+ *               fills about half the viewport and the deck, tower, flame
+ *               trench, apron and terrain fill the lower frame
+ *   ignition    as the fire and the smoke wall grow the rig eases back and
+ *               keeps the whole flame column and the pad in frame; a bounded
+ *               shake impulse plus a subtle engine tremor start with the beat
+ *               and decay within about a second
+ *   hold-down   the tremor follows the director's vibration request, and the
+ *               clamps-clear impulse stays short and watchable
+ *   liftoff     the impulse fires again and the framing starts to open
+ *   ascent      the reveal: the camera climbs with the vehicle, pulls back to
+ *               about 150 m and pitches down, so the launch site, the coloured
+ *               terrain, the cloud layers and the distant hazy horizon
+ *               progressively fall away below the vehicle
+ *
+ * Every number is a smooth function of the director timeline and every motion is
+ * a critically damped spring (SmoothDamp), so there are no cuts, hard snaps or
+ * teleports even when a tool jumps the timeline.
+ *
+ * FRAMING GUARANTEES (all measurable through report())
+ *   - the vehicle body never projects smaller than CA_SPEC.minScreenHeight (30%)
+ *     of the viewport height and never larger than maxScreenHeight: the follow
+ *     radius is solved against that band, from the published vehicle height, on
+ *     every frame;
+ *   - the required effect envelope - the body plus the near flame column taken
+ *     down from the published engine-bell anchors - always stays inside the
+ *     frame with the envelopeFill margin at any aspect ratio (three keeps the
+ *     vertical field of view fixed, so vertical framing is aspect independent);
+ *   - the stretched plume trail (up to 340 m of it) is intentionally allowed to
+ *     run out of the bottom of the frame: it points at the ground and leads the
+ *     eye there, exactly like real ascent footage;
+ *   - the camera stays CA_SPEC.minClearance above the world terrain sampler and
+ *     stays outside the published launch-complex volumes, and the integration
+ *     tower is never allowed to cut the sight line to the vehicle.
+ *
+ * PUBLISHED - LAUNCH_SCENE.cameraRig (runtime.cameraRig)
+ *   spec                 the authored constants below
+ *   update(dt, state)    the registered 'camera' subsystem update
+ *   dispose()            restores the scaffold pose and clears state.camera
+ *   report()             live framing metrics: distance, screen height, envelope
+ *                        containment, clearances, occlusion, shake, reveal mix
+ *                        and the vehicle anchors the framing was derived from
+ *   shot / reveal / radius / distance / screenHeight / horizon / shake /
+ *   vibration / occluded / terrainClearance / structureClearance / guards
+ * state.camera carries mode / shot / shake plus the live framing numbers and a
+ * compact status line the boot channel appends to the launch-status meta.
  * ------------------------------------------------------------------------ */
+// ==== SECTION: camera ====
 
-const CAMERA_SHOTS = {
-  'pad-establish': { radius: 86, height: 24, target: [0, 16, 0], orbit: 0.028, damping: 1.1 },
-  'low-angle': { radius: 52, height: 5, target: [0, 26, 0], orbit: 0.045, damping: 0.9 },
-  'wide-reveal': { radius: 320, height: 96, target: [0, 44, 0], orbit: 0.010, damping: 1.4 },
-  'ascent-track': { radius: 150, height: 60, target: [0, 90, 0], orbit: 0.018, damping: 0.8 }
+const CA_VERSION = '1.0.0-camera';
+const CA_DEG = Math.PI / 180;
+const CA_AXES = ['x', 'y', 'z'];
+const CA_WORLD_UP = new THREE.Vector3(0, 1, 0);
+const CA_APRON_TOP = 0.25;      // apron walking surface, launch-complex layout
+const CA_BELL_OFFSET = 1.4;     // bell exit above the seat, rocket layout
+const CA_FALLBACK_HEIGHT = 47.5;
+const CA_FALLBACK_RADIUS = 4.2;
+
+/* The authored rig. Metres, seconds and radians unless a name says otherwise. */
+const CA_SPEC = {
+  version: CA_VERSION,
+
+  /* ---- framing band and required effect envelope (fractions) ------------ */
+  minScreenHeight: 0.30,   // documented floor: the body never projects below 30%
+  maxScreenHeight: 0.96,   // ... and the tip never leaves the frame
+  envelopeFill: 0.92,      // most of the viewport body + near flame column take
+  flameBand: 0.60,         // flame column kept whole below the bells
+
+  /* ---- authored follow geometry (metres) -------------------------------- */
+  radiusPad: 104,          // intimate pad framing: the stack fills half the view
+  radiusIgnition: 118,     // room for the fire column and the smoke wall
+  radiusAscent: 150,       // ascent framing: the stack stays near a third
+  radiusHigh: 158,         // final gentle pull-back in the high haze
+  revealSpan: 1000,        // metres of climb that complete the reveal
+  highSpan: 3200,          // metres of climb that complete the final opening
+  thrustFloor: 0.05,       // throttle at which the ignition pull-back starts
+  liftPad: -16,            // camera height relative to the vehicle centre, pad
+  liftAscent: -7.5,        // ... and once climbing
+  aimDropPad: 0,           // look-target drop below the envelope centre, degrees
+  aimDropAscent: 3.5,      // ... opens the lower frame for the landscape
+
+  /* ---- viewpoint -------------------------------------------------------- */
+  azimuth: -52 * CA_DEG,   // sunlit three-quarter view; the tower stays clear
+  azimuthDrift: 6 * CA_DEG,
+  driftPeriod: 150,        // seconds for one drift cycle
+
+  /* ---- damping (seconds) ------------------------------------------------ */
+  followTau: 0.45,
+  focusTau: 0.35,
+  trembleTau: 0.30,
+
+  /* ---- bounded shake and engine tremor ---------------------------------- */
+  shakeTau: 0.26,          // under 2% of an impulse survives one second
+  shakeOffset: 0.55,       // metres of positional shake at a full impulse
+  shakeAngle: 0.80 * CA_DEG,
+  shakeGain: 1.35,
+  vibratoOffset: 0.10,     // metres of engine tremor at a full rig request
+  vibratoAngle: 0.16 * CA_DEG,
+  vibratoGain: 1.15,
+
+  /* ---- safety ----------------------------------------------------------- */
+  minClearance: 8,         // metres kept above the terrain sampler
+  structureMargin: 4,      // metres kept above launch-complex volumes
+  sightMargin: 1.5,        // metres of terrain kept below the sight line
+  guardLift: 80,           // most the sight-line guard may lift the camera
+  occluderSamples: 16,
+  horizonProbe: 5000,      // metres of probe used for the horizon read-out
+  azimuthEscapes: [0, 4, -4, 8, -8, 12, -12],  // degrees tried if the tower blocks
+  guardClearance: 1.5      // last-resort floor; the authored path never hits it
 };
 
-const cameraRigStub = {
-  shots: CAMERA_SHOTS,
+/* Named framing beats: a readable vocabulary for tools and logs. The rig itself
+ * is continuous - the names only describe which part of the performance the
+ * timeline is currently playing. */
+const CA_SHOTS = ['pad-establish', 'ignition-hold', 'hold-down', 'liftoff-track', 'ascent-reveal'];
+
+/* Shared scratch: the rig allocates nothing per frame. */
+const CA_SCRATCH = {
+  forward: new THREE.Vector3(),
+  right: new THREE.Vector3(),
+  up: new THREE.Vector3(),
+  pose: new THREE.Vector3(),
+  wanted: new THREE.Vector3(),
+  aim: new THREE.Vector3(),
+  point: new THREE.Vector3(),
+  limb: new THREE.Vector3(),
+  anchor: new THREE.Vector3(),
+  horizon: new THREE.Vector3()
+};
+const CA_NDC = {
+  top: new THREE.Vector3(),
+  base: new THREE.Vector3(),
+  limbA: new THREE.Vector3(),
+  limbB: new THREE.Vector3(),
+  flame: new THREE.Vector3(),
+  plume: new THREE.Vector3(),
+  horizon: new THREE.Vector3()
+};
+
+/* The vehicle frame the framing is derived from: read every frame from the
+ * published rocket-rig-handles, never duplicated and never guessed. */
+const CA_VEHICLE = {
+  base: new THREE.Vector3(),            // root world transform (the pad seat)
+  top: new THREE.Vector3(),             // nose tip
+  centre: new THREE.Vector3(),          // middle of the body
+  bell: new THREE.Vector3(),            // mean of the engine-bell anchors
+  flame: new THREE.Vector3(),           // bottom of the required flame column
+  envelope: new THREE.Vector3(),        // middle of the required effect envelope
+  height: CA_FALLBACK_HEIGHT,
+  radius: CA_FALLBACK_RADIUS,
+  flameReach: 0,
+  plumeLength: 0,
+  anchors: 0,
+  found: false
+};
+
+/* The integration tower as a conservative world-aligned box, re-read every
+ * frame so a re-registered launch complex can never leave the guard stale. */
+const CA_TOWER = { x: 0, z: 0, half: 5.5, top: 0, active: false };
+
+/* ---- helpers (all local to this block: no neighbour coupling) ----------- */
+
+/* Smootherstep: zero slope at both ends, used for every authored mix. */
+function caEase(t) {
+  const x = clamp01(t);
+  return x * x * x * (x * (x * 6 - 15) + 10);
+}
+
+function caLerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+/* Critically damped spring (SmoothDamp): no overshoot, no ringing and a
+ * continuous velocity when the target moves, which is what keeps the follow
+ * free of cuts, hard snaps and teleports. `feedY` adds a velocity feed-forward
+ * on the vertical axis - the vehicle's published climb speed times the damping
+ * time - which cancels the steady-state lag while the stack accelerates away,
+ * so the authored framing survives the whole ascent. */
+function caDampVector(position, velocity, target, tau, dt, feedY) {
+  const omega = 2 / Math.max(1e-3, tau);
+  const x = omega * dt;
+  const decay = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+  const climb = Number(feedY) || 0;
+  for (let i = 0; i < CA_AXES.length; i += 1) {
+    const axis = CA_AXES[i];
+    const goal = axis === 'y' ? target.y + climb : target[axis];
+    const change = position[axis] - goal;
+    const temp = (velocity[axis] + omega * change) * dt;
+    velocity[axis] = (velocity[axis] - omega * temp) * decay;
+    position[axis] = goal + (change + temp) * decay;
+  }
+  return position;
+}
+
+/* Band-limited deterministic tremor: two out-of-phase sines per channel, so the
+ * shake reads as camera shake instead of per-frame noise and looks identical on
+ * every run (the rig never calls Math.random). */
+function caTremor(time, seed, rate) {
+  return Math.sin(time * rate + seed) * 0.62 + Math.sin(time * rate * 1.87 + seed * 2.3) * 0.38;
+}
+
+/* ---- published handles, re-read every frame ---------------------------- */
+
+function caTimeline() {
+  return runtime.timeline || null;
+}
+
+function caRocket() {
+  return runtime.handles && runtime.handles.rocket ? runtime.handles.rocket : null;
+}
+
+function caComplex() {
+  return runtime.handles && runtime.handles.launchComplex ? runtime.handles.launchComplex : null;
+}
+
+function caExhaust() {
+  return runtime.exhaust || null;
+}
+
+function caTerrainHeight(x, z) {
+  const collections = runtime.collections;
+  if (collections && typeof collections.terrainHeight === 'function') {
+    return Number(collections.terrainHeight(x, z)) || 0;
+  }
+  return 0;
+}
+
+function caReadTower() {
+  const complex = caComplex();
+  CA_TOWER.active = false;
+  if (!complex || !complex.tower) return CA_TOWER;
+  const tower = complex.tower;
+  const azimuth = Number(tower.azimuthRad) || 0;
+  const distance = Number(tower.distance) || 0;
+  CA_TOWER.x = Math.cos(azimuth) * distance;
+  CA_TOWER.z = Math.sin(azimuth) * distance;
+  CA_TOWER.half = (Number(tower.halfWidth) || 3.5) + 2;
+  CA_TOWER.top = Number(tower.height) || 84;
+  CA_TOWER.active = CA_TOWER.top > 0;
+  return CA_TOWER;
+}
+
+/* Top of the launch-complex solid at (x, z), or the ground when no complex
+ * volume reaches that column: the deck and the apron are cylinders around the
+ * launch axis and the tower is a conservative world-aligned square around its
+ * centre. Returning the terrain height in the clear case keeps the published
+ * structure clearance meaningful instead of a sentinel. */
+function caSolidTop(x, z) {
+  let top = caTerrainHeight(x, z);
+  const complex = caComplex();
+  if (complex && complex.pad) {
+    const pad = complex.pad;
+    const radius = Math.sqrt(x * x + z * z);
+    if (radius <= (Number(pad.deckRadius) || 0)) top = Math.max(top, Number(pad.deckTopY) || 0);
+    else if (radius <= (Number(pad.apronRadius) || 0)) top = Math.max(top, CA_APRON_TOP);
+  }
+  const tower = caReadTower();
+  if (tower.active) {
+    const half = tower.half * 1.4 + CA_SPEC.structureMargin;
+    if (Math.abs(x - tower.x) <= half && Math.abs(z - tower.z) <= half) top = Math.max(top, tower.top);
+  }
+  return top;
+}
+
+/* The lowest camera height that keeps the terrain from cutting the sight line to
+ * the vehicle. Solved analytically per sample, so the guard is a smooth function
+ * of the terrain instead of a step, and the damped follow absorbs even that. */
+function caTerrainFloor(camX, camZ, targetX, targetZ, targetY) {
+  let floorY = -Infinity;
+  const samples = CA_SPEC.occluderSamples;
+  for (let i = 1; i < samples; i += 1) {
+    const t = i / samples;
+    const x = camX + (targetX - camX) * t;
+    const z = camZ + (targetZ - camZ) * t;
+    const need = (caTerrainHeight(x, z) + CA_SPEC.sightMargin - t * targetY) / (1 - t);
+    if (need > floorY) floorY = need;
+  }
+  if (!Number.isFinite(floorY)) return -Infinity;
+  return Math.min(floorY, targetY + CA_SPEC.guardLift);
+}
+
+/* Does the tower box sit on the sight line from a camera at this azimuth? */
+function caTowerBlocks(angle, radius, camY, vehicle) {
+  const tower = caReadTower();
+  if (!tower.active) return false;
+  const from = CA_SCRATCH.pose.set(Math.cos(angle) * radius, camY, Math.sin(angle) * radius);
+  const samples = CA_SPEC.occluderSamples;
+  for (let pass = 0; pass < 2; pass += 1) {
+    const target = pass === 0 ? vehicle.base : vehicle.centre;
+    for (let i = 1; i < samples; i += 1) {
+      const t = i / samples;
+      const x = from.x + (target.x - from.x) * t;
+      const y = from.y + (target.y - from.y) * t;
+      const z = from.z + (target.z - from.z) * t;
+      if (y > tower.top) continue;
+      if (Math.abs(x - tower.x) <= tower.half && Math.abs(z - tower.z) <= tower.half) return true;
+    }
+  }
+  return false;
+}
+
+/* The authored azimuth keeps the tower well clear of the sight line. If a tool
+ * ever jumps the vehicle into a pose that breaks that, the rig walks a small
+ * fixed list of offsets and takes the first angle that keeps the vehicle
+ * visible; the damped follow turns even that correction into a slow drift. */
+function caClearAzimuth(baseAngle, radius, camY, vehicle) {
+  const escapes = CA_SPEC.azimuthEscapes;
+  for (let i = 0; i < escapes.length; i += 1) {
+    const angle = baseAngle + escapes[i] * CA_DEG;
+    if (!caTowerBlocks(angle, radius, camY, vehicle)) return angle;
+  }
+  return baseAngle;
+}
+
+/* Terrain and structure occlusion of the vehicle, sampled between the camera and
+ * both the vehicle base and the middle of its body. */
+function caSightBlocked(from, vehicle) {
+  const tower = caReadTower();
+  const samples = CA_SPEC.occluderSamples;
+  for (let pass = 0; pass < 2; pass += 1) {
+    const target = pass === 0 ? vehicle.base : vehicle.centre;
+    for (let i = 1; i < samples; i += 1) {
+      const t = i / samples;
+      const x = from.x + (target.x - from.x) * t;
+      const y = from.y + (target.y - from.y) * t;
+      const z = from.z + (target.z - from.z) * t;
+      if (y < caTerrainHeight(x, z) + CA_SPEC.sightMargin * 0.5) return true;
+      if (tower.active && y <= tower.top &&
+        Math.abs(x - tower.x) <= tower.half && Math.abs(z - tower.z) <= tower.half) return true;
+    }
+  }
+  return false;
+}
+
+function caInside(ndc) {
+  return ndc.x >= -1 && ndc.x <= 1 && ndc.y >= -1 && ndc.y <= 1 && ndc.z > -1 && ndc.z < 1;
+}
+
+function caProject(point, out) {
+  return out.copy(point).project(camera);
+}
+
+function caShotFor(phase, altitude) {
+  if (phase === 'prelaunch') return 'pad-establish';
+  if (phase === 'ignition' || phase === 'flameIntensify' || phase === 'smokeExpansion') return 'ignition-hold';
+  if (phase === 'vibration' || phase === 'clampRelease') return 'hold-down';
+  if (phase === 'liftoff') return 'liftoff-track';
+  if (phase === 'ascent') return 'ascent-reveal';
+  return altitude > 0 ? 'ascent-reveal' : 'pad-establish';
+}
+
+/* Read the vehicle frame from the published rocket-rig-handles and the exhaust
+ * signal. The root group gives the world transform, the engine-bell anchors give
+ * the flame attach points the framing must keep inside the frame, and the plume
+ * length bounds the flame column the shot keeps whole. */
+function caReadVehicle(out) {
+  const rocket = caRocket();
+  out.found = false;
+  out.anchors = 0;
+  out.height = CA_FALLBACK_HEIGHT;
+  out.radius = CA_FALLBACK_RADIUS;
+  out.base.set(0, 2.6, 0);
+  if (rocket && rocket.root) {
+    rocket.root.getWorldPosition(out.base);
+    out.found = true;
+  } else if (rocket && rocket.seat) {
+    out.base.set(Number(rocket.seat.x) || 0, Number(rocket.seat.y) || 0, Number(rocket.seat.z) || 0);
+    out.found = true;
+  }
+  if (rocket) {
+    if (Number(rocket.height) > 0) out.height = Number(rocket.height);
+    if (Number(rocket.radius) > 0) out.radius = Number(rocket.radius);
+  }
+
+  out.bell.copy(out.base);
+  out.bell.y += CA_BELL_OFFSET;
+  const anchors = rocket && Array.isArray(rocket.engineAnchors) ? rocket.engineAnchors : null;
+  if (anchors && anchors.length) {
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    let found = 0;
+    for (let i = 0; i < anchors.length; i += 1) {
+      const anchor = anchors[i] ? anchors[i].anchor : null;
+      if (!anchor) continue;
+      anchor.getWorldPosition(CA_SCRATCH.anchor);
+      x += CA_SCRATCH.anchor.x;
+      y += CA_SCRATCH.anchor.y;
+      z += CA_SCRATCH.anchor.z;
+      found += 1;
+    }
+    if (found > 0) {
+      out.bell.set(x / found, y / found, z / found);
+      out.anchors = found;
+    }
+  }
+
+  const plume = caExhaust();
+  out.plumeLength = 0;
+  if (plume && Number.isFinite(Number(plume.plumeLength))) {
+    out.plumeLength = Math.max(0, Number(plume.plumeLength));
+  }
+  out.flameReach = Math.min(out.plumeLength, out.height * CA_SPEC.flameBand);
+
+  out.top.copy(out.base);
+  out.top.y += out.height;
+  out.centre.copy(out.base);
+  out.centre.y += out.height * 0.5;
+  out.flame.copy(out.bell);
+  out.flame.y -= out.flameReach;
+  out.envelope.copy(out.top).add(out.flame).multiplyScalar(0.5);
+  return out;
+}
+
+/* ---------------------------------------------------------------------------
+ * Camera subsystem: the authored performance. It owns the framing, the reveal,
+ * the shake and the engine tremor, and it drives the scaffold camera.
+ * ------------------------------------------------------------------------ */
+
+const cameraSystem = {
+  version: CA_VERSION,
+  subsystem: 'camera',
+  spec: CA_SPEC,
+  shotNames: CA_SHOTS,
+
+  time: 0,
+  frames: 0,
   shot: 'pad-establish',
-  angle: 0,
+  angle: CA_SPEC.azimuth,
+  reveal: 0,
+  radius: 0,
+  lift: 0,
+  distance: 0,
+  screenHeight: 0,
+  horizonFraction: 0.5,
+  groundFraction: 0.5,
+  vehicleInside: true,
+  envelopeInside: true,
+  plumeInside: true,
+  occluded: false,
+  terrainClearance: 0,
+  structureClearance: 0,
   shake: 0,
+  vibration: 0,
+  guards: 0,
+  position: new THREE.Vector3(),
+  velocity: new THREE.Vector3(),
   focus: new THREE.Vector3(),
+  focusVelocity: new THREE.Vector3(),
 
   init() {
+    this.time = 0;
+    this.frames = 0;
+    this.shake = 0;
+    this.vibration = 0;
+    this.guards = 0;
     this.shot = 'pad-establish';
-    this.angle = Math.atan2(camera.position.z, camera.position.x);
-    this.focus.fromArray(CAMERA_SHOTS[this.shot].target);
+    this.angle = CA_SPEC.azimuth;
+
+    caReadVehicle(CA_VEHICLE);
+    this.solve(CA_VEHICLE, Math.max(0, Number(state.altitude) || 0), clamp01(state.thrust));
+
+    /* Start exactly on the authored pose: the first rendered frame is already
+     * the pad shot, so the sequence never opens with a cut. */
+    this.position.copy(CA_SCRATCH.wanted);
+    this.velocity.set(0, 0, 0);
+    this.focus.copy(CA_SCRATCH.aim);
+    this.focusVelocity.set(0, 0, 0);
+    this.applyPose(0, 0);
+    camera.updateMatrixWorld(true);
+    this.measure(CA_VEHICLE);
+    this.publish();
+
+    console.log('[LAUNCH_SCENE] camera rig armed: azimuth=' + (this.angle / CA_DEG).toFixed(1) +
+      'deg radius=' + this.radius.toFixed(1) + 'm screen=' + this.screenHeight.toFixed(3) +
+      ' anchors=' + CA_VEHICLE.anchors);
+  },
+
+  /* The framing solve: from the director timeline and the published vehicle
+   * transform to the authored camera pose. Everything here is a smooth function
+   * of altitude and throttle, so the rig cannot produce a cut or a snap. */
+  solve(vehicle, altitude, thrust) {
+    const halfFov = 0.5 * camera.fov * CA_DEG;   // three keeps fov vertical: aspect safe
+    const halfTan = Math.tan(halfFov);
+    const reveal = caEase(altitude / CA_SPEC.revealSpan);
+    const high = caEase(altitude / CA_SPEC.highSpan);
+    this.reveal = reveal;
+
+    /* 1. the authored pull-back: the fire makes room as it grows, the climb
+     *    completes the reveal, and the last kilometres add a gentle opening. */
+    const fire = caEase((thrust - CA_SPEC.thrustFloor) / (1 - CA_SPEC.thrustFloor));
+    let radiusGoal = caLerp(caLerp(CA_SPEC.radiusPad, CA_SPEC.radiusIgnition, fire),
+      CA_SPEC.radiusAscent, reveal);
+    radiusGoal += (CA_SPEC.radiusHigh - CA_SPEC.radiusAscent) * high;
+
+    /* 2. solve the radius against the documented band: the required envelope
+     *    (body + near flame column) must fit, and the body must stay large. */
+    const envHalf = (vehicle.height + vehicle.flameReach) * 0.5;
+    const minDistance = envHalf / (halfTan * CA_SPEC.envelopeFill);
+    const maxDistance = (vehicle.height * 0.5) / (halfTan * CA_SPEC.minScreenHeight);
+    this.radius = Math.min(Math.max(radiusGoal, minDistance), maxDistance);
+
+    /* 3. viewpoint: a very slow parallax creep around the launch axis, then the
+     *    tower guard, which can only ever nudge the angle a few degrees. */
+    const baseAngle = CA_SPEC.azimuth +
+      CA_SPEC.azimuthDrift * Math.sin((this.time / CA_SPEC.driftPeriod) * Math.PI * 2);
+    const lift = caLerp(CA_SPEC.liftPad, CA_SPEC.liftAscent, reveal);
+    let camY = vehicle.centre.y + lift;
+    this.angle = caClearAzimuth(baseAngle, this.radius, camY, vehicle);
+    const camX = Math.cos(this.angle) * this.radius;
+    const camZ = Math.sin(this.angle) * this.radius;
+
+    /* 4. caution floors: lift the desired pose until the terrain between the
+     *    camera and the vehicle cannot cut the vehicle off, and until the camera
+     *    is clear of every launch-complex volume. */
+    const sightFloor = caTerrainFloor(camX, camZ, vehicle.base.x, vehicle.base.z,
+      vehicle.base.y + CA_SPEC.sightMargin);
+    if (Number.isFinite(sightFloor)) camY = Math.max(camY, sightFloor);
+    camY = Math.max(camY, caSolidTop(camX, camZ) + CA_SPEC.structureMargin);
+    CA_SCRATCH.wanted.set(camX, camY, camZ);
+
+    /* 5. aim: the middle of the required envelope, dropped by the authored
+     *    reveal tilt as far as the containment margin allows. The aim sits on
+     *    the vehicle axis, so the stack stays horizontally centred and the
+     *    landscape opens up underneath it. */
+    const eTop = Math.atan2(vehicle.top.y - camY, this.radius);
+    const eBottom = Math.atan2(vehicle.flame.y - camY, this.radius);
+    const halfSpan = (eTop - eBottom) * 0.5;
+    const frameHalf = halfFov * CA_SPEC.envelopeFill;
+    const drop = Math.max(0, Math.min(
+      caLerp(CA_SPEC.aimDropPad, CA_SPEC.aimDropAscent, reveal) * CA_DEG,
+      Math.max(0, frameHalf - halfSpan)));
+    const eAim = (eTop + eBottom) * 0.5 - drop;
+    CA_SCRATCH.aim.set(vehicle.base.x, camY + this.radius * Math.tan(eAim), vehicle.base.z);
+    this.lift = lift;
+  },
+
+  /* Bounded impulses only: a decaying shake (ignition, hold-down crossing,
+   * clamps clear, first motion) and the engine tremor the director requests. */
+  applyPose(shakeAmp, tremorAmp) {
+    const span = CA_SCRATCH;
+    const time = this.time;
+    const shakeOffset = shakeAmp * CA_SPEC.shakeOffset;
+    const tremorOffset = tremorAmp * CA_SPEC.vibratoOffset;
+    const offX = caTremor(time, 1.3, 31.7) * shakeOffset + caTremor(time, 2.9, 63.1) * tremorOffset;
+    const offY = caTremor(time, 4.1, 26.3) * shakeOffset + caTremor(time, 5.3, 71.1) * tremorOffset;
+    const roll = caTremor(time, 7.7, 21.3) * shakeAmp * CA_SPEC.shakeAngle +
+      caTremor(time, 9.1, 57.3) * tremorAmp * CA_SPEC.vibratoAngle;
+    const pitch = caTremor(time, 6.1, 28.3) * shakeAmp * CA_SPEC.shakeAngle * 0.5;
+    const yaw = caTremor(time, 8.3, 24.7) * shakeAmp * CA_SPEC.shakeAngle * 0.5;
+
+    /* The offset rides the camera's own axes, so the shake stays a shake while
+     * the camera pitches through the reveal. */
+    span.forward.copy(this.focus).sub(this.position);
+    if (span.forward.lengthSq() < 1e-8) span.forward.set(0, 0, -1);
+    span.forward.normalize();
+    span.right.crossVectors(span.forward, CA_WORLD_UP);
+    if (span.right.lengthSq() < 1e-8) span.right.set(1, 0, 0);
+    span.right.normalize();
+    span.up.crossVectors(span.right, span.forward).normalize();
+
+    span.pose.copy(this.position)
+      .addScaledVector(span.right, offX)
+      .addScaledVector(span.up, offY);
+    camera.position.copy(span.pose);
+    camera.lookAt(this.focus);
+    if (roll !== 0) camera.rotateZ(roll);
+    if (pitch !== 0) camera.rotateX(pitch);
+    if (yaw !== 0) camera.rotateY(yaw);
+  },
+
+  /* Project the vehicle and its effect envelope through the live camera: the
+   * numbers the QA harness and the perf phase sample. */
+  measure(vehicle) {
+    const span = CA_SCRATCH;
+    const from = camera.position;
+    this.distance = from.distanceTo(vehicle.centre);
+
+    span.forward.copy(this.focus).sub(from);
+    if (span.forward.lengthSq() < 1e-8) span.forward.set(0, 0, -1);
+    span.forward.normalize();
+    span.right.crossVectors(span.forward, CA_WORLD_UP);
+    if (span.right.lengthSq() < 1e-8) span.right.set(1, 0, 0);
+    span.right.normalize();
+
+    const frontTop = span.point.copy(vehicle.top).sub(from).dot(span.forward) > camera.near;
+    const frontBase = span.point.copy(vehicle.base).sub(from).dot(span.forward) > camera.near;
+    const frontFlame = span.point.copy(vehicle.flame).sub(from).dot(span.forward) > camera.near;
+
+    this.screenHeight = 0;
+    this.vehicleInside = false;
+    this.envelopeInside = false;
+    this.plumeInside = false;
+    if (frontTop && frontBase) {
+      caProject(vehicle.top, CA_NDC.top);
+      caProject(vehicle.base, CA_NDC.base);
+      span.limb.copy(vehicle.centre).addScaledVector(span.right, vehicle.radius);
+      caProject(span.limb, CA_NDC.limbA);
+      span.limb.copy(vehicle.centre).addScaledVector(span.right, -vehicle.radius);
+      caProject(span.limb, CA_NDC.limbB);
+      this.screenHeight = Math.abs(CA_NDC.top.y - CA_NDC.base.y) * 0.5;
+      this.vehicleInside = caInside(CA_NDC.top) && caInside(CA_NDC.base) &&
+        caInside(CA_NDC.limbA) && caInside(CA_NDC.limbB);
+      if (frontFlame) {
+        caProject(vehicle.flame, CA_NDC.flame);
+        this.envelopeInside = this.vehicleInside && caInside(CA_NDC.flame);
+        span.point.copy(vehicle.bell);
+        span.point.y -= vehicle.plumeLength;
+        caProject(span.point, CA_NDC.plume);
+        this.plumeInside = this.envelopeInside && caInside(CA_NDC.plume);
+      }
+    }
+
+    /* The visible horizon line: a probe along the horizontal bearing to the
+     * launch axis, where the gradient sky meets the ground haze. */
+    const dx = vehicle.base.x - from.x;
+    const dz = vehicle.base.z - from.z;
+    const horizontal = Math.sqrt(dx * dx + dz * dz) || 1;
+    span.horizon.set(from.x + (dx / horizontal) * CA_SPEC.horizonProbe, from.y,
+      from.z + (dz / horizontal) * CA_SPEC.horizonProbe);
+    caProject(span.horizon, CA_NDC.horizon);
+    this.horizonFraction = clamp01((1 - CA_NDC.horizon.y) * 0.5);
+    this.groundFraction = 1 - this.horizonFraction;
+
+    this.terrainClearance = from.y - caTerrainHeight(from.x, from.z);
+    this.structureClearance = from.y - caSolidTop(from.x, from.z);
+    this.occluded = caSightBlocked(from, vehicle);
+  },
+
+  /* Compact read-out for the boot status channel: the automated checks can
+   * sample framing, clearance, occlusion and shake from the launch-status meta
+   * on every refresh, next to the director's phase/thrust/altitude numbers. */
+  statusLine() {
+    return 'cam=dist:' + this.distance.toFixed(1) +
+      ',scr:' + this.screenHeight.toFixed(3) +
+      ',hor:' + this.horizonFraction.toFixed(3) +
+      ',env:' + (this.envelopeInside ? 1 : 0) +
+      ',occl:' + (this.occluded ? 1 : 0) +
+      ',clr:' + this.terrainClearance.toFixed(2) +
+      ',shk:' + this.shake.toFixed(3) +
+      ',vib:' + this.vibration.toFixed(3);
+  },
+
+  publish() {
     state.camera.mode = 'cinematic';
     state.camera.shot = this.shot;
-    state.camera.shake = 0;
-  },
-
-  setShot(name, immediate) {
-    if (!CAMERA_SHOTS[name]) {
-      throw new RangeError('cameraRig.setShot: unknown shot "' + name + '"');
-    }
-    this.shot = name;
-    const shot = CAMERA_SHOTS[name];
-    if (immediate) {
-      this.angle = Math.atan2(camera.position.z, camera.position.x);
-      this.focus.fromArray(shot.target);
-    }
-    return this.shot;
-  },
-
-  addShake(amount) {
-    this.shake = Math.min(1, this.shake + clamp01(amount));
     state.camera.shake = this.shake;
-    return this.shake;
+    state.camera.vibration = this.vibration;
+    state.camera.reveal = this.reveal;
+    state.camera.distance = this.distance;
+    state.camera.radius = this.radius;
+    state.camera.screenHeight = this.screenHeight;
+    state.camera.horizon = this.horizonFraction;
+    state.camera.clearance = this.terrainClearance;
+    state.camera.occluded = this.occluded;
+    state.camera.status = this.statusLine();
   },
 
   update(dt, currentState) {
-    const shot = CAMERA_SHOTS[this.shot] || CAMERA_SHOTS['pad-establish'];
-    currentState.camera.shot = this.shot;
-    this.angle += dt * shot.orbit;
+    const delta = Math.max(0, Math.min(0.25, Number(dt) || 0));
+    const shared = currentState || state;
+    const timeline = caTimeline();
+    this.time += delta;
+    this.frames += 1;
 
-    const blend = 1 - Math.exp(-dt / shot.damping);
-    const desiredX = Math.cos(this.angle) * shot.radius;
-    const desiredZ = Math.sin(this.angle) * shot.radius;
-    camera.position.x += (desiredX - camera.position.x) * blend;
-    camera.position.z += (desiredZ - camera.position.z) * blend;
-    camera.position.y += (shot.height - camera.position.y) * blend;
+    /* 1. read the published launch timeline contract: phase, altitude, throttle,
+     *    the rig vibration request and the decaying shake impulse. */
+    const altitude = Math.max(0, Number(shared.altitude) || 0);
+    const thrust = clamp01(shared.thrust);
+    const request = clamp01(Math.max(
+      Number(timeline ? timeline.vibration : shared.vibration) || 0,
+      Number(timeline ? timeline.rigVibration : shared.vibration) || 0));
+    const impulse = clamp01(Number(timeline ? timeline.shake : shared.shake) || 0);
+    this.shot = caShotFor(String(shared.phase || 'prelaunch'), altitude);
 
-    this.focus.x += (shot.target[0] - this.focus.x) * blend;
-    this.focus.y += (shot.target[1] - this.focus.y) * blend;
-    this.focus.z += (shot.target[2] - this.focus.z) * blend;
-    camera.lookAt(this.focus);
+    /* 2. framing solve: published vehicle transform -> authored camera pose. */
+    caReadVehicle(CA_VEHICLE);
+    const vehicle = CA_VEHICLE;
+    this.solve(vehicle, altitude, thrust);
 
-    if (this.shake > 0) {
-      this.shake = Math.max(0, this.shake - dt * 1.5);
-      const amplitude = this.shake * this.shake * 1.2;
-      camera.position.x += (Math.random() - 0.5) * amplitude;
-      camera.position.y += (Math.random() - 0.5) * amplitude;
-      camera.position.z += (Math.random() - 0.5) * amplitude;
+    /* 3. critically damped follow, with the timeline's published climb speed fed
+     *    forward on the vertical axis: the spring smooths every framing change
+     *    (so even a timeline jump stays a move, never a teleport) while the
+     *    feed-forward cancels the steady-state lag, which is what holds the
+     *    documented screen-height band and the envelope containment through the
+     *    accelerating ascent. The rest of the framing - radius, azimuth, lift,
+     *    reveal - moves far too slowly to need any feed-forward. */
+    const climb = Number(timeline ? timeline.velocity : shared.velocity) || 0;
+    caDampVector(this.position, this.velocity, CA_SCRATCH.wanted, CA_SPEC.followTau, delta,
+      climb * CA_SPEC.followTau);
+    caDampVector(this.focus, this.focusVelocity, CA_SCRATCH.aim, CA_SPEC.focusTau, delta,
+      climb * CA_SPEC.focusTau);
+
+    /* 4. hard floor: the camera can never end up inside the terrain or a launch
+     *    structure, even if a tool overrides the timeline mid-flight. */
+    const hardFloor = Math.max(
+      caTerrainHeight(this.position.x, this.position.z) + CA_SPEC.guardClearance,
+      caSolidTop(this.position.x, this.position.z) + CA_SPEC.guardClearance);
+    if (this.position.y < hardFloor) {
+      this.position.y = hardFloor;
+      this.velocity.y = 0;
+      this.guards += 1;
     }
-    currentState.camera.shake = this.shake;
+
+    /* 5. bounded impulses: the shake envelope decays under 2% in one second and
+     *    the tremor follows the director's request through a short lag. */
+    this.shake = Math.max(this.shake * Math.exp(-delta / CA_SPEC.shakeTau), impulse);
+    this.vibration += (request - this.vibration) * (1 - Math.exp(-delta / CA_SPEC.trembleTau));
+    if (this.shake < 1e-4) this.shake = 0;             // settle exactly, not asymptotically
+    if (this.vibration < 1e-4) this.vibration = 0;
+    const shakeAmp = Math.pow(clamp01(this.shake), CA_SPEC.shakeGain);
+    const tremorAmp = Math.pow(clamp01(this.vibration), CA_SPEC.vibratoGain);
+
+    /* 6. drive the single scaffold camera: no second camera, no render pass. */
+    this.applyPose(shakeAmp, tremorAmp);
+
+    /* 7. measure what the shot actually shows and publish the numbers. */
+    camera.updateMatrixWorld(true);
+    this.measure(vehicle);
+    this.publish();
+  },
+
+  /* Numbers-only snapshot for the QA harness and the perf phase. */
+  report() {
+    const vehicle = CA_VEHICLE;
+    return {
+      version: CA_VERSION,
+      subsystem: 'camera',
+      frames: this.frames,
+      phase: state.phase,
+      shot: this.shot,
+      reveal: Number(this.reveal.toFixed(4)),
+      radius: Number(this.radius.toFixed(3)),
+      distance: Number(this.distance.toFixed(3)),
+      screenHeight: Number(this.screenHeight.toFixed(4)),
+      horizon: Number(this.horizonFraction.toFixed(4)),
+      ground: Number(this.groundFraction.toFixed(4)),
+      vehicleInside: this.vehicleInside,
+      envelopeInside: this.envelopeInside,
+      plumeInside: this.plumeInside,
+      occluded: this.occluded,
+      terrainClearance: Number(this.terrainClearance.toFixed(3)),
+      structureClearance: Number(this.structureClearance.toFixed(3)),
+      guards: this.guards,
+      shake: Number(this.shake.toFixed(4)),
+      vibration: Number(this.vibration.toFixed(4)),
+      azimuthDeg: Number((this.angle / CA_DEG).toFixed(2)),
+      camera: {
+        x: Number(camera.position.x.toFixed(3)),
+        y: Number(camera.position.y.toFixed(3)),
+        z: Number(camera.position.z.toFixed(3))
+      },
+      vehicle: {
+        found: vehicle.found,
+        height: vehicle.height,
+        radius: vehicle.radius,
+        anchors: vehicle.anchors,
+        baseY: Number(vehicle.base.y.toFixed(3)),
+        topY: Number(vehicle.top.y.toFixed(3)),
+        bellY: Number(vehicle.bell.y.toFixed(3)),
+        flameReach: Number(vehicle.flameReach.toFixed(3)),
+        plumeLength: Number(vehicle.plumeLength.toFixed(3)),
+        target: {
+          x: Number(vehicle.centre.x.toFixed(3)),
+          y: Number(vehicle.centre.y.toFixed(3)),
+          z: Number(vehicle.centre.z.toFixed(3))
+        }
+      }
+    };
   },
 
   dispose() {
     camera.position.set(58, 22, 78);
     camera.lookAt(0, 14, 0);
+    this.shake = 0;
+    this.vibration = 0;
+    this.guards = 0;
+    this.velocity.set(0, 0, 0);
+    this.focusVelocity.set(0, 0, 0);
+    this.position.copy(camera.position);
+    this.focus.set(0, 14, 0);
+    state.camera.mode = 'cinematic';
+    state.camera.shot = 'pad-establish';
     state.camera.shake = 0;
+    state.camera.vibration = 0;
+    state.camera.status = '';
   }
 };
 
-runtime.cameraRig = cameraRigStub;
-runtime.register('camera', cameraRigStub);
+runtime.cameraRig = cameraSystem;
+runtime.register('camera', cameraSystem);
+
+
 
 /* ---------------------------------------------------------------------------
  * SECTION: perf - quality tier, fps sampling and the launch-status channel
