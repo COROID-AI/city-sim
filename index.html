@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light only">
 <meta name="launch-status" content="phase=boot">
+<!-- Empty data-URI icon: the page itself must never cause a network request
+     other than the pinned Three.js CDN modules (no favicon fetch, no 404). -->
+<link rel="icon" href="data:,">
 <title>Rocket Launch Scene</title>
 <style>
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #86bdec; }
@@ -46,7 +49,9 @@
  *   SECTION: reactive        dynamic lighting, shockwave, camera-facing FX
  *   SECTION: director        launch timeline, phases, thrust/altitude
  *   SECTION: camera          cinematic rig: damped follow, shake, reveal
- *   SECTION: perf            quality tier, fps sampling, launch-status channel
+ *   SECTION: perf            frame-budget governor (adaptive pixel ratio and
+ *                            quality tiers), resource watchdog, density probe
+ *                            and the launch-status channel
  * A later phase appends exactly one subsystem inside its own marker without
  * reordering existing code, e.g.
  *     runtime.register('rocket', { init(ctx) {}, update(dt, state) {}, dispose() {} });
@@ -91,8 +96,11 @@ const SECTION_MARKERS = [
   'reactive', 'director', 'camera', 'perf'
 ];
 
-/* Quality tiers. The perf phase may add adaptive switching; the scaffold only
- * detects a starting tier and honours explicit LAUNCH_SCENE.setQuality() calls. */
+/* Quality tiers. The perf phase owns adaptive switching between these through
+ * LAUNCH_SCENE.setQuality(); the boot phase only detects a starting tier and
+ * honours explicit setQuality() calls. Every tier changes budgets only - pixel
+ * ratio, shadow resolution, cloud puff count and particle pool limits - never
+ * the required effects or the launch sequence. */
 const QUALITY_TIERS = {
   high:   { id: 'high',   pixelRatioCap: 2,   shadowMapSize: 2048, shadows: true,  antialias: true,  cloudPuffs: 14 },
   medium: { id: 'medium', pixelRatioCap: 1.5, shadowMapSize: 1024, shadows: true,  antialias: true,  cloudPuffs: 9 },
@@ -220,8 +228,11 @@ function publishStatus(force) {
     ' thrust=' + state.thrust.toFixed(3) +
     ' alt=' + state.altitude.toFixed(1) +
     ' quality=' + state.quality +
-    /* the camera phase appends its live framing read-out (state.camera.status) */
-    (state.camera && state.camera.status ? ' ' + state.camera.status : ''));
+    /* the camera and perf phases append their live read-outs (state.*.status):
+     * framing/clearance/shake from the camera rig, fps, tier, resolution,
+     * draw calls, pool budget, GL state and density from the governor. */
+    (state.camera && state.camera.status ? ' ' + state.camera.status : '') +
+    (state.perf && state.perf.status ? ' ' + state.perf.status : ''));
 }
 
 function initEntry(entry) {
@@ -10054,44 +10065,1164 @@ runtime.register('camera', cameraSystem);
 
 
 /* ---------------------------------------------------------------------------
- * SECTION: perf - quality tier, fps sampling and the launch-status channel
- * The perf phase adds adaptive quality switching through LAUNCH_SCENE.setQuality.
+ * SECTION: perf - frame-budget governor, resource watchdog, density probe
+ * ---------------------------------------------------------------------------
+ * The last subsystem in the frame owns the frame budget itself. It does four
+ * things and nothing else:
+ *
+ * 1. THE GOVERNOR - one windowed fps sampler drives a two-axis quality ladder.
+ *    The cheap, almost invisible knob is the adaptive pixel ratio inside the
+ *    active tier (0.6x .. 1.0x of the tier's cap); the coarse knob is the tier
+ *    itself, applied through the published LAUNCH_SCENE.setQuality(id) so every
+ *    subsystem trims its own budget through its documented onQualityChange
+ *    hook. Degradation is quick (a resolution step, then a tier step down after
+ *    a short cooldown); recovery is slow on purpose (the window has to stay in
+ *    the recovery band for recoverSeconds before a tier is handed back), so the
+ *    picture never oscillates between two tiers.
+ *
+ *    The tiers only ever change BUDGETS: pixel ratio, particle pool limits,
+ *    shadow-map resolution, cloud puff count, the optional heat-shimmer
+ *    refraction pass and the smallest decorative greebles. Flames, plume,
+ *    smoke, dust, sparks, camera shake and the launch sequence itself are never
+ *    disabled by a tier change. Every decision is counted (stepDowns, stepUps,
+ *    ratioCuts, ratioGains, tierChanges) and published in report().
+ *
+ * 2. THE DISPOSAL DISCIPLINE - a tier change hands the replaced GPU resources
+ *    back before the new tier is applied: the shadow map is disposed here (the
+ *    world phase then rebuilds it at the new resolution, or drops it with the
+ *    shadow pass), the exhaust phase disposes its heat-shimmer render target
+ *    when a tier turns refraction off, and the particles phase only moves pool
+ *    limits. No pool, geometry, material or texture is ever re-allocated at
+ *    runtime, at any tier.
+ *
+ * 3. THE RESOURCE WATCHDOG - a 1 Hz audit of renderer.info (draw calls,
+ *    triangles, geometries, textures, programs), of the particle pools, of the
+ *    WebGL error/context state and of the rocket-rig handoff (exactly one root,
+ *    one vibration rig, and the exhaust plume base welded to the published bell
+ *    anchors). Steady state must show: pools live <= limit <= capacity,
+ *    geometry / texture / program counts flat against the warm-up baseline
+ *    (creep 0), zero WebGL errors and no context loss. Nothing in this section
+ *    allocates inside the per-frame path: the sample ring, the status fragment,
+ *    the report object and the probe buffers all live for the lifetime of the
+ *    subsystem.
+ *
+ * 4. THE DENSITY PROBE - an on-demand read of what the frame actually contains.
+ *    The scene is re-drawn once into a 128 px wide offscreen target and
+ *    classified pixel by pixel into flat sky, textured content and edges, with
+ *    the per-third breakdown (row 0 of a read-back is the BOTTOM of the frame).
+ *    It is off by default - the governor never spends frame budget on
+ *    measurement - and the verification harness calls it at the pre-launch,
+ *    peak-thrust, mid-ascent and cloud-passage beats; PF_SPEC.probeInterval
+ *    turns background sampling on when there is fps headroom.
+ *
+ * PUBLISHED - LAUNCH_SCENE.perf (registered as the 'perf' subsystem)
+ *   fps / frameMs / avgFps   live and windowed real-time frame rate
+ *   tier / pixelRatio / ratioScale   the tier and resolution actually applied
+ *   decision                 last governor decision ('band', 'ratio-down',
+ *                            'tier-down', 'ratio-up', 'tier-up', 'floor', ...)
+ *   report()                 stable numbers-only snapshot: fps, tier, ratio,
+ *                            renderer.info, pools, creep, GL/context counters,
+ *                            rig handoff, the last density probe and the
+ *                            governor counters
+ *   measureDensity()         run the density probe now and return its numbers
+ *   setAdaptive(flag)        pause / resume the governor
+ *   pinTier(id | null)       hold one tier (reduced-tier checks, screenshots)
+ *   injectSample(fps, count) push synthetic samples through the real decision
+ *                            kernel for deterministic tier / ratio tests
+ *   status                   compact fragment the boot channel appends to the
+ *                            launch-status meta
  * ------------------------------------------------------------------------ */
+// ==== SECTION: perf ====
 
-const perfStub = {
+const PF_VERSION = '1.0.0-perf';
+
+/* The quality ladder, richest first. Every entry is a key of QUALITY_TIERS. */
+const PF_TIERS = ['high', 'medium', 'low'];
+
+const PF_SPEC = {
+  /* ---- sampling: real seconds, never the clamped simulation clock ---- */
+  sampleSeconds: 0.5,        // frame-time window behind one fps sample
+  windowSamples: 8,          // samples kept for a decision (4 s of history)
+  minSamples: 3,             // samples required before the first decision
+  warmupSeconds: 2.5,        // startup grace: shader compile, texture upload
+  maxGap: 5.0,               // a longer single frame (tab wake, sleep, breakpoint)
+                             // restarts the window; anything shorter is a
+                             // genuinely slow frame and has to be measured
+
+  /* ---- decision bands, fps ---- */
+  degradeFps: 50,            // below this the governor spends quality
+  criticalFps: 32,           // below this it cuts resolution in bigger steps
+  recoverFps: 59,            // above this it may give quality back
+  recoverSeconds: 5,         // ... after this long in the recovery band
+  ratioGainSeconds: 1.5,     // recovery band time before the ratio climbs
+
+  /* ---- change cadence (never two changes inside one window) ---- */
+  cooldownSeconds: 3,        // quiet period after a tier change
+  ratioInterval: 0.6,        // minimum spacing between resolution changes
+  ratioStepDown: 0.9,        // -10% resolution per degrading step
+  criticalStepDown: 0.75,    // -25% when the frame rate is critical
+  ratioStepUp: 1.04,         // +4% per recovering step
+  minRatioScale: 0.6,        // floor: never below 60% of the tier's own cap
+
+  /* ---- watchdog ---- */
+  auditSeconds: 1,           // resource / pool / GL audit cadence
+  baselineSeconds: 10,       // warm-up window: shaders compile lazily on first
+                             // use, so the baseline floats up to the observed
+                             // maximum until this window closes
+  creepSlackGeometries: 8,   // steady-state tolerance of the audit
+  creepSlackMaterials: 8,
+  creepSlackTextures: 10,
+  handoffTolerance: 0.6,     // metres: plume base vs published bell anchors
+
+  /* ---- density probe ---- */
+  probeWidth: 128,           // probe resolution: wide enough, never costly
+  probeMinHeight: 48,
+  probeMaxHeight: 160,
+  probeInterval: 0,          // seconds; 0 = on demand only (the default)
+  probeMinFps: 45,           // background probes only with fps headroom
+  skyBlueBias: 10,           // b - r above this reads as sky blue
+  flatTolerance: 4,          // per-channel neighbour delta that stays "flat"
+  edgeDelta: 18              // per-channel neighbour delta that reads as detail
+};
+
+/* Static scratch: the per-frame path allocates nothing. */
+const PF_SCRATCH = { size: new THREE.Vector2(), anchor: new THREE.Vector3() };
+const PF_BAND_CELLS = new Float32Array(3);
+
+/* The compact read-out the boot channel appends to the launch-status meta -
+ * the same pattern the camera phase uses through state.camera.status. */
+const perfChannel = {
+  version: PF_VERSION,
   fps: 0,
   frameMs: 0,
-  sampleSeconds: 0,
-  sampleFrames: 0,
+  avgFps: 0,
+  tier: 'high',
+  pixelRatio: 1,
+  ratioScale: 1,
+  draws: 0,
+  geometries: 0,
+  textures: 0,
+  poolsLive: 0,
+  poolsLimit: 0,
+  glErrors: 0,
+  contextLost: 0,
+  creep: false,
+  density: 0,
+  decision: 'boot',
+  status: ''
+};
 
-  init() {
-    state.quality = quality.id;
+/* Largest per-channel difference between two RGBA texels of the probe. */
+function pfPixelDelta(pixels, a, b) {
+  const dr = pixels[a] - pixels[b];
+  const dg = pixels[a + 1] - pixels[b + 1];
+  const db = pixels[a + 2] - pixels[b + 2];
+  const ar = dr < 0 ? -dr : dr;
+  const ag = dg < 0 ? -dg : dg;
+  const ab = db < 0 ? -db : db;
+  return ar > ag ? (ar > ab ? ar : ab) : (ag > ab ? ag : ab);
+}
+
+/* Active tier record from the boot table (never null). */
+function pfTierSpec(system) {
+  return QUALITY_TIERS[PF_TIERS[system.tierIndex]] || QUALITY_TIERS.high;
+}
+
+/* Mean of the filled part of the fps ring: an order-independent window, so a
+ * decision never depends on which sample happened to be written first. */
+function pfWindowMean(system) {
+  if (system.windowFilled === 0) return 0;
+  const window = system.window;
+  let sum = 0;
+  for (let i = 0; i < system.windowFilled; i += 1) sum += window[i];
+  return sum / system.windowFilled;
+}
+
+/* ---------------------------------------------------------------------------
+ * The governor. Registered as 'perf'; the last subsystem in the frame, so it
+ * sees the frame the other eight just posed and publishes the budget for the
+ * next one.
+ * ------------------------------------------------------------------------ */
+
+const perfSystem = {
+  version: PF_VERSION,
+  subsystem: 'perf',
+
+  /* bound at init */
+  scene: null,
+  renderer: null,
+  camera: null,
+
+  /* ---- sampling ---- */
+  frames: 0,
+  updates: 0,
+  clock: 0,               // real seconds since init, never the clamped dt
+  lastNow: 0,
+  lastAuditAt: -1,
+  lastRatioAt: 0,
+  sampleFrames: 0,
+  sampleSeconds: 0,
+  window: new Float32Array(PF_SPEC.windowSamples),
+  windowIndex: 0,
+  windowFilled: 0,
+  samples: 0,
+  fps: 0,
+  frameMs: 0,
+  avgFps: 0,
+  worstFps: Infinity,
+
+  /* ---- governor ---- */
+  adaptive: true,
+  pinned: null,
+  forced: false,          // set by injectSample so the kernel runs pre-warmup
+  tierIndex: 0,
+  ratioScale: 1,
+  pixelRatio: 1,
+  ratioChanges: 0,
+  cooldown: 0,
+  stable: 0,
+  decision: 'boot',
+  decisions: 0,
+  stepDowns: 0,
+  stepUps: 0,
+  ratioCuts: 0,
+  ratioGains: 0,
+  tierChanges: 0,
+  overrides: 0,
+
+  /* ---- watchdog ---- */
+  audits: 0,
+  metrics: {
+    draws: 0, triangles: 0, geometries: 0, textures: 0, programs: 0,
+    sceneGeometries: 0, sceneMaterials: 0, instanced: 0, meshes: 0, lights: 0
+  },
+  baseline: {
+    ready: false, sceneGeometries: 0, sceneMaterials: 0, textures: 0,
+    uploadedGeometries: 0, programs: 0
+  },
+  creep: { sceneGeometries: 0, sceneMaterials: 0, textures: 0, geometries: 0, programs: 0 },
+  geometryCache: null,
+  materialCache: null,
+  creepFlag: false,
+  creepLogged: false,
+  pools: { names: 0, live: 0, limit: 0, capacity: 0, emitted: 0, bounded: true },
+  gl: { checked: 0, errors: 0, lastCode: 0, contextLost: 0, contextRestored: 0 },
+  handoff: {
+    roots: 0, rigs: 0, anchors: 0, attachOffset: 0, attached: false,
+    tolerance: PF_SPEC.handoffTolerance
+  },
+  subsystemErrors: 0,
+  shadowPurges: 0,
+
+  /* ---- density probe ---- */
+  density: {
+    measured: false, failed: 0, probes: 0, width: 0, height: 0,
+    sky: 0, flat: 0, empty: 0, content: 1, edge: 0,
+    bands: new Float32Array(3),        // [bottom, middle, top], empty-sky share
+    phase: 'prelaunch', tier: 'high', fps: 0, at: 0
+  },
+  probeTarget: null,
+  probePixels: null,
+  probeWidth: 0,
+  probeHeight: 0,
+
+  /* ---- published read-out ---- */
+  status: '',
+  budgetSnapshot: {
+    tier: 'high', pixelRatioCap: 1, maxPixelRatio: 1, shadowMapSize: 512,
+    shadows: false, antialias: false, cloudPuffs: 0, devicePixelRatio: 1
+  },
+  windowSnapshot: { filled: 0, samples: 0, mean: 0, worst: 0, ring: null },
+  snapshot: {
+    version: PF_VERSION, subsystem: 'perf', registered: false, frames: 0,
+    updates: 0, clock: 0, samples: 0, audits: 0, fps: 0, frameMs: 0, avgFps: 0,
+    worstFps: 0, tier: 'high', tierIndex: 0, pixelRatio: 1, ratioScale: 1,
+    ratioChanges: 0, adaptive: true, pinned: null, decision: 'boot',
+    decisions: 0, stepDowns: 0, stepUps: 0, ratioCuts: 0, ratioGains: 0,
+    tierChanges: 0, overrides: 0, subsystems: 0, subsystemErrors: 0,
+    phase: 'prelaunch', thrust: 0, altitude: 0, shadowPurges: 0,
+    budgets: null, window: null, metrics: null, pools: null, gl: null,
+    creep: null, handoff: null, density: null, baseline: null
   },
 
-  update(dt) {
-    this.sampleFrames += 1;
-    this.sampleSeconds += dt;
-    if (this.sampleSeconds >= 0.5) {
-      this.fps = this.sampleFrames / this.sampleSeconds;
-      this.frameMs = (this.sampleSeconds * 1000) / this.sampleFrames;
-      state.fps = Math.round(this.fps);
-      this.sampleFrames = 0;
-      this.sampleSeconds = 0;
-    }
+  /* -------------------------------------------------------------------
+   * Lifecycle
+   * ---------------------------------------------------------------- */
+
+  init(ctx) {
+    this.scene = ctx.scene;
+    this.renderer = ctx.renderer;
+    this.camera = ctx.camera;
+
+    /* Adopt whatever tier the boot phase detected (or a tool pinned). */
+    const index = PF_TIERS.indexOf(quality.id);
+    this.tierIndex = index === -1 ? 0 : index;
+    this.ratioScale = 1;
+    this.fps = 0;
+    this.frameMs = 0;
+    this.avgFps = 0;
+    this.worstFps = Infinity;
+    this.samples = 0;
+    this.windowFilled = 0;
+    this.windowIndex = 0;
+    this.clock = 0;
+    this.lastNow = performance.now();
+    this.lastAuditAt = -1;
+    this.lastRatioAt = 0;
+    this.cooldown = 0;
+    this.stable = 0;
+    this.adaptive = true;
+    this.pinned = null;
+    this.forced = false;
+    this.decision = 'boot';
+    this.baseline.ready = false;
+    this.creepLogged = false;
+
+    state.perf = perfChannel;
     state.quality = quality.id;
-    publishStatus(false); // internally throttled to <= 4 refreshes per second
+    state.fps = 0;
+
+    this.windowSnapshot.ring = this.window;
+    this.pixelRatio = Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio);
+    this.applyRatio();
+    this.attachGlListeners();
+    this.refreshStatus();
+
+    console.log('[LAUNCH_SCENE] perf governor online - tier=' + quality.id +
+      ' cap=' + quality.pixelRatioCap + ' ratio=' + this.pixelRatio.toFixed(2) +
+      ' adaptive=' + (this.adaptive ? 1 : 0) +
+      ' probe=' + (PF_SPEC.probeInterval > 0 ? PF_SPEC.probeInterval + 's' : 'on-demand'));
+  },
+
+  /* One frame of bookkeeping. Allocation-free: no object, array or string is
+   * created here except the status fragment, which is rebuilt at most twice a
+   * second (never per frame). */
+  update(dt) {
+    this.frames += 1;
+    this.updates += 1;
+
+    const now = performance.now();
+    let raw = this.lastNow > 0 ? (now - this.lastNow) / 1000 : 0;
+    this.lastNow = now;
+    if (!Number.isFinite(raw) || raw < 0) raw = 0;
+    this.clock += raw;
+    if (this.cooldown > 0) {
+      this.cooldown -= raw;
+      if (this.cooldown < 0) this.cooldown = 0;
+    }
+
+    /* A tab wake, a long stall or a paused/hidden page must never look like a
+     * slow renderer: the window is restarted instead of degraded. */
+    if (state.hidden || state.paused || raw > PF_SPEC.maxGap) {
+      this.resetWindow();
+    } else {
+      this.sampleFrames += 1;
+      this.sampleSeconds += raw;
+      if (this.sampleSeconds >= PF_SPEC.sampleSeconds) {
+        this.pushSample(this.sampleFrames / this.sampleSeconds);
+        this.sampleFrames = 0;
+        this.sampleSeconds = 0;
+        this.govern();
+        this.refreshStatus();
+      }
+    }
+
+    if (this.clock - this.lastAuditAt >= PF_SPEC.auditSeconds) {
+      this.lastAuditAt = this.clock;
+      this.audit();
+      this.refreshStatus();
+    }
+
+    if (PF_SPEC.probeInterval > 0 && this.fps >= PF_SPEC.probeMinFps &&
+      this.clock - this.density.at >= PF_SPEC.probeInterval) {
+      this.measureDensity();
+    }
+
+    publishStatus(false); // the boot channel throttles to <= 4 refreshes/second
+  },
+
+  /* A tier applied from outside (a tool, a screenshot harness, setQuality) must
+   * not leave the governor fighting it: adopt it as the new baseline. */
+  onQualityChange(tier) {
+    const id = tier && tier.id ? tier.id : quality.id;
+    const index = PF_TIERS.indexOf(id);
+    if (index !== -1 && index !== this.tierIndex) {
+      this.purgeShadowMaps();
+      this.tierIndex = index;
+      this.ratioScale = 1;
+      this.pixelRatio = Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio);
+      this.cooldown = PF_SPEC.cooldownSeconds;
+    }
+    this.refreshStatus();
   },
 
   dispose() {
+    this.detachGlListeners();
+    if (this.probeTarget) {
+      this.probeTarget.dispose();
+      this.probeTarget = null;
+    }
+    this.probePixels = null;
+    this.probeWidth = 0;
+    this.probeHeight = 0;
+    this.frames = 0;
+    this.updates = 0;
+    this.clock = 0;
+    this.lastNow = 0;
+    this.lastAuditAt = -1;
+    this.sampleFrames = 0;
+    this.sampleSeconds = 0;
+    this.resetWindow();
+    this.samples = 0;
     this.fps = 0;
     this.frameMs = 0;
-    this.sampleSeconds = 0;
+    this.avgFps = 0;
+    this.worstFps = Infinity;
+    this.cooldown = 0;
+    this.stable = 0;
+    this.decision = 'off';
+    this.adaptive = true;
+    this.pinned = null;
+    this.forced = false;
+    this.baseline.ready = false;
+    this.status = '';
+    this.scene = null;
+    this.renderer = null;
+    this.camera = null;
+    if (state.perf === perfChannel) {
+      perfChannel.status = '';
+      state.perf = null;
+    }
+    if (runtime.perf === this) runtime.perf = null;
+    return this;
+  },
+
+  /* -------------------------------------------------------------------
+   * Fps sampling and the decision kernel
+   * ---------------------------------------------------------------- */
+
+  resetWindow() {
+    this.windowIndex = 0;
+    this.windowFilled = 0;
     this.sampleFrames = 0;
+    this.sampleSeconds = 0;
+    return this.windowFilled;
+  },
+
+  /* Push one fps sample into the ring and refresh the windowed mean. */
+  pushSample(fps) {
+    const value = Number(fps);
+    if (!Number.isFinite(value) || value <= 0) return this.windowFilled;
+    const window = this.window;
+    window[this.windowIndex] = value;
+    this.windowIndex += 1;
+    if (this.windowIndex >= window.length) this.windowIndex = 0;
+    if (this.windowFilled < window.length) this.windowFilled += 1;
+    this.samples += 1;
+    this.fps = value;
+    this.frameMs = 1000 / value;
+    if (value < this.worstFps) this.worstFps = value;
+    this.avgFps = pfWindowMean(this);
+    state.fps = Math.round(this.avgFps);
+    perfChannel.fps = Math.round(value * 10) / 10;
+    perfChannel.avgFps = Math.round(this.avgFps * 10) / 10;
+    perfChannel.frameMs = Math.round(this.frameMs * 100) / 100;
+    return this.windowFilled;
+  },
+
+  /* The whole policy in one function: read the window, pick one action, apply
+   * it. Returns the decision id (a constant string, never allocated). */
+  govern() {
+    const spec = PF_SPEC;
+    if (this.windowFilled < spec.minSamples) return this.note('warmup');
+    if (!this.forced && this.clock < spec.warmupSeconds) return this.note('warmup');
+    if (!this.adaptive || this.pinned) return this.note('held');
+
+    /* Real seconds spent in the recovery band - the recovery hysteresis. */
+    if (this.avgFps >= spec.recoverFps) this.stable += spec.sampleSeconds;
+    else this.stable = 0;
+
+    const starving = this.avgFps < spec.degradeFps;
+    const severe = this.avgFps < spec.criticalFps;
+    const canMoveRatio = this.clock - this.lastRatioAt >= spec.ratioInterval;
+
+    /* 1. Spend budget, cheapest knob first: resolution, then the tier. */
+    if (starving || severe) {
+      if (this.ratioScale > spec.minRatioScale + 1e-6 && canMoveRatio) {
+        const step = severe ? spec.criticalStepDown : spec.ratioStepDown;
+        this.ratioScale = Math.max(spec.minRatioScale, this.ratioScale * step);
+        this.lastRatioAt = this.clock;
+        this.ratioCuts += 1;
+        this.cooldown = spec.ratioInterval;
+        this.applyRatio();
+        return this.note('ratio-down');
+      }
+      if (this.cooldown <= 0 && this.tierIndex < PF_TIERS.length - 1) {
+        this.applyTier(this.tierIndex + 1, 'budget');
+        this.cooldown = spec.cooldownSeconds;
+        this.stepDowns += 1;
+        return this.note('tier-down');
+      }
+      return this.note(this.tierIndex >= PF_TIERS.length - 1 && severe ? 'floor' : 'budget');
+    }
+
+    /* 2. Give budget back, again cheapest knob first, and only once the whole
+     *    window has held above the recovery line for long enough. */
+    if (this.avgFps >= spec.recoverFps) {
+      if (this.ratioScale < 1 - 1e-6 && canMoveRatio &&
+        this.stable >= spec.ratioGainSeconds) {
+        this.ratioScale = Math.min(1, this.ratioScale * spec.ratioStepUp);
+        this.lastRatioAt = this.clock;
+        this.ratioGains += 1;
+        this.cooldown = spec.ratioInterval;
+        this.applyRatio();
+        return this.note('ratio-up');
+      }
+      if (this.ratioScale >= 1 - 1e-6 && this.tierIndex > 0 &&
+        this.cooldown <= 0 && this.stable >= spec.recoverSeconds) {
+        this.applyTier(this.tierIndex - 1, 'headroom');
+        this.cooldown = spec.cooldownSeconds;
+        this.stable = 0;
+        this.stepUps += 1;
+        return this.note('tier-up');
+      }
+      return this.note('recover');
+    }
+
+    return this.note('band');
+  },
+
+  /* Record one decision without allocating. */
+  note(decision) {
+    this.decision = decision;
+    this.decisions += 1;
+    perfChannel.decision = decision;
+    return decision;
+  },
+
+  /* Apply a tier through the published API so every subsystem trims itself. */
+  applyTier(index, reason) {
+    const next = Math.max(0, Math.min(PF_TIERS.length - 1, index));
+    const id = PF_TIERS[next];
+    if (next === this.tierIndex) {
+      this.ratioScale = 1;
+      this.applyRatio();
+      return id;
+    }
+    this.purgeShadowMaps();          // hand the replaced map back first
+    this.tierIndex = next;
+    this.ratioScale = 1;             // the new tier's cap is the new baseline
+    runtime.setQuality(id);          // onQualityChange trims every subsystem
+    this.pixelRatio = Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio);
+    this.applyRatio();
+    this.tierChanges += 1;
+    perfChannel.tier = id;
+    console.log('[LAUNCH_SCENE] perf tier=' + id + ' (' + reason + ') fps=' +
+      this.avgFps.toFixed(1) + ' ratio=' + this.pixelRatio.toFixed(2));
+    return id;
+  },
+
+  /* Adaptive resolution inside the active tier. The scale multiplies the tier's
+   * own device-pixel ratio, so a step is real even on a 1x display; quality.
+   * maxPixelRatio is the single source of truth, so a later window resize keeps
+   * the adapted ratio. */
+  applyRatio() {
+    const tier = pfTierSpec(this);
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const tierRatio = Math.min(devicePixelRatio, tier.pixelRatioCap);
+    const ratio = tierRatio * this.ratioScale;
+    quality.maxPixelRatio = ratio;
+    const renderer = this.renderer;
+    if (renderer && Math.abs(ratio - this.pixelRatio) > 1e-3) {
+      this.pixelRatio = ratio;
+      renderer.setPixelRatio(ratio);
+      renderer.setSize(Math.max(1, window.innerWidth), Math.max(1, window.innerHeight), false);
+      this.ratioChanges += 1;
+    } else {
+      this.pixelRatio = ratio;
+    }
+    const budgets = this.budgetSnapshot;
+    budgets.tier = quality.id;
+    budgets.pixelRatioCap = quality.pixelRatioCap;
+    budgets.maxPixelRatio = quality.maxPixelRatio;
+    budgets.shadowMapSize = quality.shadowMapSize;
+    budgets.shadows = quality.shadows;
+    budgets.antialias = quality.antialias;
+    budgets.cloudPuffs = quality.cloudPuffs;
+    budgets.devicePixelRatio = window.devicePixelRatio || 1;
+    perfChannel.pixelRatio = this.pixelRatio;
+    perfChannel.ratioScale = this.ratioScale;
+    return this.pixelRatio;
+  },
+
+  /* -------------------------------------------------------------------
+   * Disposal discipline
+   * ---------------------------------------------------------------- */
+
+  /* Dispose every shadow map in the scene before a tier change: the shadow pass
+   * is the only GPU resource the tier resizes or switches off, and three
+   * re-creates the map lazily at the new resolution on the next render. */
+  purgeShadowMaps() {
+    const scene = this.scene;
+    if (!scene || typeof scene.traverse !== 'function') return 0;
+    let purged = 0;
+    scene.traverse(function (object) {
+      const shadow = object.shadow;
+      if (object.isLight && shadow && shadow.map) {
+        shadow.map.dispose();
+        shadow.map = null;
+        purged += 1;
+      }
+    });
+    this.shadowPurges += purged;
+    return purged;
+  },
+
+  /* -------------------------------------------------------------------
+   * Resource watchdog
+   * ---------------------------------------------------------------- */
+
+  /* Count the repeated-geometry, rig and unique-asset nodes. One traversal per
+   * second with two reusable Sets, so the closure it allocates never shows up in
+   * a frame budget; the per-frame path still allocates nothing. */
+  auditScene() {
+    const scene = this.scene;
+    const metrics = this.metrics;
+    const handoff = this.handoff;
+    if (!this.geometryCache) this.geometryCache = new Set();
+    if (!this.materialCache) this.materialCache = new Set();
+    const geometries = this.geometryCache;
+    const materials = this.materialCache;
+    geometries.clear();
+    materials.clear();
+    metrics.instanced = 0;
+    metrics.meshes = 0;
+    metrics.lights = 0;
+    handoff.roots = 0;
+    handoff.rigs = 0;
+    if (scene && typeof scene.traverse === 'function') {
+      scene.traverse(function (object) {
+        if (object.geometry) geometries.add(object.geometry);
+        const material = object.material;
+        if (Array.isArray(material)) {
+          for (let i = 0; i < material.length; i += 1) if (material[i]) materials.add(material[i]);
+        } else if (material) {
+          materials.add(material);
+        }
+        if (object.isInstancedMesh) metrics.instanced += 1;
+        if (object.isMesh) metrics.meshes += 1;
+        if (object.isLight) metrics.lights += 1;
+        if (object.name === 'rocket-vehicle') handoff.roots += 1;
+        if (object.name === 'rocket-vibration-rig') handoff.rigs += 1;
+      });
+    }
+    /* Unique assets held by the scene: the leak metric. renderer.info counts the
+     * geometries/textures the renderer has *uploaded*, which also grows the
+     * first time the reveal brings a part into view, so it is reported next to
+     * these numbers instead of being flagged on its own. */
+    metrics.sceneGeometries = geometries.size;
+    metrics.sceneMaterials = materials.size;
+    return metrics;
+  },
+
+  /* The integration handoff: the plume base the exhaust phase publishes must sit
+   * on the mean of the bell-anchor world positions the rocket phase publishes,
+   * and the scene must hold exactly one root and one rig. */
+  auditHandoff() {
+    const handoff = this.handoff;
+    const rocket = runtime.handles ? runtime.handles.rocket : null;
+    const exhaust = runtime.exhaust;
+    handoff.anchors = 0;
+    handoff.attachOffset = 0;
+    handoff.attached = false;
+    if (!rocket || !rocket.engineAnchors || rocket.engineAnchors.length === 0) return handoff;
+    const anchors = rocket.engineAnchors;
+    const point = PF_SCRATCH.anchor;
+    let sx = 0;
+    let sy = 0;
+    let sz = 0;
+    let live = 0;
+    for (let i = 0; i < anchors.length; i += 1) {
+      if (!anchors[i] || !anchors[i].anchor) continue;
+      anchors[i].anchor.getWorldPosition(point);
+      sx += point.x;
+      sy += point.y;
+      sz += point.z;
+      live += 1;
+    }
+    handoff.anchors = live;
+    if (live === 0 || !exhaust || !exhaust.plumeBase) return handoff;
+    const base = exhaust.plumeBase;
+    const dx = sx / live - base.x;
+    const dy = sy / live - base.y;
+    const dz = sz / live - base.z;
+    handoff.attachOffset = Math.round(Math.sqrt(dx * dx + dy * dy + dz * dz) * 1000) / 1000;
+    handoff.attached = handoff.attachOffset <= handoff.tolerance;
+    return handoff;
+  },
+
+  /* Drain and count the WebGL error queue. Once per audit: a single getError()
+   * reports only the first code, and the check is cheap enough at 1 Hz. */
+  checkGl() {
+    const renderer = this.renderer;
+    if (!renderer || typeof renderer.getContext !== 'function') return 0;
+    const gl = renderer.getContext();
+    if (!gl || typeof gl.getError !== 'function') return 0;
+    let found = 0;
+    for (let i = 0; i < 4; i += 1) {
+      const code = gl.getError();
+      if (code === 0) break;
+      this.gl.lastCode = code;
+      found += 1;
+    }
+    this.gl.checked += 1;
+    if (found > 0) {
+      this.gl.errors += found;
+      perfChannel.glErrors = this.gl.errors;
+      console.warn('[LAUNCH_SCENE] perf: WebGL error 0x' +
+        this.gl.lastCode.toString(16) + ' reported by the driver');
+    }
+    return found;
+  },
+
+  /* The 1 Hz audit: renderer.info, the pools, the GL state and the rig handoff,
+   * all mirrored into the stable report object. */
+  audit() {
+    this.audits += 1;
+    this.auditScene();
+    this.auditHandoff();
+
+    const renderer = this.renderer;
+    const metrics = this.metrics;
+    if (renderer && renderer.info) {
+      const info = renderer.info;
+      const memory = info.memory || {};
+      const render = info.render || {};
+      metrics.draws = render.calls || 0;
+      metrics.triangles = render.triangles || 0;
+      metrics.geometries = memory.geometries || 0;
+      metrics.textures = memory.textures || 0;
+      metrics.programs = info.programs ? info.programs.length : 0;
+
+      /* Flat resource counts once the warm-up window has closed: the proof that
+       * nothing allocates at runtime. Shader programs are compiled lazily on
+       * first use and the renderer uploads a geometry the first time it is
+       * drawn, so the baseline floats up to the observed maximum (and creep
+       * stays at zero) until the window closes. */
+      if (this.clock < PF_SPEC.baselineSeconds) {
+        const base = this.baseline;
+        if (metrics.sceneGeometries > base.sceneGeometries) base.sceneGeometries = metrics.sceneGeometries;
+        if (metrics.sceneMaterials > base.sceneMaterials) base.sceneMaterials = metrics.sceneMaterials;
+        if (metrics.textures > base.textures) base.textures = metrics.textures;
+        if (metrics.geometries > base.uploadedGeometries) base.uploadedGeometries = metrics.geometries;
+        if (metrics.programs > base.programs) base.programs = metrics.programs;
+        base.ready = false;
+        this.creep.sceneGeometries = 0;
+        this.creep.sceneMaterials = 0;
+        this.creep.textures = 0;
+        this.creep.geometries = 0;
+        this.creep.programs = 0;
+        this.creepFlag = false;
+      } else {
+        const base = this.baseline;
+        const creep = this.creep;
+        base.ready = true;
+        creep.sceneGeometries = metrics.sceneGeometries - base.sceneGeometries;
+        creep.sceneMaterials = metrics.sceneMaterials - base.sceneMaterials;
+        creep.textures = metrics.textures - base.textures;
+        creep.geometries = metrics.geometries - base.uploadedGeometries;
+        creep.programs = metrics.programs - base.programs;
+        /* Leak test: unique geometries and materials held by the scene, plus the
+         * texture count registered with the renderer (a render target created
+         * per frame would show there and never in the scene graph). Programs and
+         * uploaded-geometry counts are reported but not flagged: three compiles
+         * one program per material/light/shadow permutation and uploads a
+         * geometry on first draw, so a legitimate tier change or a wider shot
+         * moves both without allocating scene resources. */
+        this.creepFlag = creep.sceneGeometries > PF_SPEC.creepSlackGeometries ||
+          creep.sceneMaterials > PF_SPEC.creepSlackMaterials ||
+          creep.textures > PF_SPEC.creepSlackTextures;
+        if (this.creepFlag && !this.creepLogged) {
+          this.creepLogged = true;
+          console.warn('[LAUNCH_SCENE] perf: resource growth since warm-up - geo+' +
+            creep.sceneGeometries + ' mat+' + creep.sceneMaterials +
+            ' tex+' + creep.textures + ' prog+' + creep.programs);
+        }
+      }
+      this.checkGl();
+    }
+
+    /* Pool budget: the particle api exposes live counts as getters, so this
+     * audit allocates nothing. Limits only ever move with the tier. */
+    const smoke = runtime.smoke;
+    const pools = this.pools;
+    if (smoke && typeof smoke.live === 'number') {
+      pools.names = smoke.poolNames ? smoke.poolNames.length : 0;
+      pools.live = smoke.live;
+      pools.limit = smoke.limit;
+      pools.capacity = smoke.capacity;
+      pools.bounded = pools.capacity > 0 && pools.live <= pools.limit &&
+        pools.limit <= pools.capacity;
+      /* The lifetime emission counter: it grows without bound while the live
+       * count stays inside the pool limit, which is exactly what recycling
+       * looks like from the outside. */
+      const particleSystem = smoke.system;
+      if (particleSystem && typeof particleSystem.emittedTotal === 'function') {
+        pools.emitted = particleSystem.emittedTotal();
+      }
+      perfChannel.poolsLive = pools.live;
+      perfChannel.poolsLimit = pools.limit;
+    }
+    this.subsystemErrors = state.errors.length;
+    return this.metrics;
+  },
+
+  /* -------------------------------------------------------------------
+   * Density probe: what the frame actually contains
+   * ---------------------------------------------------------------- */
+
+  ensureProbeTarget(width, height) {
+    const current = this.probeTarget;
+    if (current && current.width === width && current.height === height) return current;
+    /* The footprint changed (resize or a tier change): the replaced target is
+     * disposed before the new one is built, so steady-state counts stay flat. */
+    if (current) {
+      current.dispose();
+      this.probeTarget = null;
+      this.probePixels = null;
+    }
+    if (!this.renderer) return null;
+    const next = new THREE.WebGLRenderTarget(width, height, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: true,
+      stencilBuffer: false,
+      generateMipmaps: false
+    });
+    next.texture.name = 'perf-density-probe';
+    this.probeTarget = next;
+    this.probeWidth = width;
+    this.probeHeight = height;
+    this.probePixels = new Uint8Array(width * height * 4);
+    return next;
+  },
+
+  /* Draw the composed scene once into the probe target and classify it.
+   * On-demand diagnostics: a failure disables the periodic sampling and never
+   * touches the running scene. */
+  measureDensity() {
+    const density = this.density;
+    const renderer = this.renderer;
+    if (!renderer || !this.scene || !this.camera ||
+      typeof renderer.readRenderTargetPixels !== 'function') {
+      density.measured = false;
+      density.failed += 1;
+      return density;
+    }
+
+    const size = renderer.getDrawingBufferSize(PF_SCRATCH.size);
+    const aspect = size.y > 0 ? size.x / size.y : 16 / 9;
+    const width = PF_SPEC.probeWidth;
+    const height = Math.max(PF_SPEC.probeMinHeight,
+      Math.min(PF_SPEC.probeMaxHeight, Math.round(width / Math.max(0.4, aspect))));
+    const target = this.ensureProbeTarget(width, height);
+    if (!target || !this.probePixels) {
+      density.measured = false;
+      density.failed += 1;
+      return density;
+    }
+
+    const shadows = renderer.shadowMap;
+    const shadowAuto = shadows ? shadows.autoUpdate : true;
+    try {
+      if (shadows) shadows.autoUpdate = false;   // reuse the maps drawn this frame
+      renderer.setRenderTarget(target);
+      renderer.render(this.scene, this.camera);
+      renderer.setRenderTarget(null);
+      if (shadows) shadows.autoUpdate = shadowAuto;
+      renderer.readRenderTargetPixels(target, 0, 0, width, height, this.probePixels);
+    } catch (error) {
+      renderer.setRenderTarget(null);
+      if (shadows) shadows.autoUpdate = shadowAuto;
+      density.measured = false;
+      density.failed += 1;
+      PF_SPEC.probeInterval = 0;    // never risk the frame budget twice
+      console.warn('[LAUNCH_SCENE] perf density probe unavailable:', error);
+      return density;
+    }
+
+    /* Classify: sky-blue texels, texels that match all four neighbours, the
+     * intersection (a large uniform empty-sky region) and real detail edges.
+     * readRenderTargetPixels returns row 0 at the BOTTOM of the frame. */
+    const pixels = this.probePixels;
+    const flatTolerance = PF_SPEC.flatTolerance;
+    const edgeDelta = PF_SPEC.edgeDelta;
+    const blueBias = PF_SPEC.skyBlueBias;
+    const bands = density.bands;
+    let sky = 0;
+    let flat = 0;
+    let empty = 0;
+    let edge = 0;
+    PF_BAND_CELLS[0] = 0;
+    PF_BAND_CELLS[1] = 0;
+    PF_BAND_CELLS[2] = 0;
+    bands[0] = 0;
+    bands[1] = 0;
+    bands[2] = 0;
+
+    for (let y = 0; y < height; y += 1) {
+      const band = y < height / 3 ? 0 : (y < (2 * height) / 3 ? 1 : 2);
+      const row = y * width;
+      for (let x = 0; x < width; x += 1) {
+        const i = (row + x) * 4;
+        const isSky = (pixels[i + 2] - pixels[i]) > blueBias && pixels[i + 2] >= pixels[i + 1] - 2;
+        let maxDelta = 0;
+        if (x > 0) {
+          const d = pfPixelDelta(pixels, i, i - 4);
+          if (d > maxDelta) maxDelta = d;
+        }
+        if (x < width - 1) {
+          const d = pfPixelDelta(pixels, i, i + 4);
+          if (d > maxDelta) maxDelta = d;
+        }
+        if (y > 0) {
+          const d = pfPixelDelta(pixels, i, i - width * 4);
+          if (d > maxDelta) maxDelta = d;
+        }
+        if (y < height - 1) {
+          const d = pfPixelDelta(pixels, i, i + width * 4);
+          if (d > maxDelta) maxDelta = d;
+        }
+        const isFlat = maxDelta <= flatTolerance;
+        if (isSky) sky += 1;
+        if (isFlat) flat += 1;
+        if (isSky && isFlat) {
+          empty += 1;
+          bands[band] += 1;
+        }
+        if (maxDelta >= edgeDelta) edge += 1;
+        PF_BAND_CELLS[band] += 1;
+      }
+    }
+
+    const total = width * height;
+    density.measured = true;
+    density.probes += 1;
+    density.width = width;
+    density.height = height;
+    density.sky = Math.round((sky / total) * 10000) / 10000;
+    density.flat = Math.round((flat / total) * 10000) / 10000;
+    density.empty = Math.round((empty / total) * 10000) / 10000;
+    density.content = Math.round((1 - empty / total) * 10000) / 10000;
+    density.edge = Math.round((edge / total) * 10000) / 10000;
+    for (let b = 0; b < 3; b += 1) {
+      bands[b] = PF_BAND_CELLS[b] > 0
+        ? Math.round((bands[b] / PF_BAND_CELLS[b]) * 10000) / 10000 : 0;
+    }
+    density.phase = state.phase;
+    density.tier = quality.id;
+    density.fps = Math.round(this.fps * 10) / 10;
+    density.at = Math.round(this.clock * 1000) / 1000;
+    perfChannel.density = density.content;
+    return density;
+  },
+
+  /* -------------------------------------------------------------------
+   * Published read-out and verification hooks
+   * ---------------------------------------------------------------- */
+
+  refreshStatus() {
+    const channel = perfChannel;
+    channel.tier = quality.id;
+    channel.draws = this.metrics.draws;
+    channel.geometries = this.metrics.geometries;
+    channel.textures = this.metrics.textures;
+    channel.glErrors = this.gl.errors;
+    channel.contextLost = this.gl.contextLost;
+    channel.creep = this.creepFlag;
+    channel.density = this.density.measured ? this.density.content : 0;
+    channel.decision = this.decision;
+    channel.status = 'pf=fps:' + channel.fps.toFixed(1) +
+      ',avg:' + channel.avgFps.toFixed(1) +
+      ',tier:' + channel.tier +
+      ',pr:' + this.pixelRatio.toFixed(2) +
+      ',drw:' + channel.draws +
+      ',geo:' + channel.geometries +
+      ',tex:' + channel.textures +
+      ',pools:' + channel.poolsLive + '/' + channel.poolsLimit +
+      ',gl:' + channel.glErrors +
+      ',ctx:' + channel.contextLost +
+      ',creep:' + (channel.creep ? 1 : 0) +
+      ',dens:' + channel.density.toFixed(3) +
+      ',gov:' + channel.decision;
+    this.status = channel.status;
+    return this.status;
+  },
+
+  /* Stable, numbers-only snapshot for the QA harness: repeated calls reuse the
+   * same object, so sampling it every frame costs nothing. */
+  report() {
+    const out = this.snapshot;
+    const window = this.windowSnapshot;
+    window.filled = this.windowFilled;
+    window.samples = this.samples;
+    window.mean = Math.round(this.avgFps * 100) / 100;
+    window.worst = Number.isFinite(this.worstFps) ? Math.round(this.worstFps * 100) / 100 : 0;
+
+    out.registered = runtime.has('perf');
+    out.frames = this.frames;
+    out.updates = this.updates;
+    out.clock = Math.round(this.clock * 1000) / 1000;
+    out.samples = this.samples;
+    out.audits = this.audits;
+    out.fps = Math.round(this.fps * 100) / 100;
+    out.frameMs = Math.round(this.frameMs * 1000) / 1000;
+    out.avgFps = Math.round(this.avgFps * 100) / 100;
+    out.worstFps = window.worst;
+    out.tier = quality.id;
+    out.tierIndex = this.tierIndex;
+    out.pixelRatio = Math.round(this.pixelRatio * 1000) / 1000;
+    out.ratioScale = Math.round(this.ratioScale * 1000) / 1000;
+    out.ratioChanges = this.ratioChanges;
+    out.adaptive = this.adaptive;
+    out.pinned = this.pinned;
+    out.decision = this.decision;
+    out.decisions = this.decisions;
+    out.stepDowns = this.stepDowns;
+    out.stepUps = this.stepUps;
+    out.ratioCuts = this.ratioCuts;
+    out.ratioGains = this.ratioGains;
+    out.tierChanges = this.tierChanges;
+    out.overrides = this.overrides;
+    out.shadowPurges = this.shadowPurges;
+    out.subsystems = entries.length;
+    out.subsystemErrors = state.errors.length;
+    out.phase = state.phase;
+    out.thrust = Math.round(state.thrust * 1000) / 1000;
+    out.altitude = Math.round(state.altitude * 100) / 100;
+    out.budgets = this.budgetSnapshot;
+    out.window = window;
+    out.metrics = this.metrics;
+    out.pools = this.pools;
+    out.gl = this.gl;
+    out.creep = this.creep;
+    out.handoff = this.handoff;
+    out.density = this.density;
+    out.baseline = this.baseline;
+    out.creepFlag = this.creepFlag;
+    return out;
+  },
+
+  /* Pause or resume the governor (the current tier is kept either way). */
+  setAdaptive(flag) {
+    this.adaptive = flag !== false;
+    this.stable = 0;
+    this.cooldown = 0;
+    this.decision = this.adaptive ? 'resumed' : 'manual';
+    perfChannel.decision = this.decision;
+    this.refreshStatus();
+    return this.adaptive;
+  },
+
+  /* Hold one tier for reduced-tier checks and screenshots. pinTier(null) hands
+   * the ladder back to the governor. */
+  pinTier(tierId) {
+    if (tierId === null || tierId === undefined || tierId === 'auto') {
+      this.pinned = null;
+      this.adaptive = true;
+      this.stable = 0;
+      this.decision = 'auto';
+      perfChannel.decision = this.decision;
+      this.refreshStatus();
+      return quality.id;
+    }
+    const id = String(tierId);
+    const index = PF_TIERS.indexOf(id);
+    if (index === -1) {
+      throw new RangeError('LAUNCH_SCENE.perf.pinTier: unknown tier "' + id + '"');
+    }
+    this.pinned = id;
+    this.overrides += 1;
+    this.purgeShadowMaps();
+    this.tierIndex = index;
+    this.ratioScale = 1;
+    runtime.setQuality(id);
+    this.pixelRatio = Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio);
+    this.applyRatio();
+    this.cooldown = PF_SPEC.cooldownSeconds;
+    this.decision = 'pinned';
+    perfChannel.decision = this.decision;
+    this.refreshStatus();
+    return id;
+  },
+
+  /* Feed synthetic fps samples through the real kernel. The ring is cleared
+   * first so exactly the injected rate drives the decision, each sample also
+   * advances the governor's cadence clock by one sample window (the decision
+   * policy is cadence-driven, so a batch has to look like real elapsed time),
+   * and the warm-up gate is treated as passed so a test can run right after
+   * load. Tier and resolution changes that come out of this are applied for
+   * real - including the disposal path - which is what makes the governor
+   * testable without having to stall a real browser. */
+  injectSample(fps, count) {
+    const value = Number(fps);
+    const times = Math.max(1, Math.min(200, Math.round(Number(count) || 1)));
+    this.forced = true;
+    this.overrides += 1;
+    this.resetWindow();
+    for (let i = 0; i < times; i += 1) {
+      this.clock += PF_SPEC.sampleSeconds;
+      if (this.cooldown > 0) {
+        this.cooldown -= PF_SPEC.sampleSeconds;
+        if (this.cooldown < 0) this.cooldown = 0;
+      }
+      this.pushSample(value);
+      this.govern();
+    }
+    this.refreshStatus();
+    return quality.id;
+  },
+
+  /* -------------------------------------------------------------------
+   * WebGL context health
+   * ---------------------------------------------------------------- */
+
+  attachGlListeners() {
+    const renderer = this.renderer;
+    if (!renderer || !renderer.domElement || this.glCanvas) return false;
+    const canvas = renderer.domElement;
+    const system = this;
+    this.glLostHandler = function (event) {
+      if (event && typeof event.preventDefault === 'function') event.preventDefault();
+      system.gl.contextLost += 1;
+      perfChannel.contextLost = system.gl.contextLost;
+      console.warn('[LAUNCH_SCENE] perf: WebGL context lost (' +
+        system.gl.contextLost + ')');
+    };
+    this.glRestoredHandler = function () {
+      system.gl.contextRestored += 1;
+      system.purgeShadowMaps();   // the restored context starts with no GPU state
+      console.log('[LAUNCH_SCENE] perf: WebGL context restored');
+    };
+    canvas.addEventListener('webglcontextlost', this.glLostHandler, false);
+    canvas.addEventListener('webglcontextrestored', this.glRestoredHandler, false);
+    this.glCanvas = canvas;
+    return true;
+  },
+
+  detachGlListeners() {
+    if (!this.glCanvas) return false;
+    this.glCanvas.removeEventListener('webglcontextlost', this.glLostHandler, false);
+    this.glCanvas.removeEventListener('webglcontextrestored', this.glRestoredHandler, false);
+    this.glCanvas = null;
+    this.glLostHandler = null;
+    this.glRestoredHandler = null;
+    return true;
   }
 };
 
-runtime.perf = perfStub;
-runtime.register('perf', perfStub);
+runtime.perf = perfSystem;
+runtime.register('perf', perfSystem);
 
 /* ---------------------------------------------------------------------------
  * SECTION: boot (start) - initialise the registry and auto-start the loop.
