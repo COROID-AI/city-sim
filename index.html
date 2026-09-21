@@ -8723,16 +8723,16 @@ const DR_PHASES = [
   },
   {
     id: 'clampRelease', duration: 2.6,
-    thrust: [0.88, 0.97], vibration: [1.00, 0.60],
+    thrust: [0.88, 0.97], vibration: [1.00, 0.35],
     warning: { mode: 'steady', rate: 0, pattern: 'synchronised', intensity: 1 },
     impulse: 0.45, shake: 0.45, release: true,
     note: 'clamps release: the arms swing clear, altitude still exactly zero'
   },
   {
     id: 'liftoff', duration: 3.0,
-    thrust: [0.97, 1.00], vibration: [0.20, 0.00],
+    thrust: [0.97, 1.00], vibration: [0.00, 0.00],
     warning: { mode: 'off' },
-    impulse: 0.55, shake: 0.90, flight: true,
+    impulse: 0.18, shake: 0.90, flight: true,
     note: 'liftoff: first motion, the released rig settles out as it climbs'
   },
   {
@@ -9006,7 +9006,14 @@ const directorSystem = {
         rocket.root.position.set(seat.x, seat.y + this.altitude, seat.z);
       }
       if (typeof rocket.setVibration === 'function') {
-        const coupling = DR_PHASES[this.phaseIndex].flight ? 0 : DR_SPEC.rigCoupling;
+        const active = DR_PHASES[this.phaseIndex];
+        /* The thrust coupling dies with the clamp contact: while the arms still
+         * grip the stack the rig feels the whole engine shake, and by the time
+         * the vehicle is flying the hold-down resonance is gone, so the climb
+         * stays a clean vertical path instead of a wobble. */
+        const coupling = active.flight
+          ? 0
+          : DR_SPEC.rigCoupling * (active.release ? (1 - this.clampRelease) : 1);
         rocket.setVibration(this.vibration, { thrustCoupling: coupling });
       }
     }
