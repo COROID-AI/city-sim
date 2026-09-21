@@ -4900,8 +4900,1396 @@ const rocketSystem = {
 runtime.register('rocket', rocketSystem);
 
 /* ---------------------------------------------------------------------------
- * SECTION: exhaust - extension point (engine plume and flame).
+ * SECTION: exhaust - layered engine fire, thrust-driven plume, warm engine
+ * lighting and the heat-shimmer veil around the exhaust.
+ * ---------------------------------------------------------------------------
+ * The propulsive core of the scene. It owns exactly one input - thrust - and
+ * derives every visual and every published number from that input plus the
+ * vehicle altitude, so later phases (smoke, dust, foliage reaction, camera,
+ * perf) can all react to one physical cause instead of inventing private
+ * timers.
+ *
+ * ONE THRUST SIGNAL - the documented ignition ramp
+ *   runtime.state.thrust (0..1, owned by the director) is sampled every frame;
+ *   the exhaust API can push the same signal with setThrust(value). Both feed
+ *   the only dynamic in this section:
+ *     rising : level = min(requested, level + dt / EX_SPEC.ignitionSeconds)
+ *     falling: level = level + (requested - level) * (1 - exp(-dt / tau))
+ *   so the fire is dark at t = 0, reaches the requested throttle in at most
+ *   EX_SPEC.ignitionSeconds (3.2 s) and eases back down over ~0.55 s. Flame
+ *   brightness, core size, flame lengths, plume length, gust radius, engine
+ *   lights and the heat shimmer are all pure functions of level and altitude.
+ *
+ * FLAME LAYERS - additive shaders authored in code, no textures, no bloom
+ *   core   near-white hot core cone on every engine bell
+ *   glow   saturated warm glow cone wrapped around the core
+ *   trail  two long licking exhaust tongues per bell (the flame trails)
+ *   Each layer is a single InstancedMesh whose per-instance matrix is the
+ *   world matrix of an engine-bell anchor published by rocket-rig-handles, so
+ *   the fire is welded to the bells instead of a hard-coded offset and follows
+ *   the vehicle root and the vibration rig automatically.
+ *
+ * EXHAUST PLUME
+ *   A world-space additive column (inner hot jet + outer soft jet) whose length
+ *   is a pure function of level and altitude: a short bright jet on the pad and
+ *   a long, thinning trail that reaches towards the ground during ascent.
+ *
+ * WARM LIGHT AND HEAT
+ *   Three warm point lights (engine cluster, pad deck, tower) plus an additive
+ *   ground glow disc warm the aft body, the deck and the tower lattice; a
+ *   heat-shimmer veil around the plume refracts the frame behind it.
+ *
+ * PUBLISHED API - LAUNCH_SCENE.exhaust (exhaust-emitter-api)
+ *   setThrust(throttle 0..1)  the single input (also writes state.thrust)
+ *   throttle / thrust / level / ignition   0..1 read-only derived values
+ *   anchors[] / engineAnchor(name|index) / anchorCount / bellExitRadius
+ *   flameScale               0..1 overall flame multiplier actually applied
+ *   flameLayers              { core, glow, trail } -> { length, width, count }
+ *   plumeBase / plumeAxis    world position + world direction of the plume
+ *   plumeLength / plumeWidth metres rendered this frame
+ *   plumeSegments[]          world space samples along the plume:
+ *                            { index, t (0 base -> 1 tip), position (Vector3),
+ *                              radius, length, worldY, spread, active }
+ *   gustRadius               metres of sideways hot-gas gust
+ *   heat                     { radius, intensity } near-field heat field
+ *   shimmer                  { group, intensity, enabled, refracted }
+ *   lights[]                 { name, light, intensity }
+ *   groundGlow               { mesh, intensity, radius }
+ *   getState()               numbers-only snapshot, mirrored to state.exhaust
  * ------------------------------------------------------------------------ */
+// ==== SECTION: exhaust ====
+
+/* Tunables: lengths in metres, times in seconds. */
+const EX_SPEC = {
+  ignitionSeconds: 3.2,        // documented gradual ignition window
+  shutdownTau: 0.55,           // seconds the fire takes to die back down
+  vacuumAltitude: 220,         // metres where the bells read as vacuum-expanded
+  segmentCount: 8,             // published plume segments
+  core: {
+    name: 'core', length: 5.4, width: 0.96, sway: 0.42, flicker: 0.10,
+    hot: 0xfff4e6, warm: 0xffb257, cool: 0xff6a1e,
+    intensity: 3.4, alpha: 1.00, falloff: 1.32, noise: 6.2, rim: 0.15, patch: 0.08,
+    radial: 18, rows: 6, seed: 1.7, order: 8
+  },
+  glow: {
+    name: 'glow', length: 8.8, width: 1.42, sway: 0.72, flicker: 0.14,
+    hot: 0xffd27a, warm: 0xff8c2e, cool: 0xd94a12,
+    intensity: 1.55, alpha: 0.52, falloff: 1.00, noise: 4.4, rim: 0.72, patch: 0.28,
+    radial: 18, rows: 6, seed: 4.3, order: 7
+  },
+  trail: {
+    name: 'trail', length: 16.5, width: 0.50, sway: 1.45, flicker: 0.20,
+    hot: 0xffe9a8, warm: 0xff9c33, cool: 0xe2520f,
+    intensity: 2.10, alpha: 0.62, falloff: 1.48, noise: 8.6, rim: 0.86, patch: 0.72,
+    radial: 10, rows: 8, seed: 7.1, order: 9, tongues: 2, offset: 0.62, lean: 0.17
+  },
+  plume: {
+    radius: 3.30,              // bell cluster radius, metres
+    minLength: 3.2,
+    thrustLength: 44,          // free jet length at full throttle on the pad
+    altitudeStretch: 1.35,     // how far the trail reaches towards the ground
+    maxLength: 340,
+    thinAtAltitude: 0.42,      // fraction of width lost during the climb
+    altitudeThin: 130,
+    inner: {
+      topRadius: 0.60, bottomRadius: 0.42, radial: 20, rows: 40,
+      hot: 0xfff6e4, warm: 0xffb45c, cool: 0xe1620f,
+      intensity: 2.80, alpha: 0.92, opacity: 1.00, billow: 0.06, diamond: 0.55, seed: 2.9
+    },
+    outer: {
+      topRadius: 1.00, bottomRadius: 0.78, radial: 20, rows: 38,
+      hot: 0xffd489, warm: 0xf57a20, cool: 0x8e2a08,
+      intensity: 1.15, alpha: 0.42, opacity: 0.85, billow: 0.16, diamond: 0.10, seed: 5.7
+    }
+  },
+  gust: { base: 7.0, thrust: 21, altitude: 26, altitudeScale: 140 },
+  shimmer: {
+    amp: 0.030,                // screen-space distortion strength
+    strength: 0.62,            // veil opacity
+    radiusScale: 1.95,         // veil radius against the plume radius
+    floorRadius: 15,           // metres of shimmering ground around the pad
+    tint: 0xffe4c8
+  },
+  lights: {
+    engine: { color: 0xff9f45, peak: 85,  distance: 62, decay: 2, tau: 0.22 },
+    pad:    { color: 0xff8a30, peak: 70,  distance: 52, decay: 2, tau: 0.30 },
+    tower:  { color: 0xffae63, peak: 150, distance: 74, decay: 2, tau: 0.30 }
+  },
+  groundGlow: { radius: 8.5, peakRadius: 22, color: 0xff7c2a, peak: 0.95, altitudeFade: 55 },
+  capture: {                   // heat-shimmer refraction budget per quality tier
+    high:   { enabled: true,  stride: 1, scale: 0.40 },
+    medium: { enabled: true,  stride: 2, scale: 0.32 },
+    low:    { enabled: false, stride: 0, scale: 0.00 }
+  }
+};
+
+/* Hash based value noise + fbm, shared by every exhaust shader. */
+const EX_NOISE_GLSL = [
+  'float exHash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123); }',
+  'float exNoise(vec3 p) {',
+  '  vec3 i = floor(p);',
+  '  vec3 f = fract(p);',
+  '  f = f * f * (3.0 - 2.0 * f);',
+  '  float n000 = exHash(i);',
+  '  float n100 = exHash(i + vec3(1.0, 0.0, 0.0));',
+  '  float n010 = exHash(i + vec3(0.0, 1.0, 0.0));',
+  '  float n110 = exHash(i + vec3(1.0, 1.0, 0.0));',
+  '  float n001 = exHash(i + vec3(0.0, 0.0, 1.0));',
+  '  float n101 = exHash(i + vec3(1.0, 0.0, 1.0));',
+  '  float n011 = exHash(i + vec3(0.0, 1.0, 1.0));',
+  '  float n111 = exHash(i + vec3(1.0, 1.0, 1.0));',
+  '  return mix(mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),',
+  '             mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y), f.z);',
+  '}',
+  'float exFbm(vec3 p) {',
+  '  float sum = 0.0;',
+  '  float amp = 0.5;',
+  '  for (int i = 0; i < 4; i++) { sum += amp * exNoise(p); p *= 2.03; amp *= 0.5; }',
+  '  return sum;',
+  '}'
+].join('\n');
+
+/* Tone mapping + output colour space chunks, so the additive fire sits on the
+ * same ACES curve as the lit geometry and the shimmer veil reproduces the
+ * frame behind it exactly where its distortion is zero. */
+const EX_OUTPUT_GLSL = [
+  '#include <tonemapping_fragment>',
+  '#include <colorspace_fragment>'
+].join('\n');
+
+/* Flame layer vertex shader: one unit cone per engine bell, stretched and
+ * licked by per-instance attributes, positioned by the anchor world matrix. */
+const EX_FLAME_VERT = [
+  EX_NOISE_GLSL,
+  'attribute float aLength;',
+  'attribute float aWidth;',
+  'attribute float aPhase;',
+  'attribute float aJitter;',
+  'uniform float uTime;',
+  'uniform float uSway;',
+  'uniform float uSeed;',
+  'varying vec2 vUv;',
+  'varying float vPhase;',
+  'varying float vRim;',
+  'void main() {',
+  '  vUv = uv;',
+  '  vPhase = aPhase;',
+  '  float along = 1.0 - uv.y;',              /* 0 at the bell exit, 1 at the tip */
+  '  float t = uTime + aPhase * 9.0;',
+  '  float lick = exFbm(vec3(uv.x * 2.4, uv.y * 5.0 - t * 2.6, uSeed + aPhase * 3.0)) - 0.5;',
+  '  float swirl = exFbm(vec3(uv.y * 5.0 - t * 2.1, uv.x * 2.4 + 19.0, uSeed * 1.7 + aPhase)) - 0.5;',
+  '  vec3 pos = position;',
+  '  pos.y *= aLength;',                       /* the bell exit stays pinned at y = 0 */
+  '  float breathe = 1.0 + 0.24 * aJitter * sin(uTime * 9.0 + aPhase * 11.0);',
+  '  pos.xz *= aWidth * breathe;',
+  '  float amp = uSway * (0.12 + along * along * 1.4) * min(aLength, 14.0) * 0.09;',
+  '  pos.x += lick * amp;',
+  '  pos.z += swirl * amp;',
+  '  vec3 viewNormal = normalize(normalMatrix * (mat3(instanceMatrix) * normalize(normal)));',
+  '  vRim = 1.0 - abs(viewNormal.z);',
+  '  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(pos, 1.0);',
+  '}'
+].join('\n');
+
+/* Flame fragment shader: parameterised across the three fire layers - a
+ * near-white hot core, a saturated glow and patchy trailing tongues. */
+const EX_FLAME_FRAG = [
+  EX_NOISE_GLSL,
+  'uniform vec3 uHot;',
+  'uniform vec3 uWarm;',
+  'uniform vec3 uCool;',
+  'uniform float uTime;',
+  'uniform float uLevel;',
+  'uniform float uSeed;',
+  'uniform float uIntensity;',
+  'uniform float uAlpha;',
+  'uniform float uFalloff;',
+  'uniform float uNoise;',
+  'uniform float uRim;',
+  'uniform float uPatch;',
+  'varying vec2 vUv;',
+  'varying float vPhase;',
+  'varying float vRim;',
+  'void main() {',
+  '  float along = 1.0 - vUv.y;',
+  '  float n = exFbm(vec3(vUv.y * uNoise - uTime * 3.1, uSeed + vPhase * 5.0, uTime * 0.75));',
+  '  float n2 = exFbm(vec3(vUv.y * uNoise * 2.3 - uTime * 5.2, vUv.x * 2.0 + uSeed, uTime * 1.1));',
+  '  float flick = 0.82 + 0.36 * exNoise(vec3(uTime * 5.7 + vPhase * 9.0, vUv.y * 3.0, uSeed));',
+  '  float speck = mix(1.0, smoothstep(0.22, 0.86, n2 * 0.6 + 0.42), uPatch);',
+  '  float body = (1.0 - smoothstep(0.14, 1.05, along * uFalloff + (n - 0.5) * 0.70)) * speck;',
+  '  float hot = pow(clamp(1.0 - along * 1.35, 0.0, 1.0), 0.60);',
+  '  vec3 colour = mix(uCool, uWarm, clamp(hot * 1.40, 0.0, 1.0));',
+  '  colour = mix(colour, uHot, clamp(hot * hot * 1.55 + (n - 0.5) * 0.35, 0.0, 1.0));',
+  '  float soft = mix(1.0, 1.0 - uRim, vRim * vRim);',   /* volumetric silhouette */
+  '  float strength = body * flick * soft * uLevel;',
+  '  gl_FragColor = vec4(colour * uIntensity * strength, clamp(strength * uAlpha, 0.0, 1.0));',
+  EX_OUTPUT_GLSL,
+  '}'
+].join('\n');
+
+/* Plume column vertex shader: world-space unit cylinder stretched by uniforms
+ * so the length and width are functions of thrust and altitude alone. */
+const EX_PLUME_VERT = [
+  EX_NOISE_GLSL,
+  'uniform float uLength;',
+  'uniform float uWidth;',
+  'uniform float uBillow;',
+  'uniform float uTime;',
+  'varying vec2 vUv;',
+  'varying float vRim;',
+  'varying float vAlong;',
+  'void main() {',
+  '  vUv = uv;',
+  '  float along = 1.0 - uv.y;',              /* 0 at the engine, 1 at the tip */
+  '  vAlong = along;',
+  '  float t = uTime + uv.y * 1.5;',
+  '  float billow = exFbm(vec3(uv.x * 3.0, uv.y * 7.0 - t * 1.6, uTime * 0.35)) - 0.5;',
+  '  float swirl = exFbm(vec3(uv.y * 6.0 - t * 1.4, uv.x * 3.0 + 23.0, uTime * 0.28)) - 0.5;',
+  '  vec3 pos = position;',
+  '  pos.y *= uLength;',
+  '  pos.xz *= uWidth * (1.0 + along * 0.85);',   /* the jet widens as it falls */
+  '  float amp = uBillow * (0.15 + along) * uWidth * 1.6;',
+  '  pos.x += billow * amp;',
+  '  pos.z += swirl * amp;',
+  '  vec3 viewNormal = normalize(normalMatrix * normalize(normal));',
+  '  vRim = 1.0 - abs(viewNormal.z);',
+  '  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);',
+  '}'
+].join('\n');
+
+/* Plume fragment shader: additive, white hot at the throat, cooling down the
+ * column, with shock diamonds just below the bells and a soft tip fade. */
+const EX_PLUME_FRAG = [
+  EX_NOISE_GLSL,
+  'uniform vec3 uHot;',
+  'uniform vec3 uWarm;',
+  'uniform vec3 uCool;',
+  'uniform float uTime;',
+  'uniform float uLevel;',
+  'uniform float uSeed;',
+  'uniform float uIntensity;',
+  'uniform float uAlpha;',
+  'uniform float uOpacity;',
+  'uniform float uReps;',
+  'uniform float uDiamond;',
+  'varying vec2 vUv;',
+  'varying float vRim;',
+  'varying float vAlong;',
+  'void main() {',
+  '  float along = vAlong;',
+  '  float n = exFbm(vec3(vUv.x * 4.0, vUv.y * uReps - uTime * 2.2, uTime * 0.40 + uSeed)) - 0.5;',
+  '  float tip = 1.0 - smoothstep(0.46, 1.0, along + (n - 0.5) * 0.34);',
+  '  float throat = smoothstep(0.0, 0.07, along);',
+  '  float diamonds = 1.0 + uDiamond * pow(abs(sin(vUv.y * uReps * 1.9)), 6.0);',
+  '  float heat = clamp(1.0 - along * 0.90 - vRim * 0.50 + n * 0.9, 0.0, 1.0);',
+  '  vec3 colour = mix(uCool, uWarm, clamp(heat * 1.35, 0.0, 1.0));',
+  '  colour = mix(colour, uHot, clamp(pow(heat, 2.4) * 1.6, 0.0, 1.0));',
+  '  float soft = mix(1.0, 0.28, vRim * vRim);',
+  '  float strength = tip * throat * soft * diamonds * uLevel * uOpacity;',
+  '  gl_FragColor = vec4(colour * uIntensity * strength, clamp(strength * uAlpha, 0.0, 1.0));',
+  EX_OUTPUT_GLSL,
+  '}'
+].join('\n');
+
+/* Heat shimmer: the veil samples the frame rendered one pass earlier and hands
+ * it back through a noise-warped screen UV, so the background visibly writhes
+ * while everything outside the veil is untouched. */
+const EX_SHIMMER_VERT = [
+  EX_NOISE_GLSL,
+  'uniform float uLength;',
+  'uniform float uWidth;',
+  'uniform float uTime;',
+  'uniform float uSway;',
+  'varying vec2 vUv;',
+  'varying vec4 vClip;',
+  'varying float vRim;',
+  'void main() {',
+  '  vUv = uv;',
+  '  vec3 pos = position;',
+  '  pos.y *= uLength;',
+  '  pos.xz *= uWidth;',
+  '  float w = exFbm(vec3(uv.x * 3.0, uv.y * 6.0 - uTime * 1.1, uTime * 0.22)) - 0.5;',
+  '  pos.x += w * uSway * uWidth;',
+  '  pos.z += w * uSway * uWidth * 0.6;',
+  '  vec3 viewNormal = normalize(normalMatrix * normalize(normal));',
+  '  vRim = 1.0 - abs(viewNormal.z);',
+  '  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);',
+  '  vClip = gl_Position;',
+  '}'
+].join('\n');
+
+/* Ground shimmer vertex shader: a flat plane on the deck, same fragment stage. */
+const EX_SHIMMER_FLOOR_VERT = [
+  'uniform float uWidth;',
+  'varying vec2 vUv;',
+  'varying vec4 vClip;',
+  'varying float vRim;',
+  'void main() {',
+  '  vUv = uv;',
+  '  vRim = 0.0;',
+  '  vec3 pos = vec3(position.xy * uWidth, position.z);',
+  '  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);',
+  '  vClip = gl_Position;',
+  '}'
+].join('\n');
+
+const EX_SHIMMER_FRAG = [
+  EX_NOISE_GLSL,
+  'uniform sampler2D uScene;',
+  'uniform vec3 uTint;',
+  'uniform float uTime;',
+  'uniform float uHeat;',
+  'uniform float uAmp;',
+  'uniform float uStrength;',
+  'uniform float uHasScene;',
+  'varying vec2 vUv;',
+  'varying vec4 vClip;',
+  'varying float vRim;',
+  'void main() {',
+  '  float along = 1.0 - vUv.y;',
+  '  float n1 = exFbm(vec3(vUv.x * 5.0, vUv.y * 9.0 - uTime * 1.6, uTime * 0.60)) - 0.5;',
+  '  float n2 = exFbm(vec3(vUv.y * 11.0 - uTime * 2.1, vUv.x * 5.0 + 31.0, uTime * 0.45)) - 0.5;',
+  '  float cells = pow(clamp(0.5 + n1 * 1.7, 0.0, 1.0), 1.6);',
+  '  vec2 screenUv = vClip.xy / max(0.0001, vClip.w) * 0.5 + 0.5;',
+  '  float amp = uAmp * uHeat * (0.45 + along * 0.75);',
+  '  vec2 warped = clamp(screenUv + vec2(n1, n2) * amp, vec2(0.002), vec2(0.998));',
+  '  vec3 refracted = texture2D(uScene, warped).rgb;',
+  '  vec3 colour = mix(uTint, refracted * uTint, uHasScene * mix(1.0, 0.88, cells));',
+  '  float veil = uHeat * uStrength * (0.16 + 0.84 * cells) * (0.30 + 0.70 * along) * mix(1.0, 0.72, vRim);',
+  '  gl_FragColor = vec4(colour, clamp(veil, 0.0, 0.80));',
+  EX_OUTPUT_GLSL,
+  '}'
+].join('\n');
+
+/* Additive heat glow painted on the pad deck under the burning engines. */
+const EX_GLOW_VERT = [
+  'varying vec2 vUv;',
+  'void main() {',
+  '  vUv = uv;',
+  '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+  '}'
+].join('\n');
+
+const EX_GLOW_FRAG = [
+  EX_NOISE_GLSL,
+  'uniform vec3 uColour;',
+  'uniform float uTime;',
+  'uniform float uIntensity;',
+  'varying vec2 vUv;',
+  'void main() {',
+  '  float d = length(vUv - vec2(0.5)) * 2.0;',
+  '  float core = pow(clamp(1.0 - d, 0.0, 1.0), 2.2);',
+  '  float n = exFbm(vec3(vUv * 6.0, uTime * 0.6));',
+  '  float strength = clamp(core * (0.70 + 0.60 * n) * uIntensity, 0.0, 1.0);',
+  '  gl_FragColor = vec4(uColour * (0.55 + n * 0.9) * uIntensity, strength);',
+  EX_OUTPUT_GLSL,
+  '}'
+].join('\n');
+
+/* Unit flame cone whose top edge sits exactly on the bell exit plane. */
+function exConeGeometry(topRadius, bottomRadius, radial, rows) {
+  const geometry = new THREE.CylinderGeometry(topRadius, bottomRadius, 1, radial, rows, true);
+  geometry.translate(0, -0.5, 0);
+  return geometry;
+}
+
+/* One additive fire material; every layer shares the shader and only the
+ * uniforms change (colour ramp, falloff, intensity, silhouette, patchiness). */
+function exFlameMaterial(spec) {
+  return new THREE.ShaderMaterial({
+    name: 'exhaust-flame-' + spec.name,
+    uniforms: {
+      uTime: { value: 0 },
+      uLevel: { value: 0 },
+      uSeed: { value: spec.seed },
+      uHot: { value: new THREE.Color(spec.hot) },
+      uWarm: { value: new THREE.Color(spec.warm) },
+      uCool: { value: new THREE.Color(spec.cool) },
+      uIntensity: { value: spec.intensity },
+      uAlpha: { value: spec.alpha },
+      uFalloff: { value: spec.falloff },
+      uNoise: { value: spec.noise },
+      uRim: { value: spec.rim },
+      uPatch: { value: spec.patch },
+      uSway: { value: spec.sway }
+    },
+    vertexShader: EX_FLAME_VERT,
+    fragmentShader: EX_FLAME_FRAG,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    fog: false
+  });
+}
+
+function exColumnMaterial(spec, order) {
+  return new THREE.ShaderMaterial({
+    name: 'exhaust-plume-' + order,
+    uniforms: {
+      uTime: { value: 0 },
+      uLevel: { value: 0 },
+      uSeed: { value: spec.seed },
+      uLength: { value: 1 },
+      uWidth: { value: 1 },
+      uBillow: { value: spec.billow },
+      uReps: { value: 6 },
+      uDiamond: { value: spec.diamond },
+      uHot: { value: new THREE.Color(spec.hot) },
+      uWarm: { value: new THREE.Color(spec.warm) },
+      uCool: { value: new THREE.Color(spec.cool) },
+      uIntensity: { value: spec.intensity },
+      uAlpha: { value: spec.alpha },
+      uOpacity: { value: spec.opacity }
+    },
+    vertexShader: EX_PLUME_VERT,
+    fragmentShader: EX_PLUME_FRAG,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    fog: false
+  });
+}
+
+function exShimmerMaterial(kind) {
+  const floor = kind === 'floor';
+  return new THREE.ShaderMaterial({
+    name: 'exhaust-shimmer-' + kind,
+    uniforms: {
+      uScene: { value: null },
+      uHasScene: { value: 0 },
+      uTint: { value: new THREE.Color(EX_SPEC.shimmer.tint) },
+      uTime: { value: 0 },
+      uHeat: { value: 0 },
+      uAmp: { value: EX_SPEC.shimmer.amp },
+      uStrength: { value: EX_SPEC.shimmer.strength },
+      uLength: { value: 1 },
+      uWidth: { value: 1 },
+      uSway: { value: 0.05 }
+    },
+    vertexShader: floor ? EX_SHIMMER_FLOOR_VERT : EX_SHIMMER_VERT,
+    fragmentShader: EX_SHIMMER_FRAG,
+    transparent: true,
+    blending: THREE.NormalBlending,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    fog: false
+  });
+}
+
+function exGlowMaterial() {
+  return new THREE.ShaderMaterial({
+    name: 'exhaust-ground-glow',
+    uniforms: {
+      uTime: { value: 0 },
+      uIntensity: { value: 0 },
+      uColour: { value: new THREE.Color(EX_SPEC.groundGlow.color) }
+    },
+    vertexShader: EX_GLOW_VERT,
+    fragmentShader: EX_GLOW_FRAG,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.DoubleSide,
+    fog: false
+  });
+}
+
+/* Per-instance additive flicker: three harmonics so a held throttle still
+ * changes the flame size, the tongue length and every shader time uniform. */
+function exFlicker(time, phase, seed) {
+  return 0.86
+    + 0.10 * Math.sin(time * 6.1 + phase * 2.7 + seed)
+    + 0.06 * Math.sin(time * 13.7 + phase * 5.1 + seed * 1.7)
+    + 0.05 * Math.sin(time * 27.3 + phase * 9.4 + seed * 3.3);
+}
+
+function exDisposeList(list) {
+  for (let i = 0; i < list.length; i += 1) {
+    const item = list[i];
+    if (item && typeof item.dispose === 'function') item.dispose();
+  }
+  list.length = 0;
+}
+
+/* Bell-relative radii of the three fire layers (multiples of the bell exit). */
+const EX_LAYER_PROFILE = {
+  core: { top: 0.95, bottom: 0.20 },
+  glow: { top: 1.30, bottom: 0.38 },
+  trail: { top: 0.55, bottom: 0.07 }
+};
+
+/* PURE FUNCTION of the ramped flame level and the vehicle altitude: the free
+ * jet grows with throttle, then stretches towards the pad as the vehicle
+ * climbs, so the trail visibly lengthens and thins during the ascent. */
+function exPlumeLength(level, engineWorldY) {
+  const plume = EX_SPEC.plume;
+  const jet = plume.minLength + level * plume.thrustLength;
+  const abovePad = Math.max(0, engineWorldY - EX_SPEC.baseY);
+  const stretched = (abovePad + plume.minLength) * plume.altitudeStretch;
+  return Math.min(plume.maxLength, Math.max(jet, stretched));
+}
+
+/* Heat-shimmer refraction budget for the active quality tier. */
+function exApplyCaptureTier(system, tier) {
+  const id = tier && tier.id ? tier.id : 'high';
+  const settings = EX_SPEC.capture[id] || EX_SPEC.capture.high;
+  const capture = system.capture;
+  capture.enabled = settings.enabled === true && capture.disabled !== true;
+  capture.stride = Math.max(1, settings.stride || 1);
+  capture.scale = settings.scale > 0 ? settings.scale : 0.4;
+  if (capture.enabled) return capture;
+  capture.ready = false;
+  if (system.materialSet) {
+    system.materialSet.shimmer.uniforms.uHasScene.value = 0;
+    system.materialSet.shimmerFloor.uniforms.uHasScene.value = 0;
+  }
+  if (capture.target) {
+    capture.target.dispose();
+    capture.target = null;
+    if (system.materialSet) {
+      system.materialSet.shimmer.uniforms.uScene.value = null;
+      system.materialSet.shimmerFloor.uniforms.uScene.value = null;
+    }
+  }
+  return capture;
+}
+
+/* ---------------------------------------------------------------------------
+ * Exhaust subsystem, registered as 'flames'.
+ * ------------------------------------------------------------------------ */
+
+const exhaustSystem = {
+  scene: null,
+  camera: null,
+  renderer: null,
+  group: null,
+  plumeGroup: null,
+  shimmerGroup: null,
+  shimmerFloor: null,
+  glow: null,
+  materialSet: null,
+  materials: [],
+  geometries: [],
+  layers: {},
+  lights: [],
+  lightHandles: [],
+  anchors: [],
+  rocketHandle: null,
+  attached: false,
+  bellExitRadius: 1.05,
+  clock: 0,
+  updates: 0,
+  throttle: 0,
+  level: 0,
+  ignition: 0,
+  ignitionTime: 0,
+  vacuum: 0,
+  flameScale: 0,
+  deckWarmth: 0,
+  plumeLength: 0,
+  plumeWidth: 0,
+  gustRadius: 0,
+  groundGlowIntensity: 0,
+  groundGlowRadius: 0,
+  towerDistance: 17.6,
+  towerDirection: new THREE.Vector3(0.978, 0, -0.208),
+  plumeBase: new THREE.Vector3(),
+  plumeAxis: new THREE.Vector3(0, -1, 0),
+  plumeQuaternion: new THREE.Quaternion(),
+  flameLayers: {
+    core: { length: 0, width: 0, count: 0 },
+    glow: { length: 0, width: 0, count: 0 },
+    trail: { length: 0, width: 0, count: 0 }
+  },
+  heat: { radius: 0, intensity: 0 },
+  shimmerInfo: { group: null, intensity: 0, enabled: false, refracted: false },
+  glowHandle: { mesh: null, intensity: 0, radius: 0 },
+  plumeSegments: [],
+  capture: { target: null, enabled: false, stride: 1, scale: 0.4, frame: 0, ready: false, disabled: false },
+  frameHook: null,
+  api: null,
+  scratch: {
+    matrix: new THREE.Matrix4(),
+    offset: new THREE.Matrix4(),
+    layout: new THREE.Matrix4(),
+    axis: new THREE.Vector3(),
+    quaternion: new THREE.Quaternion(),
+    point: new THREE.Vector3(),
+    cameraDir: new THREE.Vector3(),
+    toPlume: new THREE.Vector3(),
+    size: new THREE.Vector2()
+  },
+
+  init(ctx) {
+    this.scene = ctx.scene;
+    this.camera = ctx.camera;
+    this.renderer = ctx.renderer;
+
+    /* Pad deck height and the tower bearing come from the launch complex, so
+     * the ground glow sits on the real deck and the warm light lands on the
+     * real tower instead of a guessed offset. */
+    const complex = runtime.handles && runtime.handles.launchComplex
+      ? runtime.handles.launchComplex : null;
+    EX_SPEC.baseY = complex && complex.pad ? complex.pad.deckTopY : 2.6;
+    if (complex && complex.tower) {
+      this.towerDistance = complex.tower.distance;
+      this.towerDirection.set(
+        Math.cos(complex.tower.azimuthRad) * complex.tower.distance,
+        0,
+        Math.sin(complex.tower.azimuthRad) * complex.tower.distance
+      ).normalize();
+    }
+
+    /* Every flame, plume and shimmer surface is authored in code: additive
+     * shader materials, no texture, no model, no post-processing pass. */
+    const materialSet = {
+      core: exFlameMaterial(EX_SPEC.core),
+      glow: exFlameMaterial(EX_SPEC.glow),
+      trail: exFlameMaterial(EX_SPEC.trail),
+      plumeInner: exColumnMaterial(EX_SPEC.plume.inner, 'inner'),
+      plumeOuter: exColumnMaterial(EX_SPEC.plume.outer, 'outer'),
+      shimmer: exShimmerMaterial('shell'),
+      shimmerFloor: exShimmerMaterial('floor'),
+      groundGlow: exGlowMaterial()
+    };
+    this.materialSet = materialSet;
+    this.materials = Object.keys(materialSet).map(function (key) { return materialSet[key]; });
+
+    /* World-space anchor of the effect: the flame instances are placed from
+     * the bell anchors' world matrices, while the warm lights and the pad glow
+     * are positioned from the published plume base every frame. */
+    const group = new THREE.Group();
+    group.name = 'exhaust';
+    ctx.scene.add(group);
+    this.group = group;
+
+    /* Warm engine lights: the cluster, the deck and the tower lattice. */
+    const system = this;
+    const lightHandles = [];
+    ['engine', 'pad', 'tower'].forEach(function (name) {
+      const spec = EX_SPEC.lights[name];
+      const light = new THREE.PointLight(spec.color, 0, spec.distance, spec.decay);
+      light.name = 'exhaust-light-' + name;
+      light.castShadow = false;
+      group.add(light);
+      const entry = { name: name, spec: spec, light: light, intensity: 0 };
+      system.lights.push(entry);
+      lightHandles.push({
+        name: name,
+        light: light,
+        get intensity() { return entry.intensity; }
+      });
+    });
+    this.lightHandles = lightHandles;
+
+    /* Additive heat glow smeared over the deck under the burning engines. */
+    const glowGeometry = new THREE.CircleGeometry(1, 40);
+    this.geometries.push(glowGeometry);
+    const glow = new THREE.Mesh(glowGeometry, materialSet.groundGlow);
+    glow.name = 'exhaust-ground-glow';
+    glow.rotation.x = -Math.PI / 2;
+    glow.renderOrder = 6;
+    glow.frustumCulled = false;
+    glow.visible = false;
+    group.add(glow);
+    this.glow = glow;
+    this.glowHandle.mesh = glow;
+
+    /* The plume column lives in world space so its length can stretch towards
+     * the pad while its root stays welded to the ascending engine cluster. */
+    const plumeGroup = new THREE.Group();
+    plumeGroup.name = 'exhaust-plume';
+    ctx.scene.add(plumeGroup);
+    this.plumeGroup = plumeGroup;
+
+    const plumeSpec = EX_SPEC.plume;
+    const plumeInner = new THREE.Mesh(
+      exConeGeometry(plumeSpec.inner.topRadius, plumeSpec.inner.bottomRadius, plumeSpec.inner.radial, plumeSpec.inner.rows),
+      materialSet.plumeInner
+    );
+    plumeInner.name = 'exhaust-plume-core';
+    plumeInner.renderOrder = 10;
+    plumeInner.frustumCulled = false;
+    plumeGroup.add(plumeInner);
+    this.geometries.push(plumeInner.geometry);
+
+    const plumeOuter = new THREE.Mesh(
+      exConeGeometry(plumeSpec.outer.topRadius, plumeSpec.outer.bottomRadius, plumeSpec.outer.radial, plumeSpec.outer.rows),
+      materialSet.plumeOuter
+    );
+    plumeOuter.name = 'exhaust-plume-glow';
+    plumeOuter.renderOrder = 5;
+    plumeOuter.frustumCulled = false;
+    plumeGroup.add(plumeOuter);
+    this.geometries.push(plumeOuter.geometry);
+
+    /* Heat shimmer: a veil wrapped around the column plus a shimmering patch
+     * of deck where the plume meets the pad. */
+    const shimmerGroup = new THREE.Group();
+    shimmerGroup.name = 'exhaust-shimmer';
+    plumeGroup.add(shimmerGroup);
+    this.shimmerGroup = shimmerGroup;
+    this.shimmerInfo.group = shimmerGroup;
+
+    const shimmerShell = new THREE.Mesh(exConeGeometry(1.0, 1.08, 18, 34), materialSet.shimmer);
+    shimmerShell.name = 'exhaust-shimmer-veil';
+    shimmerShell.renderOrder = 14;
+    shimmerShell.frustumCulled = false;
+    shimmerGroup.add(shimmerShell);
+    this.geometries.push(shimmerShell.geometry);
+
+    const shimmerFloor = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), materialSet.shimmerFloor);
+    shimmerFloor.name = 'exhaust-shimmer-deck';
+    shimmerFloor.rotation.x = -Math.PI / 2;
+    shimmerFloor.renderOrder = 13;
+    shimmerFloor.frustumCulled = false;
+    shimmerFloor.visible = false;
+    group.add(shimmerFloor);
+    this.geometries.push(shimmerFloor.geometry);
+    this.shimmerFloor = shimmerFloor;
+
+    /* Published plume segments, reused in place every frame. */
+    for (let i = 0; i < EX_SPEC.segmentCount; i += 1) {
+      this.plumeSegments.push({
+        index: i,
+        t: 0,
+        position: new THREE.Vector3(),
+        radius: 0,
+        length: 0,
+        worldY: 0,
+        spread: 0,
+        active: false
+      });
+    }
+
+    /* Frame hooks run after every subsystem (including the camera phase) and
+     * before the main render, so the veil samples the current frame. */
+    this.frameHook = function () { system.captureRefraction(); };
+    runtime.onFrame(this.frameHook);
+
+    state.exhaust = state.exhaust || {
+      level: 0, throttle: 0, ignition: 0, flameScale: 0, plumeLength: 0,
+      plumeWidth: 0, gustRadius: 0, heatRadius: 0, shimmer: 0, segments: 0,
+      lights: 0, groundGlow: 0, anchors: 0, attached: false
+    };
+
+    exApplyCaptureTier(this, ctx.quality || quality);
+    this.attach();
+    this.publish(ctx.state || state);
+
+    console.log('[LAUNCH_SCENE] exhaust online - ignition ramp ' + EX_SPEC.ignitionSeconds +
+      's, anchors=' + this.anchors.length + ', shimmer=' +
+      (this.capture.enabled ? 'refraction' : 'additive'));
+  },
+
+  /* Weld the fire to the engine bell anchors published by rocket-rig-handles.
+   * Re-runs if the rocket subsystem is replaced, and leaves the fire dark when
+   * the rocket is not registered yet. */
+  attach() {
+    const rocket = runtime.handles && runtime.handles.rocket ? runtime.handles.rocket : null;
+    const anchors = rocket && Array.isArray(rocket.engineAnchors) ? rocket.engineAnchors : null;
+    if (!anchors || anchors.length === 0) return false;
+    if (this.attached && this.rocketHandle === rocket && this.anchors === anchors) return true;
+    if (this.attached) this.detachLayers();
+
+    const exitRadius = Number(anchors[0].exitRadius) || this.bellExitRadius;
+    this.bellExitRadius = exitRadius;
+
+    const names = ['core', 'glow', 'trail'];
+    for (let k = 0; k < names.length; k += 1) {
+      const name = names[k];
+      const spec = EX_SPEC[name];
+      const profile = EX_LAYER_PROFILE[name];
+      const tongues = spec.tongues || 1;
+      const count = anchors.length * tongues;
+      const geometry = exConeGeometry(
+        exitRadius * profile.top, exitRadius * profile.bottom, spec.radial, spec.rows
+      );
+      const lengthAttribute = new THREE.InstancedBufferAttribute(new Float32Array(count), 1);
+      const widthAttribute = new THREE.InstancedBufferAttribute(new Float32Array(count), 1);
+      const phaseAttribute = new THREE.InstancedBufferAttribute(new Float32Array(count), 1);
+      const jitterAttribute = new THREE.InstancedBufferAttribute(new Float32Array(count), 1);
+      lengthAttribute.name = 'aLength';
+      widthAttribute.name = 'aWidth';
+      phaseAttribute.name = 'aPhase';
+      jitterAttribute.name = 'aJitter';
+      lengthAttribute.setUsage(THREE.DynamicDrawUsage);
+      widthAttribute.setUsage(THREE.DynamicDrawUsage);
+      geometry.setAttribute('aLength', lengthAttribute);
+      geometry.setAttribute('aWidth', widthAttribute);
+      geometry.setAttribute('aPhase', phaseAttribute);
+      geometry.setAttribute('aJitter', jitterAttribute);
+
+      const mesh = new THREE.InstancedMesh(geometry, this.materialSet[name], count);
+      mesh.name = 'exhaust-flame-' + name;
+      mesh.renderOrder = spec.order;
+      mesh.frustumCulled = false;
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      this.group.add(mesh);
+      this.geometries.push(geometry);
+
+      const phases = new Float32Array(anchors.length);
+      for (let a = 0; a < anchors.length; a += 1) {
+        phases[a] = a * 0.41 + k * 0.17;
+        for (let t = 0; t < tongues; t += 1) {
+          const index = a * tongues + t;
+          phaseAttribute.array[index] = phases[a] + t * 1.7;
+          jitterAttribute.array[index] = 0.75 + ((index * 37) % 11) / 22;
+        }
+      }
+
+      this.layers[name] = {
+        name: name,
+        mesh: mesh,
+        count: count,
+        tongues: tongues,
+        length: lengthAttribute,
+        width: widthAttribute,
+        phases: phases
+      };
+    }
+
+    this.anchors = anchors;
+    this.rocketHandle = rocket;
+    this.attached = true;
+    return true;
+  },
+
+  /* Drop the flame instances (materials and the plume stay alive). */
+  detachLayers() {
+    const names = Object.keys(this.layers);
+    for (let i = 0; i < names.length; i += 1) {
+      const layer = this.layers[names[i]];
+      if (this.group) this.group.remove(layer.mesh);
+      const geometry = layer.mesh.geometry;
+      const index = this.geometries.indexOf(geometry);
+      if (index !== -1) this.geometries.splice(index, 1);
+      if (geometry && geometry.dispose) geometry.dispose();
+    }
+    this.layers = {};
+    this.anchors = [];
+    this.attached = false;
+  },
+
+  onQualityChange(qualityTier) {
+    exApplyCaptureTier(this, qualityTier);
+  },
+
+  /* The single input: the same physical cause the director writes into
+   * state.thrust, so a consumer can drive the whole effect stack from here. */
+  setThrust(throttle) {
+    const value = clamp01(throttle);
+    if (runtime.state) runtime.state.thrust = value;
+    return value;
+  },
+
+  engineAnchor(name) {
+    for (let i = 0; i < this.anchors.length; i += 1) {
+      if (this.anchors[i].name === name || this.anchors[i].index === Number(name)) return this.anchors[i];
+    }
+    return null;
+  },
+
+  update(dt, shared) {
+    const sharedState = shared || runtime.state;
+    const delta = Math.max(0, Math.min(0.25, Number(dt) || 0));
+    this.clock += delta;
+    this.updates += 1;
+
+    if (!this.attached || (runtime.handles && runtime.handles.rocket && this.rocketHandle !== runtime.handles.rocket)) {
+      this.attach();
+    }
+
+    /* ---- one thrust signal plus the documented ignition ramp ------------ */
+    const requested = clamp01(sharedState.thrust);
+    this.throttle = requested;
+    if (requested > this.level) {
+      this.level = Math.min(requested, this.level + delta / EX_SPEC.ignitionSeconds);
+    } else if (requested < this.level) {
+      this.level += (requested - this.level) * (1 - Math.exp(-delta / EX_SPEC.shutdownTau));
+    }
+    if (requested > 0.002) {
+      this.ignitionTime = Math.min(EX_SPEC.ignitionSeconds, this.ignitionTime + delta);
+    } else if (this.level < 0.01) {
+      this.ignitionTime = Math.max(0, this.ignitionTime - delta * 1.8);
+    }
+    this.ignition = clamp01(this.ignitionTime / EX_SPEC.ignitionSeconds);
+
+    const altitude = Math.max(0, Number(sharedState.altitude) || 0);
+    const vacuum = clamp01(altitude / EX_SPEC.vacuumAltitude);
+    this.vacuum = vacuum;
+    this.flameScale = this.level;
+
+    const time = this.clock;
+    const names = ['core', 'glow', 'trail'];
+    for (let k = 0; k < names.length; k += 1) {
+      this.applyFlameLayer(names[k], time, vacuum);
+    }
+    this.applyPlume(time, altitude);
+    this.applyLights(delta, time);
+    this.applyShimmer(time);
+    this.shimmerInfo.enabled = this.capture.enabled;
+    this.shimmerInfo.refracted = this.capture.ready;
+    this.publish(sharedState);
+  },
+
+  /* One flame layer: stretch, thicken and flicker every instance from the one
+   * level value, positioned by the engine bell anchor world matrices. */
+  applyFlameLayer(name, time, vacuum) {
+    const layer = this.layers[name];
+    if (!layer) return;
+    const spec = EX_SPEC[name];
+    const flick = exFlicker(time, 0, spec.seed);
+    const length = spec.length * (0.24 + 0.76 * this.level) * (1 - 0.16 * vacuum) *
+      (1 + spec.flicker * (flick - 1));
+    const width = spec.width * (0.88 + 0.26 * this.level) * (1 + 0.55 * vacuum) *
+      (1 + 0.08 * (flick - 1));
+
+    const material = layer.mesh.material;
+    material.uniforms.uTime.value = time;
+    material.uniforms.uLevel.value = this.level;
+
+    const lengthValues = layer.length.array;
+    const widthValues = layer.width.array;
+    const matrix = this.scratch.matrix;
+    const offset = this.scratch.offset;
+    const layout = this.scratch.layout;
+    const quaternion = this.scratch.quaternion;
+    const axis = this.scratch.axis;
+    let index = 0;
+    for (let a = 0; a < this.anchors.length; a += 1) {
+      const anchor = this.anchors[a].anchor;
+      anchor.updateWorldMatrix(true, false);
+      const world = anchor.matrixWorld;
+      for (let t = 0; t < layer.tongues; t += 1) {
+        const phase = layer.phases[a] + t * 1.7;
+        const local = exFlicker(time, phase, spec.seed + t);
+        lengthValues[index] = length * (1 + 0.06 * Math.sin(time * 5.7 + phase * 7.0));
+        widthValues[index] = width * (0.94 + 0.12 * (local - 1));
+        if (t === 0) {
+          matrix.copy(world);
+        } else {
+          const angle = (t / layer.tongues) * Math.PI * 2 + a * 1.1;
+          const dx = Math.cos(angle);
+          const dz = Math.sin(angle);
+          offset.makeTranslation(dx * spec.offset, 0, dz * spec.offset);
+          quaternion.setFromAxisAngle(axis.set(dz, 0, -dx).normalize(), -spec.lean);
+          layout.makeRotationFromQuaternion(quaternion);
+          offset.multiply(layout);
+          matrix.multiplyMatrices(world, offset);
+        }
+        layer.mesh.setMatrixAt(index, matrix);
+        index += 1;
+      }
+    }
+    layer.mesh.instanceMatrix.needsUpdate = true;
+    layer.length.needsUpdate = true;
+    layer.width.needsUpdate = true;
+
+    const published = this.flameLayers[name];
+    published.length = length;
+    published.width = width;
+    published.count = layer.count;
+  },
+
+  /* Plume: world position, axis, length and width, all driven by the thrust
+   * level and the altitude, plus the published world-space segments. */
+  applyPlume(time, altitude) {
+    const anchors = this.anchors;
+    if (anchors.length === 0) {
+      this.plumeLength = 0;
+      this.plumeWidth = 0;
+      this.gustRadius = 0;
+      this.heat.radius = 0;
+      this.heat.intensity = 0;
+      return;
+    }
+
+    const point = this.scratch.point;
+    let baseX = 0;
+    let baseY = 0;
+    let baseZ = 0;
+    for (let a = 0; a < anchors.length; a += 1) {
+      const anchor = anchors[a].anchor;
+      anchor.updateWorldMatrix(true, false);
+      point.setFromMatrixPosition(anchor.matrixWorld);
+      baseX += point.x;
+      baseY += point.y;
+      baseZ += point.z;
+    }
+    this.plumeBase.set(baseX / anchors.length, baseY / anchors.length, baseZ / anchors.length);
+
+    const centre = anchors[0].anchor;
+    this.plumeQuaternion.setFromRotationMatrix(centre.matrixWorld);
+    this.plumeGroup.position.copy(this.plumeBase);
+    this.plumeGroup.quaternion.copy(this.plumeQuaternion);
+    this.plumeAxis.set(0, -1, 0).applyQuaternion(this.plumeQuaternion).normalize();
+
+    const plumeLength = exPlumeLength(this.level, this.plumeBase.y);
+    const thin = 1 - EX_SPEC.plume.thinAtAltitude * clamp01(altitude / EX_SPEC.plume.altitudeThin);
+    const plumeWidth = EX_SPEC.plume.radius * (0.72 + 0.34 * this.level) * thin;
+    this.plumeLength = plumeLength;
+    this.plumeWidth = plumeWidth;
+
+    const inner = this.materialSet.plumeInner.uniforms;
+    inner.uTime.value = time;
+    inner.uLevel.value = this.level;
+    inner.uLength.value = plumeLength;
+    inner.uWidth.value = plumeWidth * 0.78;
+    inner.uReps.value = Math.min(40, Math.max(3, plumeLength / 12));
+
+    const outer = this.materialSet.plumeOuter.uniforms;
+    outer.uTime.value = time;
+    outer.uLevel.value = this.level;
+    outer.uLength.value = plumeLength * 0.97;
+    outer.uWidth.value = plumeWidth;
+    outer.uReps.value = Math.min(34, Math.max(3, plumeLength / 15));
+
+    const visible = this.level > 0.01;
+    const shimmerGroup = this.shimmerGroup;
+    this.plumeGroup.children.forEach(function (child) {
+      if (child !== shimmerGroup) child.visible = visible;
+    });
+
+    /* Published world-space segments: smoke, dust and the reactive phases
+     * place their spawns straight from these instead of re-deriving a plume. */
+    const segments = this.plumeSegments;
+    const span = Math.max(1, segments.length - 1);
+    for (let i = 0; i < segments.length; i += 1) {
+      const t = i / span;
+      const segment = segments[i];
+      segment.t = t;
+      segment.position.copy(this.plumeBase).addScaledVector(this.plumeAxis, t * plumeLength);
+      segment.radius = plumeWidth * (0.55 + 0.75 * t) * (1 - 0.35 * t * t);
+      segment.length = plumeLength / span;
+      segment.worldY = segment.position.y;
+      segment.spread = segment.radius * (0.35 + 0.65 * t);
+      segment.active = visible;
+    }
+
+    this.deckWarmth = clamp01(1 - Math.max(0, this.plumeBase.y - EX_SPEC.baseY) / EX_SPEC.groundGlow.altitudeFade);
+    this.gustRadius = this.level * (
+      EX_SPEC.gust.base +
+      this.level * EX_SPEC.gust.thrust +
+      clamp01(altitude / EX_SPEC.gust.altitudeScale) * EX_SPEC.gust.altitude
+    );
+    this.heat.radius = plumeWidth * 2.6 + this.level * 4;
+    this.heat.intensity = this.level * (0.35 + 0.65 * this.deckWarmth);
+  },
+
+  /* Warm thrust-driven lights plus the additive ground glow on the deck. */
+  applyLights(delta, time) {
+    const flick = exFlicker(time, 0.5, 3.1);
+    for (let i = 0; i < this.lights.length; i += 1) {
+      const entry = this.lights[i];
+      let target = 0;
+      if (entry.name === 'engine') {
+        entry.light.position.copy(this.plumeBase).addScaledVector(this.plumeAxis, -1.25);
+        target = entry.spec.peak * this.level * (0.9 + 0.2 * flick);
+      } else if (entry.name === 'pad') {
+        entry.light.position.set(this.plumeBase.x, EX_SPEC.baseY + 2.2, this.plumeBase.z);
+        target = entry.spec.peak * this.level * this.deckWarmth;
+      } else {
+        const offset = Math.min(7, this.towerDistance * 0.4);
+        entry.light.position.set(
+          this.plumeBase.x + this.towerDirection.x * offset,
+          Math.max(EX_SPEC.baseY + 1, this.plumeBase.y - this.plumeLength * 0.35),
+          this.plumeBase.z + this.towerDirection.z * offset
+        );
+        target = entry.spec.peak * this.level * (0.30 + 0.70 * this.deckWarmth);
+      }
+      const k = Math.min(1, 1 - Math.exp(-delta / entry.spec.tau));
+      entry.intensity += (target - entry.intensity) * k;
+      entry.light.intensity = entry.intensity;
+      entry.light.visible = entry.intensity > 0.05;
+    }
+
+    this.groundGlowRadius = EX_SPEC.groundGlow.radius + this.level * EX_SPEC.groundGlow.peakRadius;
+    this.groundGlowIntensity = EX_SPEC.groundGlow.peak * this.level * this.deckWarmth;
+    const glow = this.glow;
+    if (glow) {
+      glow.visible = this.groundGlowIntensity > 0.008;
+      glow.position.set(this.plumeBase.x, EX_SPEC.baseY + 0.14, this.plumeBase.z);
+      glow.scale.set(this.groundGlowRadius, this.groundGlowRadius, 1);
+      const uniforms = this.materialSet.groundGlow.uniforms;
+      uniforms.uTime.value = time;
+      uniforms.uIntensity.value = this.groundGlowIntensity * (1 + 0.12 * (flick - 1));
+    }
+    this.glowHandle.intensity = this.groundGlowIntensity;
+    this.glowHandle.radius = this.groundGlowRadius;
+  },
+
+  /* Heat shimmer: the veil tracks the plume, the deck patch follows the pad. */
+  applyShimmer(time) {
+    const heat = this.level * (0.35 + 0.65 * clamp01(this.plumeLength / 70 + 0.3));
+    this.shimmerInfo.intensity = heat;
+    const veil = this.materialSet.shimmer.uniforms;
+    veil.uTime.value = time;
+    veil.uHeat.value = heat;
+    veil.uLength.value = this.plumeLength * 0.94;
+    veil.uWidth.value = Math.max(0.5, this.plumeWidth * EX_SPEC.shimmer.radiusScale);
+    this.shimmerGroup.visible = heat > 0.01;
+
+    const floor = this.materialSet.shimmerFloor.uniforms;
+    const floorHeat = this.level * this.deckWarmth;
+    floor.uTime.value = time;
+    floor.uHeat.value = floorHeat;
+    floor.uWidth.value = EX_SPEC.shimmer.floorRadius * (0.6 + 0.4 * this.level);
+    if (this.shimmerFloor) {
+      this.shimmerFloor.visible = floorHeat > 0.01;
+      this.shimmerFloor.position.set(this.plumeBase.x, EX_SPEC.baseY + 0.22, this.plumeBase.z);
+    }
+  },
+
+  /* Cheap "is the plume worth refracting" test for the capture pass. */
+  plumeVisibility() {
+    const camera = this.camera;
+    if (!camera) return 0;
+    const direction = this.scratch.cameraDir;
+    camera.getWorldDirection(direction);
+    const toPlume = this.scratch.toPlume.copy(this.plumeBase).sub(camera.position);
+    const distance = Math.max(1, toPlume.length());
+    toPlume.multiplyScalar(1 / distance);
+    const radius = Math.max(this.plumeWidth * 2.5, this.plumeLength * 0.25);
+    const facing = direction.dot(toPlume);
+    return clamp01((facing + 0.15 - radius / distance) * 3.5);
+  },
+
+  /* Small refraction target, reused across frames, rebuilt on resize or when
+   * the quality tier changes its resolution scale. */
+  ensureRefractionTarget(scale) {
+    const renderer = this.renderer;
+    if (!renderer) return null;
+    const size = renderer.getDrawingBufferSize(this.scratch.size);
+    const width = Math.max(16, Math.floor(size.x * scale));
+    const height = Math.max(16, Math.floor(size.y * scale));
+    const target = this.capture.target;
+    if (target && target.width === width && target.height === height) return target;
+    if (target) target.dispose();
+    const next = new THREE.WebGLRenderTarget(width, height, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: true,
+      stencilBuffer: false,
+      generateMipmaps: false
+    });
+    next.texture.name = 'exhaust-heat-refraction';
+    this.capture.target = next;
+    this.capture.ready = false;
+    this.materialSet.shimmer.uniforms.uScene.value = next.texture;
+    this.materialSet.shimmerFloor.uniforms.uScene.value = next.texture;
+    return next;
+  },
+
+  /* Run from a frame hook (after the camera phase, before the main render):
+   * draw the frame into a small linear target, then hand it to the shimmer
+   * veil, which samples it through a warped screen UV. Any failure falls back
+   * to the additive veil for good instead of spamming the error log. */
+  captureRefraction() {
+    const capture = this.capture;
+    if (!capture.enabled || capture.disabled) return false;
+    const renderer = this.renderer;
+    if (!renderer || !this.scene || !this.camera) return false;
+    if (this.level < 0.02) return false;
+    capture.frame += 1;
+    if (capture.stride > 1 && capture.frame % capture.stride !== 0) return false;
+    if (this.plumeVisibility() < 0.05) return false;
+
+    const target = this.ensureRefractionTarget(capture.scale);
+    if (!target) return false;
+    /* Both shimmer surfaces sample the target's texture, so they must be out
+     * of the pass: sampling a bound colour attachment is invalid in WebGL. */
+    const veil = this.shimmerGroup;
+    const floor = this.shimmerFloor;
+    const veilWasVisible = veil.visible;
+    const floorWasVisible = floor ? floor.visible : false;
+    const shadowAuto = renderer.shadowMap.autoUpdate;
+    const restore = function () {
+      veil.visible = veilWasVisible;
+      if (floor) floor.visible = floorWasVisible;
+      renderer.shadowMap.autoUpdate = shadowAuto;
+      renderer.setRenderTarget(null);
+    };
+    try {
+      veil.visible = false;
+      if (floor) floor.visible = false;
+      renderer.shadowMap.autoUpdate = false;   // the shadow maps were drawn this frame
+      renderer.setRenderTarget(target);
+      renderer.render(this.scene, this.camera);
+      restore();
+      capture.ready = true;
+      this.materialSet.shimmer.uniforms.uHasScene.value = 1;
+      this.materialSet.shimmerFloor.uniforms.uHasScene.value = 1;
+      return true;
+    } catch (error) {
+      capture.disabled = true;
+      capture.enabled = false;
+      capture.ready = false;
+      restore();
+      this.materialSet.shimmer.uniforms.uHasScene.value = 0;
+      this.materialSet.shimmerFloor.uniforms.uHasScene.value = 0;
+      console.warn('[LAUNCH_SCENE] exhaust heat shimmer refraction unavailable, using additive veil:', error);
+      return false;
+    }
+  },
+
+  /* Mirror the derived numbers into the shared state for phases that only read
+   * state and never the api object. */
+  publish(sharedState) {
+    const target = sharedState && sharedState.exhaust ? sharedState.exhaust : null;
+    if (!target) return;
+    target.level = Number(this.level.toFixed(4));
+    target.throttle = Number(this.throttle.toFixed(4));
+    target.ignition = Number(this.ignition.toFixed(4));
+    target.flameScale = Number(this.flameScale.toFixed(4));
+    target.plumeLength = Number(this.plumeLength.toFixed(3));
+    target.plumeWidth = Number(this.plumeWidth.toFixed(3));
+    target.gustRadius = Number(this.gustRadius.toFixed(3));
+    target.heatRadius = Number(this.heat.radius.toFixed(3));
+    target.shimmer = Number(this.shimmerInfo.intensity.toFixed(4));
+    target.segments = this.plumeSegments.length;
+    target.lights = Number((this.lights.length ? this.lights[0].intensity : 0).toFixed(3));
+    target.groundGlow = Number(this.groundGlowIntensity.toFixed(4));
+    target.anchors = this.anchors.length;
+    target.attached = this.attached;
+  },
+
+  getState() {
+    const base = this.plumeBase;
+    const axis = this.plumeAxis;
+    return {
+      registered: runtime.has('flames'),
+      attached: this.attached,
+      anchors: this.anchors.length,
+      bellExitRadius: this.bellExitRadius,
+      ignitionSeconds: EX_SPEC.ignitionSeconds,
+      throttle: Number(this.throttle.toFixed(4)),
+      thrust: Number(this.level.toFixed(4)),
+      level: Number(this.level.toFixed(4)),
+      ignition: Number(this.ignition.toFixed(4)),
+      flameScale: Number(this.flameScale.toFixed(4)),
+      flameLayers: {
+        core: { length: Number(this.flameLayers.core.length.toFixed(3)), width: Number(this.flameLayers.core.width.toFixed(3)), count: this.flameLayers.core.count },
+        glow: { length: Number(this.flameLayers.glow.length.toFixed(3)), width: Number(this.flameLayers.glow.width.toFixed(3)), count: this.flameLayers.glow.count },
+        trail: { length: Number(this.flameLayers.trail.length.toFixed(3)), width: Number(this.flameLayers.trail.width.toFixed(3)), count: this.flameLayers.trail.count }
+      },
+      plume: {
+        base: { x: Number(base.x.toFixed(3)), y: Number(base.y.toFixed(3)), z: Number(base.z.toFixed(3)) },
+        axis: { x: Number(axis.x.toFixed(4)), y: Number(axis.y.toFixed(4)), z: Number(axis.z.toFixed(4)) },
+        length: Number(this.plumeLength.toFixed(3)),
+        width: Number(this.plumeWidth.toFixed(3)),
+        segments: this.plumeSegments.length,
+        tipY: Number((base.y - this.plumeLength).toFixed(3)),
+        gustRadius: Number(this.gustRadius.toFixed(3)),
+        heatRadius: Number(this.heat.radius.toFixed(3)),
+        heatIntensity: Number(this.heat.intensity.toFixed(4)),
+        deckWarmth: Number(this.deckWarmth.toFixed(3))
+      },
+      lights: this.lights.map(function (entry) {
+        return {
+          name: entry.name,
+          intensity: Number(entry.intensity.toFixed(3)),
+          x: Number(entry.light.position.x.toFixed(3)),
+          y: Number(entry.light.position.y.toFixed(3)),
+          z: Number(entry.light.position.z.toFixed(3))
+        };
+      }),
+      groundGlow: { intensity: Number(this.groundGlowIntensity.toFixed(4)), radius: Number(this.groundGlowRadius.toFixed(3)) },
+      shimmer: {
+        enabled: this.capture.enabled,
+        refracted: this.capture.ready,
+        intensity: Number(this.shimmerInfo.intensity.toFixed(4)),
+        amp: EX_SPEC.shimmer.amp
+      },
+      time: Number(this.clock.toFixed(3)),
+      frames: this.updates,
+      errors: runtime.state.errors.length
+    };
+  },
+
+  dispose(ctx) {
+    if (this.frameHook) runtime.offFrame(this.frameHook);
+    this.frameHook = null;
+    if (this.capture.target) {
+      this.capture.target.dispose();
+      this.capture.target = null;
+    }
+    this.capture.ready = false;
+    if (ctx && ctx.scene) {
+      if (this.group) ctx.scene.remove(this.group);
+      if (this.plumeGroup) ctx.scene.remove(this.plumeGroup);
+    }
+    exDisposeList(this.geometries);
+    exDisposeList(this.materials);
+    this.layers = {};
+    this.lights = [];
+    this.lightHandles = [];
+    this.anchors = [];
+    this.rocketHandle = null;
+    this.attached = false;
+    this.materialSet = null;
+    this.group = null;
+    this.plumeGroup = null;
+    this.shimmerGroup = null;
+    this.shimmerFloor = null;
+    this.glow = null;
+    this.throttle = 0;
+    this.level = 0;
+    this.ignition = 0;
+    this.ignitionTime = 0;
+    this.plumeLength = 0;
+    this.plumeWidth = 0;
+    this.gustRadius = 0;
+    this.shimmerInfo = { group: null, intensity: 0, enabled: false, refracted: false };
+    this.glowHandle = { mesh: null, intensity: 0, radius: 0 };
+    if (runtime.state) runtime.state.exhaust = null;
+    if (runtime.exhaust === this.api) runtime.exhaust = null;
+    this.api = null;
+  }
+};
+
+/* The interface published as LAUNCH_SCENE.exhaust: every visual field is a
+ * live read-only getter, and setThrust() is the single input. */
+function exCreateApi(system) {
+  return {
+    version: '1.0.0-exhaust',
+    subsystem: 'flames',
+    ignitionSeconds: EX_SPEC.ignitionSeconds,
+    setThrust: function (throttle) { return system.setThrust(throttle); },
+    engineAnchor: function (name) { return system.engineAnchor(name); },
+    getState: function () { return system.getState(); },
+    get attached() { return system.attached; },
+    get anchors() { return system.anchors; },
+    get anchorCount() { return system.anchors.length; },
+    get bellExitRadius() { return system.bellExitRadius; },
+    get throttle() { return system.throttle; },
+    get thrust() { return system.level; },
+    get level() { return system.level; },
+    get ignition() { return system.ignition; },
+    get flameScale() { return system.flameScale; },
+    get flameLayers() { return system.flameLayers; },
+    get plumeBase() { return system.plumeBase; },
+    get plumeAxis() { return system.plumeAxis; },
+    get plumeLength() { return system.plumeLength; },
+    get plumeWidth() { return system.plumeWidth; },
+    get plumeSegments() { return system.plumeSegments; },
+    get gustRadius() { return system.gustRadius; },
+    get heat() { return system.heat; },
+    get shimmer() { return system.shimmerInfo; },
+    get lights() { return system.lightHandles; },
+    get groundGlow() { return system.glowHandle; }
+  };
+}
+
+exhaustSystem.api = exCreateApi(exhaustSystem);
+runtime.exhaust = exhaustSystem.api;
+runtime.register('flames', exhaustSystem);
 
 /* ---------------------------------------------------------------------------
  * SECTION: particles - extension point (sparks, smoke, dust, debris).
