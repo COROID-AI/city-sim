@@ -61,6 +61,29 @@ deliverable and bound to acceptance criteria instead of being re-derived by hand
 4. keep the `file://` route as the primary product surface: the server must never be required for
    the page to work, and `tools/verify-static.mjs` fails if the product references `tools/`.
 
+### AC-linked probe plan (both evidence kinds per criterion)
+
+Acceptance evidence is only credited per criterion when a state is reached **by an AC-linked
+interaction** (live functional evidence) *and* a screenshot of that same state name is captured
+(screenshot evidence). Capture one probe run per phase, each carrying an action whose `criteriaRefs`
+name the criteria it proves and a matching screenshot intent at 800x450 **and** 1024x576 (the
+coverage criterion needs both sizes):
+
+| `readinessPath` | phase | state name | `criteriaRefs` |
+| --- | --- | --- | --- |
+| `/rocket-launch.html?t0=0.5` | PRELAUNCH | `prelaunch-pad-clamps-closed` | AC-1, AC-3, AC-4, AC-5, AC-12, AC-19 |
+| `/rocket-launch.html?t0=0.5` | PRELAUNCH | `prelaunch-drift-wisps` | AC-2, AC-6, AC-18 |
+| `/rocket-launch.html?t0=8` | THRUST_RAMP | `engine-thrust-ramp-fire-smoke-dust` | AC-4, AC-6, AC-7, AC-8, AC-9, AC-10, AC-11, AC-18, AC-20 |
+| `/rocket-launch.html?t0=9.6` | CLAMP_RELEASE | `clamp-arms-release-before-liftoff` | AC-5, AC-6, AC-12, AC-13 |
+| `/rocket-launch.html?t0=12` | LIFTOFF | `liftoff-long-attached-plume` | AC-4, AC-6, AC-9, AC-13, AC-14, AC-15 |
+| `/rocket-launch.html?t0=30` | CLOUD_LAYER | `ascent-cloud-layer-horizon` | AC-4, AC-6, AC-9, AC-15, AC-16, AC-17, AC-19 |
+| `/rocket-launch.html?t0=45` | HIGH_ALTITUDE | `high-altitude-horizon-and-clouds` | AC-4, AC-14, AC-16, AC-18, AC-19, AC-20 |
+
+Use the canvas as the locator for every action, keep the retained frames (`tmp/verify/*.png` from
+the gates plus the probe captures), and report the live `data-rd-*` state of each state next to its
+frame. A phase captured without an AC-linked action, or an action without a screenshot of its own
+state name, counts as neither kind of evidence.
+
 Both use Node builtins only (`node:fs`, `node:zlib`, `node:http`, `node:https`,
 `node:child_process`, `node:path`, `node:url`) — no install step, no package manager, no framework.
 `chromium` must be on `PATH` (or set `CHROMIUM=/path/to/chromium`).
