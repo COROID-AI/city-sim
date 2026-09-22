@@ -49,7 +49,7 @@ deliverable and bound to acceptance criteria instead of being re-derived by hand
 
 1. start the server (`npm run dev`, or `node tools/serve.mjs` in a harness-managed port);
 2. open the ready URL in a real browser and record the AC-linked states — baseline `PRELAUNCH`
-   (`?t0=0.5`), `IGNITION` (`?t0=4.5`), `THRUST_RAMP` (`?t0=8`), `CLAMP_RELEASE` (`?t0=9.6`),
+   (`?t0=0.5`), `IGNITION` (`?t0=4.5`), `THRUST_RAMP` (`?t0=8`), `CLAMP_RELEASE` (`?t0=9.3`),
    `LIFTOFF` (`?t0=12`), `ASCENT` (`?t0=18`), `CLOUD_LAYER` (`?t0=30`), `HIGH_ALTITUDE` (`?t0=45`),
    the post-processing bypass (`?nofx=1`) and the reduced quality path (`?q=low`);
 3. assert against the live `data-rd-*` diagnostics and the captured frames (the same thresholds the
@@ -115,7 +115,13 @@ requires the `ROCKET_BOOT_OK` console marker instead of trusting the exit status
 
 Headless virtual time delivers only about one animation frame per simulated second, so the timeline
 is jumped with `?t0=<seconds>`, which performs a bounded fixed-step warm-up (`dt = 1/60`, capped at
-60 s) before the first rendered frame. The page-reported layout viewport is also shorter than
+60 s) before the first rendered frame. After that warm-up the page keeps animating while chromium
+drains the virtual-time budget, so the timestamp the diagnostics are read at is `t0` plus a drift of
+roughly 0.2-0.35 s (three or four frames of the page's 0.1 s delta clamp). The checkpoint `t0`
+values are chosen so that the *observed* time — not `t0` — falls inside the window each checkpoint
+measures; `clamp-release` is the tightest case, because the clamps must be fully open before the
+vehicle's altitude leaves the pad at t = 10 s, which leaves only a 0.9 s release ramp to sample.
+The page-reported layout viewport is also shorter than
 `--window-size`, which is why edge-to-edge coverage is asserted from `data-rd-rect` versus
 `data-rd-inner` **and** from the captured frame's border pixels, never from the window size.
 
@@ -126,7 +132,7 @@ is jumped with `?t0=<seconds>`, which performs a bounded fixed-step warm-up (`dt
 | `prelaunch` | 0.5 | PRELAUNCH |
 | `ignition` | 4.5 | IGNITION |
 | `thrust-ramp` | 8.0 | THRUST_RAMP |
-| `clamp-release` | 9.6 | CLAMP_RELEASE |
+| `clamp-release` | 9.3 | CLAMP_RELEASE (observed ~9.5-9.65 s, mid ramp: `0.2 < clamp < 1`) |
 | `liftoff` | 12.0 | LIFTOFF |
 | `ascent-18` / `ascent-20` | 18.0 / 20.0 | ASCENT (monotonic altitude, increasing speed, plume change) |
 | `ascent-20-progress` | 20.0 with a longer virtual-time budget | two frames at the same `t0` differ (animation really advances) |

@@ -38,11 +38,22 @@ const FORCE_MODE = process.argv.includes('--mirror') ? 'mirror' : process.argv.i
 
 /* ------------------------------------------------------------------ checkpoint contract ---- */
 const BASE = { t0: 0.5, phase: 'PRELAUNCH', w: 800, h: 450, budget: 2200 };
+/* `t0` is a *page* offset, not the timestamp the diagnostics are read at: after the bounded
+   warm-up the page keeps stepping while chromium drains the virtual-time budget, so the sampled
+   timestamp is `t0` plus the measured drift (roughly 0.2-0.35 s, i.e. three or four frames of the
+   page's 0.1 s delta clamp). Every checkpoint below is therefore placed so that the *observed*
+   time, not `t0`, lands inside the window it exists to measure. That matters most for
+   CLAMP_RELEASE: the clamps must be fully open before the vehicle's altitude leaves the pad
+   (t = 10 s), so the product's release ramp is necessarily saturated at 1 by the end of the phase
+   and a reading taken ~0.32 s after 9.6 s would only ever see the completed value. Sampling at
+   9.3 s puts the reading in the middle of the 0.9 s release ramp (~0.6-0.85), with slack on both
+   sides of the `0.2 < clamp < 1` release assertion. */
 const CHECKPOINTS = [
   { id: 'prelaunch', t0: 0.5, phase: 'PRELAUNCH' },
   { id: 'ignition', t0: 4.5, phase: 'IGNITION' },
   { id: 'thrust-ramp', t0: 8.0, phase: 'THRUST_RAMP' },
-  { id: 'clamp-release', t0: 9.6, phase: 'CLAMP_RELEASE' },
+  // observed ~9.5-9.65 s: mid-transition of the tower arms' 9.0 -> 9.9 s release ramp
+  { id: 'clamp-release', t0: 9.3, phase: 'CLAMP_RELEASE' },
   { id: 'liftoff', t0: 12.0, phase: 'LIFTOFF' },
   { id: 'ascent-18', t0: 18.0, phase: 'ASCENT' },
   { id: 'ascent-20', t0: 20.0, phase: 'ASCENT' },
