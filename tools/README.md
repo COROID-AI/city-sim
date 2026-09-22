@@ -125,6 +125,39 @@ has no chromium binary or no global `WebSocket`, or if the page never boots at a
 module unreachable offline), the gate prints an explicit `ENVIRONMENT-LIMITED` line and exits 0
 rather than claiming a pass — the static and browser gates stay authoritative.
 
+## Internal render scale (`[CAP:RENDER_SCALE]`) — what makes canvas sampling conclude
+
+Canvas-level pixel evidence costs a full copy of the drawing buffer: the bigger the backing store,
+the longer every `toDataURL()` / `drawImage()` / `getImageData()` read stalls the renderer (chromium
+logs `GPU stall due to ReadPixels` for each one). On a software rasteriser — SwiftShader in this
+runtime, which is exactly what automated probes use — a full-viewport backing store made those reads
+slow enough that a probe could not reach a blank/non-blank conclusion at all and reported
+*"Canvas pixel sampling was inconclusive … use the retained screenshot or vision evidence"* for the
+near-ground phases (pre-launch, ignition, thrust ramp, clamp release, the `?nofx=1` bypass), instead
+of the reliable pixel evidence the airborne phases produced.
+
+`rocket-launch.html` therefore caps the *internal* render scale, never the visible scene:
+
+* the canvas CSS box is still the viewport (edge to edge, no margins, unchanged by this lever) and
+  the browser upscales the drawing buffer to it;
+* a software rasteriser (SwiftShader / llvmpipe / softpipe / swrast / "software rasterizer", read
+  through `WEBGL_debug_renderer_info`) starts on the largest ladder rung whose backing store stays
+  inside `BUDGET.canvasPixels` (160 000 px), i.e. 0.65 at 800x450 and 0.5 at 1024x576, and is pinned
+  there (`minRenderScale() === maxRenderScale()`);
+* a hardware renderer starts at **full resolution** (rung 1) and only the adaptive ladder in
+  `[CAP:QUALITY_SCALE]` moves it — one rung down after three frames that miss 25 fps, one rung back
+  up after ~2 s of 50 fps-or-better headroom, never below `BUDGET.renderScaleFloor` (0.5);
+* nothing is removed from the scene by this lever (geometry, materials, lights, shadow map, clouds
+  and every particle system keep rendering), so composition, colour, brightness and the rocket's
+  prominence are unaffected — the static and browser gates assert exactly those properties, and the
+  canvas readback gate now prints the live `scale=` per phase next to its pixel statistics.
+
+The effect is measurable in this runtime: the same phases that reported `sampleReliability:
+inconclusive` at scale 1.0 (pre-launch 450 kB canvas PNG, thrust ramp, clamp release, `?nofx=1`) read
+back as `sampleReliability: reliable` with `evidenceStatus: complete` and **no limitations** at the
+budgeted scale, at both evidence viewports. `data-rd-scale` / `__ROCKET_DIAG__.renderScale` publish
+the live value, and both dev gates assert it stays inside `[0.4, 1]`.
+
 ## `tools/verify-static.mjs` — authoritative structural gate
 
 No browser, no network. It asserts:
@@ -138,12 +171,15 @@ No browser, no network. It asserts:
 * the body contains exactly one element — the canvas — and no visible text (the module lives in
   `<head>`, so the body really does contain nothing else);
 * the extracted inline module parses (`node --check tmp/verify/extracted.mjs`);
-* all 51 `[CAP:NAME]` capability markers are present, each attached to a non-trivial section;
+* all 52 `[CAP:NAME]` capability markers are present, each attached to a non-trivial section;
 * the complete `data-rd-*` diagnostics contract is assigned every frame, the `ROCKET_BOOT_OK` marker
   and the `window.onerror` / `unhandledrejection` capture exist, `window.__ROCKET_DIAG__` is
   populated, and the `?t0`, `?nofx`, `?q` hooks are parsed with a bounded fixed-step warm-up;
 * the documented performance budgets (`BUDGET`) exist and stay inside their limits, the frame loop
-  clamps its delta, and `Math.random()` is never used (deterministic seeded RNGs only).
+  clamps its delta, and `Math.random()` is never used (deterministic seeded RNGs only);
+* the adaptive render scale is present and bounded: the ladder exists, `setRenderScale` clamps
+  between `minRenderScale()` and the viewport-derived ceiling, software rasterisers start on a
+  budgeted rung while hardware renderers keep full resolution, and the ladder can step downwards.
 
 Exit code is non-zero with a readable failure list when any check fails.
 
@@ -212,8 +248,8 @@ Per checkpoint: boot marker + no `Uncaught`/shader errors + `rd-error` empty, th
 canvas CSS rect equal to the reported viewport, mean luma / saturation / unique-colour count /
 largest-uniform-region fraction thresholds, zero page-background border pixels, blue-sky reading in
 the upper frame at pre-launch, the rocket's projected screen rect inside the central region above the
-prominence threshold, and every performance budget reported by `rd-draw`, `rd-tri`, `rd-smoke`,
-`rd-sparks`, `rd-debris`.
+prominence threshold, the live internal render scale (`rd-scale` inside `[0.4, 1]`), and every
+performance budget reported by `rd-draw`, `rd-tri`, `rd-smoke`, `rd-sparks`, `rd-debris`.
 
 Across checkpoints: the exact phase order with thrust starting at zero and rising, vibration and the
 engine light ramping from zero, clamps closed → open before the altitude leaves the pad, monotonic

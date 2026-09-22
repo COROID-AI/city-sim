@@ -337,6 +337,8 @@ for (const cp of list) {
     if (num(d, 'cloudbands') < 3) fail(where, `fewer than three cloud bands (${d.cloudbands})`);
     if (num(d, 'flamelayers') < 4) fail(where, `flame rig has fewer than four layers (${d.flamelayers})`);
     if (!['high', 'medium', 'low'].includes(d.quality)) fail(where, `quality tier not reported (${d.quality})`);
+    const renderScale = num(d, 'scale');
+    if (!(renderScale >= 0.4 && renderScale <= 1)) fail(where, `internal render scale out of range (${d.scale})`);
   }
 
   // quality / fx variants
@@ -548,6 +550,7 @@ const CRITERIA = [
 const LIVE_DIAG_KEYS = [
   'phase', 't', 'thrust', 'clamp', 'vib', 'plume', 'smoke', 'sparks', 'embers', 'debris', 'smokeradius',
   'smokey', 'campos', 'rocketscreen', 'rect', 'inner', 'dpr', 'draw', 'tri', 'mesh', 'fps', 'quality',
+  'scale',
   'fx', 'shimmer', 'veg', 'beacon', 'error',
 ];
 const evidencePrefix = path.relative(ROOT, OUT).split(path.sep).join('/');

@@ -105,6 +105,8 @@ const BUDGET = Object.freeze({
   shadowMap: 2048,
   shadowMapLow: 1024,
   pixelRatio: 2,
+  canvasPixels: 160000,
+  renderScaleFloor: 0.5,
   textures: 24,
   textureSize: 512,
   deltaClamp: 0.1,
@@ -485,6 +487,69 @@ renderer.info.autoReset = false;
 const glContext = renderer.getContext();
 const webglKind = typeof WebGL2RenderingContext !== 'undefined' && glContext instanceof WebGL2RenderingContext ? 'webgl2' : 'webgl';
 
+/* [CAP:RENDER_SCALE] Adaptive internal render scale — the canvas still fills the viewport exactly
+   (its CSS box is the viewport and only the drawing buffer behind it changes size), but the number
+   of pixels the renderer has to shade, resolve and hand back to any canvas-level read is capped
+   when the frame is heavy. A software rasteriser (no GPU: SwiftShader/llvmpipe-class, which is what
+   automated browser probes run on) starts on a lower rung of the ladder, and any renderer that
+   cannot keep up is stepped down until frames are cheap again and stepped back up once they are.
+   Nothing is removed from the scene by this lever — geometry, materials, lights, shadows, clouds
+   and every particle system stay — so composition, colour and silhouettes are preserved, hardware
+   renderers stay at full resolution, and the frame stays cheap enough to be sampled reliably. */
+const RENDER_SCALE_LADDER = [1, 0.85, 0.75, 0.65, 0.6, 0.55, 0.5];
+let renderScale = 1;
+let scaleSlowStreak = 0;
+let scaleFastStreak = 0;
+const gpuRendererName = (() => {
+  try {
+    const info = glContext.getExtension('WEBGL_debug_renderer_info');
+    if (!info) return '';
+    const renderer_ = String(glContext.getParameter(info.UNMASKED_RENDERER_WEBGL) || '');
+    const vendor = String(glContext.getParameter(info.UNMASKED_VENDOR_WEBGL) || '');
+    return renderer_ + ' ' + vendor;
+  } catch (e) {
+    return '';
+  }
+})();
+const softwareRasteriser = /swiftshader|llvmpipe|softpipe|swrast|software\s*(rasterizer|renderer|adapter)|microsoft basic render/i.test(gpuRendererName);
+function rungBelow(s) {
+  for (let i = RENDER_SCALE_LADDER.length - 1; i >= 0; i--) if (RENDER_SCALE_LADDER[i] < s - 0.001) return RENDER_SCALE_LADDER[i];
+  return BUDGET.renderScaleFloor;
+}
+function rungAbove(s) {
+  for (let i = 0; i < RENDER_SCALE_LADDER.length; i++) if (RENDER_SCALE_LADDER[i] > s + 0.001) return RENDER_SCALE_LADDER[i];
+  return RENDER_SCALE_LADDER[0];
+}
+function budgetRenderScale() {
+  const w = Math.max(1, window.innerWidth);
+  const h = Math.max(1, window.innerHeight);
+  const dpr = Math.min(window.devicePixelRatio || 1, BUDGET.pixelRatio);
+  for (let i = 0; i < RENDER_SCALE_LADDER.length; i++) {
+    const s = RENDER_SCALE_LADDER[i];
+    if (w * h * dpr * dpr * s * s <= BUDGET.canvasPixels) return s;
+  }
+  return BUDGET.renderScaleFloor;
+}
+function maxRenderScale() {
+  return softwareRasteriser ? budgetRenderScale() : RENDER_SCALE_LADDER[0];
+}
+function minRenderScale() {
+  return softwareRasteriser ? budgetRenderScale() : BUDGET.renderScaleFloor;
+}
+function pixelRatioFor(cap) {
+  return Math.min(window.devicePixelRatio || 1, cap, BUDGET.pixelRatio) * renderScale;
+}
+function setRenderScale(next) {
+  const clamped = clamp(Number(next) || 1, minRenderScale(), maxRenderScale());
+  const rounded = Math.round(clamped * 100) / 100;
+  if (Math.abs(rounded - renderScale) < 0.001) return;
+  renderScale = rounded;
+  onResize();
+}
+renderScale = softwareRasteriser ? budgetRenderScale() : RENDER_SCALE_LADDER[0];
+renderer.setPixelRatio(pixelRatioFor(BUDGET.pixelRatio));
+renderer.setSize(Math.max(1, window.innerWidth), Math.max(1, window.innerHeight), false);
+
 /* [CAP:TONE_MAP] Filmic tone mapping and sRGB output keep the bright-daylight palette crisp
    without blowing the highlights: the sky stays a saturated blue, flames keep a near-white core
    and the concrete/terrain retain detail. The composite pass performs the same transform when
@@ -517,7 +582,8 @@ function onResize() {
   const h = Math.max(1, window.innerHeight);
   viewState.w = w;
   viewState.h = h;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, BUDGET.pixelRatio));
+  renderScale = clamp(renderScale, minRenderScale(), maxRenderScale());
+  renderer.setPixelRatio(pixelRatioFor(BUDGET.pixelRatio));
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -2717,10 +2783,13 @@ resizeListeners.push((w, h) => {
   }
 });
 
-/* [CAP:QUALITY_SCALE] Adaptive quality: a smoothed frame-time watchdog lowers the cost (particle
-   caps, shadow map size, pixel ratio, cloud count and the whole post-processing path) when the
-   renderer falls behind, and restores quality once it recovers. Tier changes are hysteretic and
-   debounced so a single slow frame can never cause flicker. */
+/* [CAP:QUALITY_SCALE] Adaptive quality: two hysteretic, debounced watchdogs lower the cost when the
+   renderer falls behind and restore it once it recovers. The internal render scale (above) is the
+   first lever because it trades sampling density, not scene content; only when the scale is already
+   at its floor does the tier ladder lower the content (particle caps, shadow map size, pixel ratio,
+   cloud count and the whole post-processing path). One slow frame can never cause flicker: a scale
+   step needs a two-frame streak and a tier step needs eight, while restoration needs a long stretch
+   of cheap frames. */
 let qualityName = 'high';
 let slowStreak = 0;
 let fastStreak = 0;
@@ -2738,7 +2807,7 @@ function applyQuality(name) {
   debris.cap = Math.min(tier.debris, BUDGET.debris);
   grass.count = Math.min(tier.grass, BUDGET.grass);
   cloudPuffs.mesh.count = Math.min(tier.clouds, cloudPuffs.length, BUDGET.cloudSprites);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, tier.dpr, BUDGET.pixelRatio));
+  renderer.setPixelRatio(pixelRatioFor(tier.dpr));
   const shadowSize = Math.min(tier.shadow, BUDGET.shadowMap);
   if (sun.shadow.mapSize.width !== shadowSize) {
     sun.shadow.mapSize.set(shadowSize, shadowSize);
@@ -2750,8 +2819,26 @@ function applyQuality(name) {
   setFxEnabled(tier.fx && !NOFX);
   compositeMaterial.uniforms.uBloom.value = tier.bloom ? 0.85 : 0;
 }
-function adaptQuality(frameMs, dt) {
+function adaptRenderScale(loadMs) {
+  // `loadMs` is the wall-clock frame interval. A frame is "loaded" when the loop misses the 25 fps
+  // budget (three-frame streak), and the scale is stepped back up only after ~2 s of continuous
+  // 50 fps-or-better headroom, so the ladder cannot oscillate. The first frame is ignored: scene
+  // build + shader compilation dominate it and say nothing about steady state.
+  if (frameIndex > 1 && loadMs > 40) scaleSlowStreak++;
+  else scaleSlowStreak = Math.max(0, scaleSlowStreak - 1);
+  if (frameIndex > 1 && loadMs < 20) scaleFastStreak++;
+  else scaleFastStreak = Math.max(0, scaleFastStreak - 1);
+  if (scaleSlowStreak >= 3 && renderScale > minRenderScale()) {
+    setRenderScale(rungBelow(renderScale));
+    scaleSlowStreak = 0;
+  } else if (scaleFastStreak >= 120 && renderScale < maxRenderScale()) {
+    setRenderScale(rungAbove(renderScale));
+    scaleFastStreak = 0;
+  }
+}
+function adaptQuality(frameMs, dt, loadMs) {
   frameMsAvg = frameMsAvg === 0 ? frameMs : lerp(frameMsAvg, frameMs, 0.12);
+  adaptRenderScale(loadMs === undefined ? frameMs : loadMs);
   qualityCooldown -= dt;
   if (frameMs > 90) slowStreak++;
   else slowStreak = Math.max(0, slowStreak - 1);
@@ -2830,6 +2917,7 @@ function publishDiagnostics() {
   d.rdRect = `${rect.left.toFixed(1)},${rect.top.toFixed(1)},${rect.width.toFixed(1)},${rect.height.toFixed(1)}`;
   d.rdInner = `${window.innerWidth}x${window.innerHeight}`;
   d.rdDpr = String(renderer.getPixelRatio());
+  d.rdScale = renderScale.toFixed(2);
   d.rdDraw = String(renderer.info.render.calls);
   d.rdTri = String(renderer.info.render.triangles);
   d.rdMesh = String(sceneMeshCount);
@@ -2870,6 +2958,7 @@ function publishDiagnostics() {
     rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
     inner: [window.innerWidth, window.innerHeight],
     dpr: renderer.getPixelRatio(),
+    scale: renderScale,
     draw: renderer.info.render.calls,
     tri: renderer.info.render.triangles,
     quality: qualityName,
@@ -3032,14 +3121,18 @@ if (T0 > 0) {
   for (let i = 0; i < steps; i++) step(1 / 60);
 }
 const clock = new THREE.Clock();
+let lastLoopAt = 0;
 function loop() {
+  const loopAt = performance.now();
+  const loadMs = lastLoopAt > 0 ? loopAt - lastLoopAt : 0;
+  lastLoopAt = loopAt;
   const dt = Math.min(clock.getDelta(), BUDGET.deltaClamp);
   const startMs = performance.now();
   step(dt);
   renderFrame();
   frameIndex++;
   const frameMs = performance.now() - startMs;
-  adaptQuality(frameMs, dt);
+  adaptQuality(frameMs, dt, loadMs);
   if (!boot.ready) {
     boot.ready = 1;
     console.log('ROCKET_BOOT_OK rev=' + THREE.REVISION + ' ctx=' + webglKind + ' phase=' + simState.phase);

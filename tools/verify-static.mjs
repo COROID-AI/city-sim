@@ -40,14 +40,14 @@ const CAPABILITIES = [
   'LAUNCH_PAD', 'FLAME_TRENCH', 'TOWER', 'CLAMPS', 'STRUCTURES', 'PIPES', 'PLATFORMS', 'EQUIPMENT', 'BARRIERS',
   'VEGETATION', 'PRELAUNCH_SMOKE', 'BEACONS', 'IGNITION', 'FLAMES', 'ENGINE_LIGHT', 'SMOKE', 'DUST', 'SPARKS',
   'EMBERS', 'DEBRIS', 'VEG_REACT', 'VIBRATION', 'CLAMP_RELEASE', 'LIFTOFF', 'PLUME', 'POST_LAUNCH_SMOKE',
-  'HEAT_SHIMMER', 'CAMERA_DIRECTOR', 'CAMERA_SHAKE', 'CLOUDS', 'LANDSCAPE_REVEAL', 'QUALITY_SCALE',
+  'HEAT_SHIMMER', 'CAMERA_DIRECTOR', 'CAMERA_SHAKE', 'CLOUDS', 'LANDSCAPE_REVEAL', 'RENDER_SCALE', 'QUALITY_SCALE',
   'DIAGNOSTICS', 'SEQUENCE',
 ];
 
 const DIAG_KEYS = [
   'ready', 'rev', 'webgl', 'frame', 't', 'phase', 'roty', 'thrust', 'clamp', 'vib', 'plume',
   'smoke', 'sparks', 'embers', 'debris', 'smokeradius', 'smokey', 'campos', 'rocketscreen',
-  'rect', 'inner', 'dpr', 'draw', 'tri', 'mesh', 'fps', 'quality', 'fx', 'shimmer', 'veg', 'beacon', 'error',
+  'rect', 'inner', 'dpr', 'scale', 'draw', 'tri', 'mesh', 'fps', 'quality', 'fx', 'shimmer', 'veg', 'beacon', 'error',
 ];
 
 const BUDGET_LIMITS = {
@@ -61,6 +61,7 @@ const BUDGET_LIMITS = {
   shadowMap: 2048,
   shadowMapLow: 1024,
   pixelRatio: 2,
+  canvasPixels: 400000,
   textures: 24,
   textureSize: 512,
   deltaClamp: 0.1,
@@ -214,7 +215,12 @@ else {
   if (!/Math\.min\(clock\.getDelta\(\), BUDGET\.deltaClamp\)/.test(module)) fail('frame loop does not clamp its delta to the documented budget');
   if (!/requestAnimationFrame\(loop\)/.test(module)) fail('render loop is not driven by requestAnimationFrame');
   if (!/onResize/.test(module) || !/visualViewport/.test(module) || !/orientationchange/.test(module)) fail('resize handling is incomplete (resize / orientationchange / visualViewport)');
-  if (!/setPixelRatio\(Math\.min\(/.test(module)) fail('pixel ratio is not clamped');
+  if (!/Math\.min\(window\.devicePixelRatio \|\| 1,[^)]*BUDGET\.pixelRatio\)/.test(module)) fail('pixel ratio is not clamped to the documented budget');
+  if (!/RENDER_SCALE_LADDER = \[/.test(module)) fail('adaptive render-scale ladder is missing');
+  if (!/clamp\(Number\(next\) \|\| 1, minRenderScale\(\), maxRenderScale\(\)\)/.test(module)) fail('render scale is not clamped between its floor and the viewport-derived ceiling');
+  if (!/softwareRasteriser \? budgetRenderScale\(\) : RENDER_SCALE_LADDER\[0\]/.test(module)) fail('software rasterisers must start on a budgeted render scale while hardware renderers keep full resolution');
+  if (!/setRenderScale\(rungBelow\(renderScale\)\)/.test(module)) fail('render scale never adapts downwards');
+  ok('render scale is budgeted, clamped and adaptive (hardware keeps full resolution)');
 }
 
 /* ------------------------------------------------------------------------------- report ----- */

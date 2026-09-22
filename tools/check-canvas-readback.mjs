@@ -404,7 +404,7 @@ for (const ph of LIST) {
   }
   records.push(record);
   if (record.reportedPhase !== undefined) {
-    console.log(`  ${ph.id.padEnd(14)} t0=${String(ph.t0).padEnd(5)} phase=${String(record.reportedPhase).padEnd(14)} luma=${String(record.meanLuma).padEnd(6)} var=${String(record.variance).padEnd(9)} uniq=${String(record.uniqueColors).padEnd(5)} motion=${record.motionDiff} png=${record.pngBytes}B jpg=${record.jpegBytes}B ${record.ms}ms`);
+  console.log(`  ${ph.id.padEnd(14)} t0=${String(ph.t0).padEnd(5)} phase=${String(record.reportedPhase).padEnd(14)} scale=${String(record.live && record.live.rdScale).padEnd(4)} luma=${String(record.meanLuma).padEnd(6)} var=${String(record.variance).padEnd(9)} uniq=${String(record.uniqueColors).padEnd(5)} motion=${record.motionDiff} png=${record.pngBytes}B jpg=${record.jpegBytes}B ${record.ms}ms`);
   }
 }
 
