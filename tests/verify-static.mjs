@@ -26,7 +26,9 @@ v.ok('index.html is non-trivial (> 40 KB of source)', html.length > 40000, `${ht
 
 function walk(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (e.name === '.git' || e.name === 'node_modules') continue;
+    /* .git, node_modules and the harness' own .coroid* scratch directories
+       (see .ignore) are execution infrastructure, not repository content. */
+    if (e.name === '.git' || e.name === 'node_modules' || e.name === '.coroid' || e.name.startsWith('.coroid-')) continue;
     const p = path.join(dir, e.name);
     if (e.isDirectory()) walk(p, out); else out.push(path.relative(ROOT, p));
   }

@@ -425,14 +425,21 @@ const compositeMat = new THREE.ShaderMaterial({
     ${GLSL_NOISE}
     void main(){
       vec2 uv = vUv;
-      vec2 d = (uv - uEngineUV) * vec2(uAspect, 1.0);
-      float r2 = dot(d, d);
-      float heat = uHeat * exp(-r2 * 7.0);
-      if (heat > 0.001) {
-        vec2 wobble = vec2(
-          sin(uv.y * 120.0 + uTime * 9.0) + 0.6 * sin(uv.y * 47.0 - uTime * 5.3),
-          cos(uv.x * 108.0 + uTime * 7.7) + 0.6 * cos(uv.x * 39.0 + uTime * 4.1));
-        uv += wobble * 0.0055 * heat;
+      /* Exhaust heat haze, anchored to the nozzle.
+         Deliberately local and gentle: the displacement is driven by animated
+         noise (a regular sine wobble reads as a full-frame wave banding
+         artifact), it is capped at a couple of pixels and it decays to nothing
+         a short distance from the nozzle, so only the hot exhaust column
+         shimmers and the vehicle, gantry and sky stay rock steady. */
+      vec2 rel = vec2((uv.x - uEngineUV.x) * uAspect, uv.y - uEngineUV.y + 0.04);
+      vec2 sd = rel / vec2(0.13, 0.22);
+      float heat = uHeat * exp(-dot(sd, sd) * 1.8);
+      if (heat > 0.002) {
+        vec2 np = vec2(uv.x * uAspect, uv.y) * 46.0;
+        float n1 = fbm2d(np + vec2(0.0, -uTime * 3.2));
+        float n2 = fbm2d(np * 1.71 + vec2(13.1, -uTime * 4.4));
+        vec2 wobble = (vec2(n1, n2) - 0.5) * vec2(1.0 / uAspect, 1.0);
+        uv += wobble * 0.0048 * heat;
       }
       vec3 col = texture2D(tScene, uv).rgb;
       vec3 bloom = texture2D(tBloomA, uv).rgb * 0.72 + texture2D(tBloomB, uv).rgb * 0.95;
@@ -2069,7 +2076,8 @@ function applySim(t) {
   _v3c.copy(rocketCenter).project(camera);
   lastFollowError = Math.hypot(_v3c.x, _v3c.y);
 
-  // ---- heat shimmer follows the engine on screen -------------------------
+  // ---- heat haze stays anchored to the nozzle while the engine is on screen
+  // (the composite shader keeps it local; see the heat-shimmer pass above) --
   _v3a.copy(engineWorldPos).project(camera);
   const engineOnScreen = _v3a.z < 1 && Math.abs(_v3a.x) < 1.25 && Math.abs(_v3a.y) < 1.25;
   compositeMat.uniforms.uEngineUV.value.set(_v3a.x * 0.5 + 0.5, _v3a.y * 0.5 + 0.5);
