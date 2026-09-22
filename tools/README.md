@@ -6,12 +6,14 @@ deleted: it references nothing but the pinned Three.js CDN ES module, generates 
 canvas 2D at runtime and holds no relative asset, style or script reference.
 
 ```bash
-node tools/verify.mjs             # one command: static gate + full browser gate (non-zero on failure)
+node tools/verify.mjs             # one command: static gate + browser gate + canvas readback gate
 node tools/verify-static.mjs      # deterministic structure/self-containment/contract gate
 node tools/verify-browser.mjs     # headless-Chromium render + frame-analysis gate
+node tools/check-canvas-readback.mjs   # canvas pixel-evidence gate (real readback at every phase)
 node tools/verify-browser.mjs --quick      # 5 checkpoints instead of the full matrix
 node tools/verify-browser.mjs --mirror     # force the local-mirror mode (skip the CDN probe)
 node tools/verify-browser.mjs --cdn        # force the CDN mode (skip the reachability probe)
+node tools/check-canvas-readback.mjs --quick   # 3 phases instead of the full matrix
 node tools/serve.mjs              # dependency-free static server for live/browser probes
 ```
 
@@ -24,6 +26,7 @@ npm start              # same
 npm run verify         # static gate + full browser gate
 npm run verify:static  # static gate only
 npm run verify:browser # browser gate only
+npm run verify:readback # canvas pixel-evidence gate only
 npm test               # same as npm run verify (non-zero exit on any failure)
 ```
 
@@ -61,6 +64,43 @@ deliverable and bound to acceptance criteria instead of being re-derived by hand
 Both use Node builtins only (`node:fs`, `node:zlib`, `node:http`, `node:https`,
 `node:child_process`, `node:path`, `node:url`) — no install step, no package manager, no framework.
 `chromium` must be on `PATH` (or set `CHROMIUM=/path/to/chromium`).
+
+## `tools/check-canvas-readback.mjs` — canvas pixel-evidence gate
+
+Acceptance evidence for this product is *pixel* evidence, and pixel evidence only exists if the page's
+canvas can actually be read back. A WebGL canvas created without `preserveDrawingBuffer` hands a
+**blank** buffer to every canvas-level read (`canvas.toDataURL()`, `ctx.drawImage(canvas, …)`,
+`getImageData`) once the frame callback has returned, so canvas-based sampling cannot conclude
+anything about the frame and reports "inconclusive: no blank / non-blank conclusion" instead of
+usable live functional or screenshot evidence. `rocket-launch.html` therefore creates its renderer
+with `preserveDrawingBuffer: true` (a one-line renderer option; it does not change the rendered
+image), and this gate proves the consequence at every phase of the launch.
+
+It drives the real `file://` deliverable through the Chrome DevTools Protocol over the WebSocket
+built into Node 21+ (`WebSocket`) — still no dependency, no install, no package manager — waits for
+the page's own `rd-ready=1`, then:
+
+* reads the frame back through both the 2D-canvas path (`drawImage` + `getImageData`) and the page's
+  own PNG encoder (`canvas.toDataURL('image/png')`);
+* samples twice, 400 ms apart, and computes the inter-sample luma difference, so a frozen, detached
+  or blank buffer cannot pass;
+* asserts non-blank readback (every sampled pixel non-zero), mean luma inside the bright-daylight
+  window, luma variance above the flat-frame floor, an encoded PNG far larger than a blank canvas
+  image, the expected phase and an empty `rd-error`;
+* writes `tmp/verify/readback-<phase>.png` (the frame the canvas itself produced) and
+  `tmp/verify/readback-evidence.json`, which maps every acceptance criterion covered by the matrix
+  to the phase's live `data-rd-*` runtime state **and** its retained canvas frame — i.e. the same
+  live functional + screenshot evidence pairing the browser gate emits, obtained from the canvas.
+
+Phase matrix (each phase runs the deliverable at `?t0=<seconds>`, plus the `?nofx=1` / `?q=low`
+variants and the isolated-copy run): `prelaunch` 0.5, `ignition` 4.5, `thrust-ramp` 8,
+`clamp-release` 9.6, `liftoff` 12, `cloud-layer` 30, `high-altitude` 45, `nofx`, `quality-low`,
+`coverage-800` (t0 0.5 at 800x450) and `coverage-1024` (t0 30 at 1024x576, which also assert that the
+reported canvas CSS rect equals the reported viewport, i.e. edge-to-edge coverage), `isolated`. Exit
+code is non-zero with a readable failure list when any phase fails. If the runtime
+has no chromium binary or no global `WebSocket`, or if the page never boots at all (the pinned CDN
+module unreachable offline), the gate prints an explicit `ENVIRONMENT-LIMITED` line and exits 0
+rather than claiming a pass — the static and browser gates stay authoritative.
 
 ## `tools/verify-static.mjs` — authoritative structural gate
 

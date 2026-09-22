@@ -463,7 +463,11 @@ const GLSL_BILLBOARD_VERT = `
 /* [CAP:RENDERER] One WebGLRenderer on the single canvas: antialiased, pixel ratio clamped to the
    documented budget, sized from innerWidth/innerHeight with updateStyle disabled (CSS owns the
    layout), information auto-reset disabled so per-frame draw-call/triangle stats accumulate
-   across every pass and can be reported through the diagnostics contract. */
+   across every pass and can be reported through the diagnostics contract. The drawing buffer is
+   preserved so the canvas stays readable outside the frame callback: toDataURL()/drawImage()/
+   pixel readback (manual QA, screenshot tooling, canvas sampling) then return the rendered frame
+   instead of an already-discarded buffer, which is what makes live functional pixel evidence
+   possible without any change to the rendered image. */
 const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({
   canvas,
@@ -471,6 +475,7 @@ const renderer = new THREE.WebGLRenderer({
   alpha: false,
   stencil: false,
   powerPreference: 'high-performance',
+  preserveDrawingBuffer: true,
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, BUDGET.pixelRatio));
 renderer.setSize(window.innerWidth, window.innerHeight, false);
