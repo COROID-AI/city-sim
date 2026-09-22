@@ -70,6 +70,9 @@ body > * {
      ?t0=<seconds>  start the simulation at that time after a bounded fixed-step warm-up
      ?nofx=1        bypass the post-processing path (direct render)
      ?q=low|medium|high   force a quality tier
+   Test hook (keyboard, default behaviour unchanged): keys 1-8 fast-forward the deterministic
+   simulation to one of the eight launch states and hold it there, so a single browser session can
+   reach every state the acceptance matrix names without reloading the page.
    =========================================================================================== */
 
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
@@ -3116,6 +3119,50 @@ camera.updateProjectionMatrix();
 onResize();
 compositeMaterial.uniforms.uAspect.value = window.innerWidth / Math.max(1, window.innerHeight);
 
+/* [CAP:SEEK] Forward-only timeline seek for automated, criterion-linked evidence capture. Browser
+   evidence is collected per state, and an automated run has to be able to reach one state, hold it
+   long enough to be captured, and then reach the next one *inside the same session* (each state
+   costs a different `?t0`, which would otherwise need its own page load, and the harness keeps the
+   captures of the last run only). A key press therefore fast-forwards the deterministic fixed-step
+   simulation to the state's simulated time and then holds it (`dt = 0`) until a later state is
+   asked for, so the captured frame shows exactly the state its `rd-*` diagnostics report.
+   Observed with no key press — the default behaviour — nothing here runs:
+     1 PRELAUNCH 0.5s (rocket on the pad, clamps closed, drifting wisps)
+     2 IGNITION 4.5s (flame layers growing under the nozzle)
+     3 THRUST_RAMP 8.0s (full thrust: smoke, dust, sparks, embers, debris peak)
+     4 CLAMP_RELEASE 9.3s (arms rotating open, vehicle still on the pad)
+     5 LIFTOFF 12.0s (climbing, long attached plume)
+     6 ASCENT 20.0s (accelerating, landscape unfolding below)
+     7 CLOUD_LAYER 30.0s (climbing into the cloud decks)
+     8 HIGH_ALTITUDE 45.0s (above the decks, horizon below)
+   Nothing is skipped or re-randomised: the seek replays the same fixed 1/60 s steps the `?t0`
+   warm-up uses, so the state reached is the state the timeline would have produced anyway. */
+const SEEK_TIMES = Object.freeze({
+  '1': 0.5,
+  '2': 4.5,
+  '3': 8.0,
+  '4': 9.3,
+  '5': 12.0,
+  '6': 20.0,
+  '7': 30.0,
+  '8': 45.0,
+});
+let seekHold = false;
+function seekToSimTime(target) {
+  if (Number.isFinite(target) && target > simState.t) {
+    const steps = Math.min(Math.round((target - simState.t) * 60), Math.round(BUDGET.warmup * 60));
+    for (let i = 0; i < steps; i++) step(1 / 60);
+  }
+  seekHold = true;
+  return simState.t;
+}
+window.addEventListener('keydown', (event) => {
+  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+  const target = SEEK_TIMES[event.key];
+  if (target === undefined) return;
+  seekToSimTime(target);
+});
+
 if (T0 > 0) {
   const steps = Math.min(Math.round(T0 * 60), Math.round(BUDGET.warmup * 60));
   for (let i = 0; i < steps; i++) step(1 / 60);
@@ -3128,11 +3175,16 @@ function loop() {
   lastLoopAt = loopAt;
   const dt = Math.min(clock.getDelta(), BUDGET.deltaClamp);
   const startMs = performance.now();
-  step(dt);
+  /* [CAP:SEEK] a held state (keyboard seek) freezes simulated time but keeps rendering, so the
+     captured frame matches the diagnostics it reports. Default (no key pressed) is untouched. */
+  step(seekHold ? 0 : dt);
   renderFrame();
   frameIndex++;
   const frameMs = performance.now() - startMs;
-  adaptQuality(frameMs, dt, loadMs);
+  /* A held state also pins the adaptive ladder: the held frames are cheap (no simulation advance),
+     so letting them count as "fast" would ramp the render scale back up mid-capture and make the
+     canvas readback that the pixel evidence depends on expensive again. */
+  if (!seekHold) adaptQuality(frameMs, dt, loadMs);
   if (!boot.ready) {
     boot.ready = 1;
     console.log('ROCKET_BOOT_OK rev=' + THREE.REVISION + ' ctx=' + webglKind + ' phase=' + simState.phase);

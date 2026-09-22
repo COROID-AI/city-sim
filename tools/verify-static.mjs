@@ -41,7 +41,7 @@ const CAPABILITIES = [
   'VEGETATION', 'PRELAUNCH_SMOKE', 'BEACONS', 'IGNITION', 'FLAMES', 'ENGINE_LIGHT', 'SMOKE', 'DUST', 'SPARKS',
   'EMBERS', 'DEBRIS', 'VEG_REACT', 'VIBRATION', 'CLAMP_RELEASE', 'LIFTOFF', 'PLUME', 'POST_LAUNCH_SMOKE',
   'HEAT_SHIMMER', 'CAMERA_DIRECTOR', 'CAMERA_SHAKE', 'CLOUDS', 'LANDSCAPE_REVEAL', 'RENDER_SCALE', 'QUALITY_SCALE',
-  'DIAGNOSTICS', 'SEQUENCE',
+  'DIAGNOSTICS', 'SEQUENCE', 'SEEK',
 ];
 
 const DIAG_KEYS = [
@@ -196,6 +196,21 @@ else {
   if (!/warmup/.test(module) || !/1 \/ 60/.test(module)) fail('bounded fixed-step warm-up for ?t0 not found');
   if (/Math\.random\s*\(/.test(module)) fail('Math.random() used in the frame loop — determinism requires seeded RNGs');
   ok('?t0 / ?nofx / ?q hooks parsed, fixed-step warm-up present, seeded RNG only');
+
+  /* ------------------------------------------------- keyboard seek (single-session evidence) -- */
+  /* Browser evidence is collected per scene state, and the harness keeps the captures of the last
+     run of a session, so a run must be able to reach every state without reloading. The seek hook
+     must therefore exist, must replay the same fixed 1/60 s steps the ?t0 warm-up uses, and must
+     hold the state it reaches (otherwise the captured frame drifts away from the state name). */
+  if (!/window\.addEventListener\('keydown'/.test(module)) fail('keyboard timeline-seek hook (keydown listener) is missing');
+  if (!/const SEEK_TIMES = Object\.freeze\(\{/.test(module)) fail('timeline-seek key map (SEEK_TIMES) is missing');
+  if (!/seekHold/.test(module) || !/step\(seekHold \? 0 : dt\)/.test(module)) fail('keyboard seek does not hold the state it reaches (dt is not frozen)');
+  if (!/if \(!seekHold\) adaptQuality\(/.test(module)) fail('keyboard seek does not pin the adaptive ladder while a state is held');
+  const seekTimes = [...module.matchAll(/^\s*'([1-9])':\s*([0-9.]+),/gm)].map((m) => Number.parseFloat(m[2]));
+  const seekTargets = [0.5, 4.5, 8.0, 9.3, 12.0, 20.0, 30.0, 45.0];
+  if (seekTimes.length < seekTargets.length) fail(`timeline-seek key map covers only ${seekTimes.length} of the ${seekTargets.length} launch states`);
+  else if (seekTargets.some((target, i) => seekTimes[i] !== target)) fail(`timeline-seek key map does not match the launch states: ${seekTimes.join(', ')}`);
+  else ok(`keyboard timeline seek covers all ${seekTargets.length} launch states in one session (keys 1-8, held)`);
 
   /* ---------------------------------------------------------------------------- budgets --- */
   const budgetMatch = module.match(/const BUDGET = Object\.freeze\(\{([\s\S]*?)\}\);/);

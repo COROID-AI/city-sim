@@ -356,3 +356,36 @@ itself); `screenshotIntents` must reuse the action’s `stateName`, because a la
 navigates. `npm test` keeps the frame half of the evidence for every criterion as
 `tmp/verify/*.png` (mapped per criterion in `tmp/verify/evidence.json`), so the gate frames and the
 probe captures are two views of the same states.
+
+### One run, one retained capture set — the `singleRun` seek plan
+
+Criterion-linked captures are retained **per run**, and a session keeps the browser evidence of its
+*last* run: the twelve per-state runs above each need their own page load (`?t0=`), so eleven of them
+are dropped and only the last state’s captures survive. A review then reports every criterion that
+lives outside that one state as *“requires screenshot evidence”* — indistinguishable from a missing
+product feature even though the product is fine.
+
+`rocket-launch.html` therefore exposes `[CAP:SEEK]`: a key press fast-forwards the *same* fixed
+1/60 s steps the `?t0` warm-up uses to one of the launch states and then holds it (`dt = 0`, with the
+adaptive ladder pinned), so one session can reach every state in ascending time order without
+reloading and each capture shows exactly the state its `rd-*` diagnostics report:
+
+| key | simulated time | phase | state |
+| --- | --- | --- | --- |
+| `1` | 0.5 s | PRELAUNCH | `cold-start` |
+| `2` | 4.5 s | IGNITION | `ignition` |
+| `3` | 8.0 s | THRUST_RAMP | `engine-thrust-ramp` |
+| `4` | 9.3 s | CLAMP_RELEASE | `clamp-release` (arms mid-ramp, altitude still 0) |
+| `5` | 12.0 s | LIFTOFF | `liftoff` |
+| `6` | 20.0 s | ASCENT | `ascent` |
+| `7` | 30.0 s | CLOUD_LAYER | `cloud-layer` |
+| `8` | 45.0 s | HIGH_ALTITUDE | `high-altitude` |
+
+`tmp/verify/evidence-plan.json` carries that plan as `singleRun` (action + `screenshotIntent` per
+state, each with its `criteriaRefs`), together with `probeStates` for dedicated single-state runs. A
+run is `command: npm run dev`, `readinessPath: /rocket-launch.html?t0=0.5`, one `waitFor` press per
+state (the plan’s `key`, `locator: { canvas: true }`) and a `screenshotIntent` reusing that
+`stateName`, with `criteriaRefs` naming the criteria the state proves. This runtime captures a frame
+in roughly 20 s on the software rasteriser, so the plan keeps one evidence viewport per state and
+adds the second one only where a criterion needs it (AC-2, the coverage criterion: 800x450 at
+pre-launch plus 1024x576 at the cloud layer); `singleRun.criteriaCovered` must read 20/20.

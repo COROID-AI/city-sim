@@ -635,6 +635,67 @@ const probePlan = PROBE_STATES.map(({ state, url, checkpoint, phase }) => {
 });
 const coveredRefs = new Set(probePlan.flatMap((s) => s.criteriaRefs));
 const uncoveredRefs = CRITERIA.map((c) => c.ref).filter((ref) => !coveredRefs.has(ref));
+
+/* ------------------------------- one-run seek plan: what a single retained capture covers -- */
+/* The per-state probes above each need their own page load (`?t0=`), and a harness that keeps the
+ * browser evidence of the *last* run of a session therefore retains the captures of one state only,
+ * no matter how many runs it was given; the review then reports every criterion living outside that
+ * one state as "requires screenshot evidence", which looks like a missing product feature even
+ * though the product is fine. `rocket-launch.html` exposes a keyboard timeline seek (`[CAP:SEEK]`,
+ * keys 1-8) that fast-forwards the deterministic fixed-step simulation to a launch state and holds
+ * it, so ONE run reaches all of them without reloading: start at the pre-launch readiness path and
+ * press the keys in ascending time order, each press carrying its stateName + criteriaRefs and a
+ * matching screenshotIntent. `singleRun` is that plan. One capture costs this runtime's software
+ * rasteriser roughly 20 s, so the plan keeps one viewport per state and captures the second
+ * evidence viewport only where a criterion needs it (AC-2 is the coverage criterion: 800x450 at
+ * pre-launch plus 1024x576 at the cloud layer); the full 12-state matrix above stays available for
+ * dedicated single-state runs. */
+const SEEK_STATES = [
+  { key: '1', state: 'cold-start', time: 0.5, phase: 'PRELAUNCH', checkpoint: 'prelaunch', extraRefs: ['AC-2', 'AC-19'], viewports: ['evidence-800x450'] },
+  { key: '2', state: 'ignition', time: 4.5, phase: 'IGNITION', checkpoint: 'ignition', extraRefs: [], viewports: ['evidence-800x450'] },
+  { key: '3', state: 'engine-thrust-ramp', time: 8.0, phase: 'THRUST_RAMP', checkpoint: 'thrust-ramp', extraRefs: [], viewports: ['evidence-800x450'] },
+  { key: '4', state: 'clamp-release', time: 9.3, phase: 'CLAMP_RELEASE', checkpoint: 'clamp-release', extraRefs: ['AC-5', 'AC-13'], viewports: ['evidence-800x450'] },
+  { key: '5', state: 'liftoff', time: 12.0, phase: 'LIFTOFF', checkpoint: 'liftoff', extraRefs: [], viewports: ['evidence-800x450'] },
+  { key: '7', state: 'cloud-layer', time: 30.0, phase: 'CLOUD_LAYER', checkpoint: 'cloud-layer', extraRefs: ['AC-2'], viewports: ['evidence-800x450', 'evidence-1024x576'] },
+  { key: '8', state: 'high-altitude', time: 45.0, phase: 'HIGH_ALTITUDE', checkpoint: 'high-altitude', extraRefs: [], viewports: ['evidence-800x450'] },
+];
+const seekStates = SEEK_STATES.map((s) => {
+  const criteriaRefs = [
+    ...new Set([...CRITERIA.filter((c) => c.checkpoints.includes(s.checkpoint)).map((c) => c.ref), ...s.extraRefs]),
+  ];
+  return {
+    ...s,
+    criteriaRefs,
+    purpose: `${criteriaRefs.join('/')}: ${s.state} state (simulated t=${s.time.toFixed(1)}s) reached by key "${s.key}" and held for the capture`,
+  };
+});
+const seekCoveredRefs = new Set(seekStates.flatMap((s) => s.criteriaRefs));
+const seekUncoveredRefs = CRITERIA.map((c) => c.ref).filter((ref) => !seekCoveredRefs.has(ref));
+const singleRun = {
+  why: 'one session, one retained capture set: the harness keeps the browser evidence of the last run, so the criterion-linked frames of every state have to come out of a single run',
+  command: 'npm run dev',
+  readinessPath: PROBE_STATES[0].url,
+  seek: 'rocket-launch.html [CAP:SEEK] — press the keys in ascending time order; each press fast-forwards and holds that state (dt = 0)',
+  viewports: EVIDENCE_VIEWPORTS,
+  actions: seekStates.map((s) => ({
+    action: 'press',
+    key: s.key,
+    locator: { canvas: true },
+    stateName: s.state,
+    purpose: s.purpose,
+    criteriaRefs: s.criteriaRefs,
+    viewportNames: s.viewports,
+  })),
+  screenshotIntents: seekStates.map((s) => ({
+    stateName: s.state,
+    purpose: s.purpose,
+    criteriaRefs: s.criteriaRefs,
+    viewportNames: s.viewports,
+  })),
+  criteriaCovered: seekCoveredRefs.size,
+  criteriaTotal: CRITERIA.length,
+  uncovered: seekUncoveredRefs,
+};
 writeFileSync(
   path.join(OUT, 'evidence-plan.json'),
   JSON.stringify(
@@ -652,11 +713,14 @@ writeFileSync(
         'open every probeStates[].url in a real browser and capture BOTH evidence viewports in one run',
         'bind that state\'s criteriaRefs to the capture (dev_server_smoke_check screenshotIntents/actions)',
         'a criterion is only evidenced when one of these states yields its live state AND a frame',
+        'preferred: run singleRun once — one press per state, both evidence viewports, criteriaRefs bound',
+        'presses need the page from readinessPath first; states are visited in ascending time order',
       ],
       criteriaCovered: coveredRefs.size,
       criteriaTotal: CRITERIA.length,
       uncovered: uncoveredRefs,
       probeStates: probePlan,
+      singleRun,
     },
     null,
     2
@@ -664,6 +728,8 @@ writeFileSync(
 );
 console.log(`quality-control evidence plan: ${probePlan.length} AC-linked probe states cover ${coveredRefs.size}/${CRITERIA.length} criteria at ${EVIDENCE_VIEWPORTS.map((v) => `${v.width}x${v.height}`).join(' + ')} -> ${evidencePrefix}/evidence-plan.json`);
 if (uncoveredRefs.length) warnings.push(`quality-control evidence plan leaves ${uncoveredRefs.join(', ')} without a probe state`);
+console.log(`single-run seek plan: ${seekStates.length} states (keys ${seekStates.map((s) => s.key).join(',')}) cover ${seekCoveredRefs.size}/${CRITERIA.length} criteria in one run -> ${evidencePrefix}/evidence-plan.json`);
+if (seekUncoveredRefs.length) warnings.push(`single-run seek plan leaves ${seekUncoveredRefs.join(', ')} without a state`);
 if (unlinked.length) warnings.push(`no executed checkpoint mapped to ${unlinked.join(', ')} (run without --quick for the full criterion map)`);
 
 if (warnings.length) {
