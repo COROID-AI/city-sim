@@ -1,0 +1,28 @@
+{
+  "description": "Single-file Three.js rocket launch scene (rocket-launch.html) plus dev-only verification tooling. No build step and no runtime dependencies: the product is one self-contained HTML file.",
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "three.js",
+    "rocket-launch",
+    "webgl",
+    "single-file"
+  ],
+  "license": "MIT",
+  "name": "rocket-launch-scene",
+  "private": true,
+  "scripts": {
+    "dev": "node tools/serve.mjs",
+    "serve": "node tools/serve.mjs",
+    "start": "node tools/serve.mjs",
+    "test": "node tools/verify.mjs",
+    "verify": "node tools/verify.mjs",
+    "verify:all": "node tools/verify.mjs",
+    "verify:browser": "node tools/verify-browser.mjs",
+    "verify:browser:mirror": "node tools/verify-browser.mjs --mirror",
+    "verify:static": "node tools/verify-static.mjs"
+  },
+  "type": "module",
+  "version": "1.0.0"
+}

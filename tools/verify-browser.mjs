@@ -506,6 +506,83 @@ if (!KEEP) {
   /* screenshots stay in tmp/verify for inspection; nothing to clean outside it */
 }
 
+/* ------------------------------------------- acceptance-criterion evidence (live + screenshot) -- */
+/* Every checkpoint yields two kinds of acceptance evidence: the live runtime state read out of the
+ * page (the `data-rd-*` diagnostics, i.e. live functional evidence) and the function of the same
+ * checkpoint's retained frame on disk (`<checkpoint>.png`, i.e. screenshot evidence). Mapping both
+ * onto the acceptance criteria keeps the live run citable per criterion, instead of forcing a
+ * hand-built mapping after the fact. `tmp/verify/evidence.json` is the machine-readable result. */
+const CRITERIA = [
+  { ref: 'AC-1', label: 'cold start renders the scene automatically (boot marker, no Uncaught)', checkpoints: ['prelaunch', 'isolated'] },
+  { ref: 'AC-2', label: 'scene fills the viewport edge to edge at 800x450 and 1024x576', checkpoints: ['coverage-800', 'coverage-1024'] },
+  { ref: 'AC-3', label: 'body holds only the canvas — no overlay, text or UI', checkpoints: ['prelaunch', 'coverage-1024'] },
+  { ref: 'AC-4', label: 'frames stay bright and colourful, blue sky at pre-launch', checkpoints: ['prelaunch', 'ignition', 'thrust-ramp', 'liftoff', 'cloud-layer', 'high-altitude'] },
+  { ref: 'AC-5', label: 'rocket vertical on the pad, prominent, held by the tower arms', checkpoints: ['prelaunch'] },
+  { ref: 'AC-6', label: 'required sequence with observable state changes', checkpoints: ['prelaunch', 'ignition', 'thrust-ramp', 'clamp-release', 'liftoff', 'ascent-18', 'cloud-layer', 'high-altitude'] },
+  { ref: 'AC-7', label: 'multi-layered engine fire with a measurable near-white core', checkpoints: ['thrust-ramp', 'liftoff', 'nofx'] },
+  { ref: 'AC-8', label: 'engine light brightens and warms the pad, structure and rocket body', checkpoints: ['prelaunch', 'thrust-ramp', 'liftoff'] },
+  { ref: 'AC-9', label: 'smoke and dust roll, spread radially and rise', checkpoints: ['ignition', 'liftoff', 'ascent-18', 'cloud-layer', 'high-altitude'] },
+  { ref: 'AC-10', label: 'sparks, embers, dust motes and debris are active and moving', checkpoints: ['thrust-ramp', 'liftoff', 'ascent-20', 'ascent-20-progress'] },
+  { ref: 'AC-11', label: 'vegetation bends and loose props react to the exhaust', checkpoints: ['prelaunch', 'thrust-ramp', 'liftoff'] },
+  { ref: 'AC-12', label: 'clamps release before the altitude leaves the pad', checkpoints: ['clamp-release', 'liftoff'] },
+  { ref: 'AC-13', label: 'vertical rise with smooth acceleration and no lateral drift', checkpoints: ['liftoff', 'ascent-18', 'ascent-20', 'cloud-layer'] },
+  { ref: 'AC-14', label: 'long plume stays attached and keeps changing shape', checkpoints: ['liftoff', 'ascent-18', 'cloud-layer', 'high-altitude'] },
+  { ref: 'AC-15', label: 'rocket stays prominent, camera follows, shake stays watchable', checkpoints: ['prelaunch', 'thrust-ramp', 'liftoff', 'ascent-20', 'high-altitude'] },
+  { ref: 'AC-16', label: 'layered cloud decks plus landscape reveal below', checkpoints: ['cloud-layer', 'high-altitude'] },
+  { ref: 'AC-17', label: 'viewport stays tight and dense, animation visibly progresses', checkpoints: ['prelaunch', 'thrust-ramp', 'ascent-20', 'ascent-20-progress', 'high-altitude'] },
+  { ref: 'AC-18', label: 'heat shimmer / atmospheric distortion near the exhaust', checkpoints: ['prelaunch', 'thrust-ramp', 'nofx', 'quality-low'] },
+  { ref: 'AC-19', label: 'one external dependency only; renders outside the repository layout', checkpoints: ['isolated'] },
+  { ref: 'AC-20', label: 'performance budgets respected, adaptive quality path works', checkpoints: ['quality-low', 'thrust-ramp', 'high-altitude'] },
+];
+const LIVE_DIAG_KEYS = [
+  'phase', 't', 'thrust', 'clamp', 'vib', 'plume', 'smoke', 'sparks', 'embers', 'debris', 'smokeradius',
+  'smokey', 'campos', 'rocketscreen', 'rect', 'inner', 'dpr', 'draw', 'tri', 'mesh', 'fps', 'quality',
+  'fx', 'shimmer', 'veg', 'beacon', 'error',
+];
+const evidencePrefix = path.relative(ROOT, OUT).split(path.sep).join('/');
+const criteriaEvidence = CRITERIA.map(({ ref, label, checkpoints }) => {
+  const entries = [];
+  const missingCheckpoints = [];
+  for (const id of checkpoints) {
+    const rec = results[id];
+    if (!rec || !rec.diag || rec.diag.phase === undefined) {
+      missingCheckpoints.push(id);
+      continue;
+    }
+    entries.push({
+      checkpoint: id,
+      screenshot: `${evidencePrefix}/${id}.png`,
+      live: Object.fromEntries(LIVE_DIAG_KEYS.filter((k) => rec.diag[k] !== undefined).map((k) => [k, rec.diag[k]])),
+      frame: Object.fromEntries(Object.entries(rec.stats || {}).filter(([, v]) => typeof v === 'number')),
+    });
+  }
+  return { ref, label, evidenceKinds: ['live_functional', 'screenshot'], checkpoints: entries, missingCheckpoints };
+});
+const unlinked = criteriaEvidence.filter((c) => c.checkpoints.length === 0).map((c) => c.ref);
+writeFileSync(
+  path.join(OUT, 'evidence.json'),
+  JSON.stringify(
+    {
+      generated: new Date().toISOString(),
+      mode,
+      source: 'tools/verify-browser.mjs — live headless-Chromium run of rocket-launch.html',
+      evidenceKinds: {
+        live_functional: 'runtime state read from the live page (data-rd-* diagnostics at the checkpoint time)',
+        screenshot: 'the same checkpoint’s captured frame, retained on disk for inspection',
+      },
+      criteriaLinked: criteriaEvidence.length - unlinked.length,
+      criteriaTotal: criteriaEvidence.length,
+      unlinked,
+      criteria: criteriaEvidence,
+    },
+    null,
+    2
+  )
+);
+console.log('');
+console.log(`acceptance evidence: ${criteriaEvidence.length - unlinked.length}/${criteriaEvidence.length} criteria linked to live checkpoints + retained frames -> ${evidencePrefix}/evidence.json`);
+if (unlinked.length) warnings.push(`no executed checkpoint mapped to ${unlinked.join(', ')} (run without --quick for the full criterion map)`);
+
 if (warnings.length) {
   console.log('');
   console.log('warnings:');

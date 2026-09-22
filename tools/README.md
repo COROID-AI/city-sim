@@ -6,12 +6,57 @@ deleted: it references nothing but the pinned Three.js CDN ES module, generates 
 canvas 2D at runtime and holds no relative asset, style or script reference.
 
 ```bash
+node tools/verify.mjs             # one command: static gate + full browser gate (non-zero on failure)
 node tools/verify-static.mjs      # deterministic structure/self-containment/contract gate
 node tools/verify-browser.mjs     # headless-Chromium render + frame-analysis gate
 node tools/verify-browser.mjs --quick      # 5 checkpoints instead of the full matrix
 node tools/verify-browser.mjs --mirror     # force the local-mirror mode (skip the CDN probe)
 node tools/verify-browser.mjs --cdn        # force the CDN mode (skip the reachability probe)
+node tools/serve.mjs              # dependency-free static server for live/browser probes
 ```
+
+The root `package.json` is a thin, dependency-free wrapper around exactly those commands (no build
+step, no install, no runtime dependency — the product is still the single HTML file):
+
+```bash
+npm run dev            # = node tools/serve.mjs   (loopback static server, PORT honoured)
+npm start              # same
+npm run verify         # static gate + full browser gate
+npm run verify:static  # static gate only
+npm run verify:browser # browser gate only
+npm test               # same as npm run verify (non-zero exit on any failure)
+```
+
+## `tools/serve.mjs` — runnable entry point for live verification
+
+`rocket-launch.html` is delivered as a `file://` page, but automated live verification (browser
+probes that must screenshot AC-linked states, CDP sessions, `http://` captures) needs an origin to
+load, and the environment ships no server (no Python, and `npx` would need the network). This script
+closes that capability gap with Node builtins only:
+
+* serves the repository root read-only, `127.0.0.1` only (never `0.0.0.0`/`::`);
+* `/` resolves to `/rocket-launch.html`; query strings pass through, so the page hooks work over
+  HTTP exactly as they do over `file://` (`http://127.0.0.1:PORT/rocket-launch.html?t0=8&nofx=1`);
+* honours `PORT` (the port owned by the verification harness) and `--port/--root/--host`;
+* `no-store` responses, path-traversal safe, 404 for unknown paths, 405 for non-GET/HEAD;
+* prints `ROCKET_SERVE_READY http://127.0.0.1:PORT/rocket-launch.html`, the readiness line a probe
+  can wait for, and exits on SIGINT/SIGTERM.
+
+### Live functional + screenshot evidence
+
+Because the page is now servable, live acceptance evidence can be captured against the real
+deliverable and bound to acceptance criteria instead of being re-derived by hand:
+
+1. start the server (`npm run dev`, or `node tools/serve.mjs` in a harness-managed port);
+2. open the ready URL in a real browser and record the AC-linked states — baseline `PRELAUNCH`
+   (`?t0=0.5`), `IGNITION` (`?t0=4.5`), `THRUST_RAMP` (`?t0=8`), `CLAMP_RELEASE` (`?t0=9.6`),
+   `LIFTOFF` (`?t0=12`), `ASCENT` (`?t0=18`), `CLOUD_LAYER` (`?t0=30`), `HIGH_ALTITUDE` (`?t0=45`),
+   the post-processing bypass (`?nofx=1`) and the reduced quality path (`?q=low`);
+3. assert against the live `data-rd-*` diagnostics and the captured frames (the same thresholds the
+   browser gate uses), so both the functional evidence (live state) and the screenshot evidence
+   (captured frames at 800x450 and 1024x576) come from one probe run;
+4. keep the `file://` route as the primary product surface: the server must never be required for
+   the page to work, and `tools/verify-static.mjs` fails if the product references `tools/`.
 
 Both use Node builtins only (`node:fs`, `node:zlib`, `node:http`, `node:https`,
 `node:child_process`, `node:path`, `node:url`) — no install step, no package manager, no framework.
@@ -114,6 +159,9 @@ Everything is written to `tmp/verify/` (git-ignored):
 
 * `<checkpoint-id>.png` — captured frames (kept for inspection),
 * `report.json` — mode, per-checkpoint timing/phase and the failure list,
+* `evidence.json` — acceptance-criterion evidence map: for every criterion the executed checkpoints
+  that evidence it, each with the live `data-rd-*` runtime state (live functional evidence) and the
+  retained frame path (screenshot evidence), so a live run is citable per criterion,
 * `extracted.mjs` — the module extracted by the static gate, used for `node --check`,
 * `isolated/` — temporary copy used for the isolation checkpoint (removed on pass),
 * `mirror.html` — the rewritten temp copy used in mirror mode.
