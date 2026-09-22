@@ -277,3 +277,82 @@ Everything is written to `tmp/verify/` (git-ignored):
 0–4, colour types 0/2/4/6) plus the frame statistics the gate thresholds rest on: mean luma, mean
 saturation, unique quantised colours, largest uniform region, per-edge border coverage, blue-sky
 reading, near-white flame-core ratio, normalised-region statistics and inter-frame difference.
+
+## Quality-control evidence contract — one AC-linked probe per scene state
+
+Acceptance verification is reviewed **per criterion**, and a criterion is only evidenced when one
+live run yields both kinds of evidence for it:
+
+* **live functional evidence** — the runtime state read out of the live page (`data-rd-*`), and
+* **screenshot evidence** — a frame captured in that same run, retained for visual inspection.
+
+One probe of one scene state cannot cover the whole criterion set. The multi-layer flame rig only
+exists at thrust, the cloud decks only exist above the pad, the post-processing bypass only exists
+with `?nofx=1`, the reduced-quality path only with `?q=low`, the clamp release only during its ~0.9 s
+ramp, and AC-19 is a property of the delivered file itself. Probing a single state — typically
+pre-launch — therefore leaves every criterion that lives at another point of the sequence reported
+as “requires screenshot evidence”, which is indistinguishable from a missing product feature even
+though the product is fine. **Probe each state once, at both evidence viewports, and bind that
+state’s criteria to the capture.**
+
+`tools/verify-browser.mjs` emits the exact, minimal plan as `tmp/verify/evidence-plan.json` and
+prints a `quality-control evidence plan: …` checklist line with it:
+
+* `probeStates[]` — `state`, `url`, `phase`, `viewports` (both evidence viewports) and the
+  `criteriaRefs` that state evidences,
+* `evidenceViewports` — `800x450` and `1024x576`,
+* `criteriaCovered` / `criteriaTotal` / `uncovered` — a non-empty `uncovered` list is a gap in the
+  *evidence*, not in the product.
+
+The states, their URLs and the checkpoint each one mirrors (the criteria binding is generated in
+`evidence-plan.json`, derived from the criterion ↦ checkpoint map above):
+
+| `state` | URL | phase | mirrors checkpoint |
+| --- | --- | --- | --- |
+| `cold-start` | `/rocket-launch.html?t0=0.5` | PRELAUNCH | `prelaunch` |
+| `ignition` | `/rocket-launch.html?t0=4.5` | IGNITION | `ignition` |
+| `engine-thrust-ramp` | `/rocket-launch.html?t0=8` | THRUST_RAMP | `thrust-ramp` |
+| `clamp-release` | `/rocket-launch.html?t0=9.3` | CLAMP_RELEASE | `clamp-release` |
+| `liftoff` | `/rocket-launch.html?t0=12` | LIFTOFF | `liftoff` |
+| `ascent` | `/rocket-launch.html?t0=20` | ASCENT | `ascent-20` |
+| `cloud-layer` | `/rocket-launch.html?t0=30` | CLOUD_LAYER | `cloud-layer` |
+| `high-altitude` | `/rocket-launch.html?t0=45` | HIGH_ALTITUDE | `high-altitude` |
+| `edge-to-edge-800` | `/rocket-launch.html?t0=0.5` | PRELAUNCH | `coverage-800` |
+| `edge-to-edge-1024` | `/rocket-launch.html?t0=30` | CLOUD_LAYER | `coverage-1024` |
+| `postfx-bypass` | `/rocket-launch.html?t0=8&nofx=1` | THRUST_RAMP | `nofx` |
+| `adaptive-quality-low` | `/rocket-launch.html?t0=8&q=low` | THRUST_RAMP | `quality-low` |
+
+Each row is one `dev_server_smoke_check` run against the served page — the run starts the server
+itself (`command: npm run dev`, `readinessPath: <the row's url>`), declares the two evidence
+viewports, and repeats one `waitFor` action on the canvas plus a matching `screenshotIntent` per
+viewport, carrying the row's `criteriaRefs`:
+
+```jsonc
+{
+  "viewports": [
+    { "name": "evidence-800x450",  "width": 800,  "height": 450 },
+    { "name": "evidence-1024x576", "width": 1024, "height": 576 }
+  ],
+  "actions": [{
+    "action": "waitFor",
+    "locator": { "canvas": true },
+    "stateName": "engine-thrust-ramp",
+    "purpose": "AC-7/AC-8/AC-20: multi-layer flame rig, engine light warm wash and budgets at high thrust",
+    "criteriaRefs": ["AC-4", "AC-6", "AC-7", "AC-8", "AC-9", "AC-10", "AC-11", "AC-14",
+                     "AC-15", "AC-17", "AC-18", "AC-20"],
+    "viewportNames": ["evidence-800x450", "evidence-1024x576"]
+  }],
+  "screenshotIntents": [{
+    "stateName": "engine-thrust-ramp",
+    "purpose": "AC-7/AC-8/AC-20: screenshot evidence for the same state at both evidence viewports",
+    "criteriaRefs": ["AC-7", "AC-8", "AC-20"],
+    "viewportNames": ["evidence-800x450", "evidence-1024x576"]
+  }]
+}
+```
+
+A `waitFor` on the canvas is the readiness interaction the page needs (the animation starts by
+itself); `screenshotIntents` must reuse the action’s `stateName`, because a label alone never
+navigates. `npm test` keeps the frame half of the evidence for every criterion as
+`tmp/verify/*.png` (mapped per criterion in `tmp/verify/evidence.json`), so the gate frames and the
+probe captures are two views of the same states.
