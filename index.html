@@ -1,0 +1,2211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+  /* ==========================================================================
+     FULL-BLEED VIEWPORT — no margins, borders, scrollbars or unused area.
+     ========================================================================== */
+  html, body {
+    margin: 0; padding: 0; border: 0;
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #8ec6ff;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body { position: fixed; left: 0; top: 0; right: 0; bottom: 0; }
+  canvas#stage {
+    display: block;
+    position: fixed;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    margin: 0; padding: 0; border: 0; outline: 0;
+    touch-action: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<!-- Pinned Three.js ES-module CDN (r160 removed the UMD builds). -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+/* ===========================================================================
+   ROCKET LAUNCH — single self-contained Three.js scene.
+   Everything (geometry, textures, particles, post FX) is generated in code.
+   No build step, no assets, no UI: the viewport contains only the 3D scene.
+   =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   SECTION 0 — MODULE BOOTSTRAP (CDN import with a single-host fallback)
+   --------------------------------------------------------------------------- */
+const CDN_FALLBACK = 'https://unpkg.com/three@0.160.0/build/three.module.js';
+let THREE;
+try {
+  THREE = await import('three');
+} catch (err) {
+  THREE = await import(CDN_FALLBACK);
+}
+
+/* ---------------------------------------------------------------------------
+   SECTION 1 — CONSTANTS, MATH AND SMALL UTILITIES
+   --------------------------------------------------------------------------- */
+const PAD_Y = 20;            // launch-pad deck height (top surface)
+const ROCKET_BODY = 100;     // cylindrical body length
+const ROCKET_NOSE = 34;      // ogive nose length
+const ROCKET_HEIGHT = ROCKET_BODY + ROCKET_NOSE;
+const ROCKET_TAIL = 14;      // thrust structure below the tank skirt
+
+// Deterministic timeline (seconds).
+const T = {
+  ignite: 3.0,          // engines begin to light
+  igniteFull: 6.0,      // flames well established
+  thrustEnd: 9.0,       // full thrust achieved
+  release: 9.6,         // hold-down clamps + swing arms retract
+  liftoff: 10.0,        // first vertical motion
+  max: 90.0             // nominal end of the sequence
+};
+
+// Flight profile: smooth, powerful, monotonic acceleration.
+const V_MAX = 90;
+const TAU_V = 5;
+const CLIMB_FULL = 48;  // time at which the pull-back finishes
+
+const SUN_DIR = new THREE.Vector3(0.63, 0.70, 0.33).normalize();
+const FOG_COLOR = new THREE.Color(0x9cc8ef);
+
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+const clamp01 = v => clamp(v, 0, 1);
+const lerp = (a, b, t) => a + (b - a) * t;
+function smoothstep(a, b, x) {
+  const t = clamp01((x - a) / (b - a || 1e-6));
+  return t * t * (3 - 2 * t);
+}
+
+// JS value noise (used for terrain, layout jitter and organic curves).
+function hash2(x, y) {
+  const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+  return s - Math.floor(s);
+}
+function vnoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  const a = hash2(ix, iy), b = hash2(ix + 1, iy);
+  const c = hash2(ix, iy + 1), d = hash2(ix + 1, iy + 1);
+  return a * (1 - ux) * (1 - uy) + b * ux * (1 - uy) + c * (1 - ux) * uy + d * ux * uy;
+}
+function fbm2(x, y, oct) {
+  let s = 0, a = 0.5, f = 1, norm = 0;
+  for (let i = 0; i < (oct || 4); i++) { s += a * vnoise(x * f, y * f); norm += a; f *= 2.03; a *= 0.5; }
+  return s / norm;
+}
+// Deterministic pseudo-random stream so the scene is identical every load.
+let _seed = 1337;
+function rnd() { _seed = (_seed * 1664525 + 1013904223) % 4294967296; return _seed / 4294967296; }
+function rndRange(a, b) { return a + (b - a) * rnd(); }
+
+// Scratch objects (no per-frame allocation).
+const _v3a = new THREE.Vector3(), _v3b = new THREE.Vector3(), _v3c = new THREE.Vector3();
+const _q = new THREE.Quaternion(), _m4 = new THREE.Matrix4();
+const UP = new THREE.Vector3(0, 1, 0);
+const _beamDir = new THREE.Vector3(), _beamMid = new THREE.Vector3(), _beamScale = new THREE.Vector3();
+const _euler = new THREE.Euler();
+
+/* Shared GLSL: hash / value noise / fbm --- used by every custom shader. */
+const GLSL_NOISE = `
+float hash11(float p){ p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
+float hash21(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float vnoise2(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i); float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0)); float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y); }
+float fbm2d(vec2 p){ float s = 0.0; float a = 0.5;
+  for(int i = 0; i < 4; i++){ s += a * vnoise2(p); p *= 2.03; a *= 0.5; } return s; }
+`;
+
+/* ---------------------------------------------------------------------------
+   SECTION 2 — PROCEDURAL TEXTURES (CanvasTexture only; zero external assets)
+   --------------------------------------------------------------------------- */
+function newCanvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return c;
+}
+function finishTexture(canvas, repeatX, repeatY) {
+  const t = new THREE.CanvasTexture(canvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeatX || 1, repeatY || 1);
+  t.anisotropy = 4;
+  return t;
+}
+
+/* White booster skin: panel seams, rivets, colour bands, soot and grime. */
+function makeRocketTexture() {
+  const c = newCanvas(1024, 1024), g = c.getContext('2d');
+  g.fillStyle = '#f4f3ee'; g.fillRect(0, 0, 1024, 1024);
+  // subtle vertical panel shading
+  for (let i = 0; i < 40; i++) {
+    const x = i * 25.6;
+    g.fillStyle = 'rgba(160,170,185,' + (0.04 + 0.05 * hash2(i, 3)) + ')';
+    g.fillRect(x, 0, 2, 1024);
+  }
+  // horizontal panel seams (uv.y 0 == tail)
+  for (let j = 0; j < 13; j++) {
+    const y = j * 78 + 8;
+    g.strokeStyle = 'rgba(120,128,140,0.55)'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(1024, y); g.stroke();
+  }
+  // rivet rows
+  for (let j = 0; j < 13; j++) {
+    const y = j * 78 + 8;
+    for (let i = 0; i < 64; i++) {
+      g.fillStyle = 'rgba(140,148,160,0.5)';
+      g.beginPath(); g.arc(i * 16 + 6, y + 6, 1.6, 0, 6.2832); g.fill();
+    }
+  }
+  // red roll-pattern band near the tail
+  g.fillStyle = '#d22b26'; g.fillRect(0, 60, 1024, 62);
+  g.fillStyle = 'rgba(255,255,255,0.22)'; g.fillRect(0, 60, 1024, 8);
+  // blue field with white star cluster (abstract livery, no lettering)
+  g.fillStyle = '#1e58c8'; g.fillRect(0, 330, 1024, 118);
+  g.fillStyle = '#ffffff';
+  for (let i = 0; i < 7; i++) {
+    const cx = 80 + i * 143, cy = 389, r = 17;
+    g.beginPath();
+    for (let k = 0; k < 10; k++) {
+      const rr = k % 2 ? r * 0.44 : r;
+      const a = -Math.PI / 2 + k * Math.PI / 5;
+      const px = cx + Math.cos(a) * rr, py = cy + Math.sin(a) * rr;
+      if (k === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.closePath(); g.fill();
+  }
+  // hazard chevrons near the thrust structure
+  for (let i = 0; i < 34; i++) {
+    g.fillStyle = i % 2 ? '#ffd21f' : '#2b2b2b';
+    g.save(); g.beginPath();
+    g.moveTo(i * 30, 14); g.lineTo(i * 30 + 20, 14); g.lineTo(i * 30 + 8, 46); g.lineTo(i * 30 - 12, 46);
+    g.closePath(); g.fill(); g.restore();
+  }
+  // exhaust soot + weathering streaks
+  for (let i = 0; i < 260; i++) {
+    const x = rndRange(0, 1024), y = rndRange(0, 130), w = rndRange(2, 16), h = rndRange(10, 90);
+    g.fillStyle = 'rgba(40,38,36,' + rndRange(0.02, 0.12) + ')';
+    g.fillRect(x, y, w, h);
+  }
+  for (let i = 0; i < 90; i++) {
+    const x = rndRange(0, 1024), y = rndRange(0, 1024);
+    g.fillStyle = 'rgba(150,150,145,' + rndRange(0.02, 0.08) + ')';
+    g.fillRect(x, y, rndRange(3, 26), rndRange(2, 30));
+  }
+  return finishTexture(c, 1, 1);
+}
+
+/* Painted structural steel (tower, masts, pipes). */
+function makeSteelTexture(base, accent, repeat) {
+  const c = newCanvas(256, 256), g = c.getContext('2d');
+  g.fillStyle = base; g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 900; i++) {
+    g.fillStyle = 'rgba(0,0,0,' + rndRange(0.01, 0.07) + ')';
+    g.fillRect(rndRange(0, 256), rndRange(0, 256), rndRange(1, 5), rndRange(1, 5));
+  }
+  g.fillStyle = accent; g.fillRect(0, 0, 256, 10); g.fillRect(0, 246, 256, 10);
+  g.fillStyle = 'rgba(255,255,255,0.10)'; g.fillRect(0, 0, 6, 256);
+  for (let i = 0; i < 22; i++) {
+    g.fillStyle = 'rgba(30,30,30,0.35)';
+    g.beginPath(); g.arc(rndRange(8, 248), rndRange(8, 248), 2.4, 0, 6.2832); g.fill();
+  }
+  return finishTexture(c, repeat || 3, repeat || 3);
+}
+
+/* Concrete apron with expansion joints and wear. */
+function makeConcreteTexture() {
+  const c = newCanvas(512, 512), g = c.getContext('2d');
+  g.fillStyle = '#b9b7ad'; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 9000; i++) {
+    const v = rndRange(0.03, 0.16);
+    g.fillStyle = (rnd() > 0.5 ? 'rgba(255,255,255,' : 'rgba(60,58,54,') + v + ')';
+    g.fillRect(rndRange(0, 512), rndRange(0, 512), rndRange(1, 4), rndRange(1, 4));
+  }
+  g.strokeStyle = 'rgba(80,78,74,0.7)'; g.lineWidth = 3;
+  for (let i = 0; i <= 4; i++) {
+    g.beginPath(); g.moveTo(i * 128, 0); g.lineTo(i * 128, 512); g.stroke();
+    g.beginPath(); g.moveTo(0, i * 128); g.lineTo(512, i * 128); g.stroke();
+  }
+  for (let i = 0; i < 40; i++) {
+    g.fillStyle = 'rgba(90,86,80,' + rndRange(0.05, 0.18) + ')';
+    g.fillRect(rndRange(0, 512), rndRange(0, 512), rndRange(10, 80), rndRange(4, 26));
+  }
+  return finishTexture(c, 6, 6);
+}
+
+/* Soft billowing puff sprite (smoke / dust / clouds). */
+function makePuffTexture(size, blobs, hardness) {
+  const s = size || 256;
+  const c = newCanvas(s, s), g = c.getContext('2d');
+  g.clearRect(0, 0, s, s);
+  for (let i = 0; i < blobs; i++) {
+    const a = rnd() * 6.2832;
+    const rad = rnd() * s * 0.24;
+    const x = s / 2 + Math.cos(a) * rad, y = s / 2 + Math.sin(a) * rad;
+    const r = s * (0.12 + rnd() * 0.20);
+    const grd = g.createRadialGradient(x, y, r * 0.05, x, y, r);
+    const peak = 0.32 + rnd() * 0.30;
+    grd.addColorStop(0, 'rgba(255,255,255,' + peak + ')');
+    grd.addColorStop(hardness || 0.45, 'rgba(255,255,255,' + (peak * 0.5) + ')');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
+  }
+  // hard mask so the sprite never shows a square edge
+  const m = g.createRadialGradient(s / 2, s / 2, s * 0.30, s / 2, s / 2, s * 0.50);
+  m.addColorStop(0, 'rgba(0,0,0,0)');
+  m.addColorStop(1, 'rgba(0,0,0,1)');
+  g.globalCompositeOperation = 'destination-out';
+  g.fillStyle = m; g.fillRect(0, 0, s, s);
+  g.globalCompositeOperation = 'source-over';
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/* Additive radial glow (sparks, embers, engine bloom source). */
+function makeGlowTexture(size, core) {
+  const s = size || 128;
+  const c = newCanvas(s, s), g = c.getContext('2d');
+  const grd = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(core || 0.18, 'rgba(255,240,205,0.85)');
+  grd.addColorStop(0.45, 'rgba(255,170,70,0.28)');
+  grd.addColorStop(1, 'rgba(255,120,30,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, s, s);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/* High-frequency terrain detail (fine grain + soft blots) so the landscape
+   keeps texture and contrast even when seen from high altitude. */
+function makeTerrainDetailTexture() {
+  const c = newCanvas(512, 512), g = c.getContext('2d');
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 24000; i++) {
+    g.fillStyle = rnd() > 0.5 ? 'rgba(255,255,250,0.45)' : 'rgba(74,72,58,0.45)';
+    g.fillRect(rndRange(0, 512), rndRange(0, 512), 1.6, 1.6);
+  }
+  for (let i = 0; i < 300; i++) {
+    const x = rndRange(0, 512), y = rndRange(0, 512), r = rndRange(5, 44);
+    const grd = g.createRadialGradient(x, y, 0, x, y, r);
+    grd.addColorStop(0, rnd() > 0.5 ? 'rgba(58,58,46,0.32)' : 'rgba(255,252,232,0.30)');
+    grd.addColorStop(1, 'rgba(128,128,128,0)');
+    g.fillStyle = grd;
+    g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill();
+  }
+  return finishDetailTexture(finishTexture(c, 140, 140));
+}
+/* Detail maps are sampled at grazing angles across the whole landscape, so
+   anisotropic filtering is left off: it is the single most expensive texture
+   operation in a software rasteriser. */
+function finishDetailTexture(t) { t.anisotropy = 1; return t; }
+
+const TEX = {
+  rocket: makeRocketTexture(),
+  steelRed: makeSteelTexture('#c8452f', '#f4d03f', 3),
+  steelGrey: makeSteelTexture('#9aa1a8', '#5e666e', 4),
+  steelWhite: makeSteelTexture('#e6e8ea', '#b9bec4', 3),
+  concrete: makeConcreteTexture(),
+  puff: makePuffTexture(256, 26, 0.42),
+  dust: makePuffTexture(256, 30, 0.30),
+  cloud: makePuffTexture(256, 34, 0.30),
+  terrain: makeTerrainDetailTexture(),
+  glow: makeGlowTexture(128, 0.16),
+  spark: makeGlowTexture(64, 0.30)
+};
+
+/* ---------------------------------------------------------------------------
+   SECTION 3 — RENDERER, CAMERA, SCENE AND POST-PROCESSING PIPELINE
+   --------------------------------------------------------------------------- */
+const canvas = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({
+  canvas, antialias: false, alpha: false, stencil: false, powerPreference: 'high-performance'
+});
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.92;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// The shadow casters are mostly static, so the depth pass runs every other
+// frame — halves the fixed per-frame cost without any visible difference.
+renderer.shadowMap.autoUpdate = false;
+renderer.setClearColor(0x9dcbf5, 1);
+renderer.info.autoReset = false;   // accumulate across the whole post chain
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(FOG_COLOR.getHex(), 0.000019);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 1, 60000);
+
+/* --- full-screen post pass helper (ortho quad, no addons) --- */
+const postScene = new THREE.Scene();
+const postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+postQuad.frustumCulled = false;
+postScene.add(postQuad);
+function makePostMaterial(fragment, uniforms) {
+  postQuad.material = new THREE.ShaderMaterial({
+    uniforms, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: fragment, depthTest: false, depthWrite: false
+  });
+  return postQuad.material;
+}
+const POST_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+
+let rtScene = null, rtBright = null, rtBlurA = null, rtBlurB = null, rtHalfA = null, rtHalfB = null;
+const RT_OPTS = { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false, depthBuffer: false };
+
+const brightMat = new THREE.ShaderMaterial({
+  uniforms: { tDiffuse: { value: null }, uThreshold: { value: 1.05 }, uKnee: { value: 0.6 } },
+  vertexShader: POST_VS,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uThreshold; uniform float uKnee;
+    varying vec2 vUv;
+    void main(){
+      vec3 c = texture2D(tDiffuse, vUv).rgb;
+      float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      float soft = clamp((l - uThreshold + uKnee) / (uKnee * 2.0), 0.0, 1.0);
+      float w = max(l - uThreshold, soft * soft * uKnee * 0.5) / max(l, 1e-4);
+      gl_FragColor = vec4(c * w, 1.0);
+    }`,
+  depthTest: false, depthWrite: false
+});
+
+function blurMaterial(dirX, dirY) {
+  return new THREE.ShaderMaterial({
+    uniforms: { tDiffuse: { value: null }, uDir: { value: new THREE.Vector2(dirX, dirY) }, uTexel: { value: new THREE.Vector2(1 / 256, 1 / 256) } },
+    vertexShader: POST_VS,
+    fragmentShader: `
+      uniform sampler2D tDiffuse; uniform vec2 uDir; uniform vec2 uTexel; varying vec2 vUv;
+      void main(){
+        vec2 o = uDir * uTexel;
+        vec3 s = texture2D(tDiffuse, vUv).rgb * 0.2270270270;
+        s += texture2D(tDiffuse, vUv + o * 1.3846153846).rgb * 0.3162162162;
+        s += texture2D(tDiffuse, vUv - o * 1.3846153846).rgb * 0.3162162162;
+        s += texture2D(tDiffuse, vUv + o * 3.2307692308).rgb * 0.0702702703;
+        s += texture2D(tDiffuse, vUv - o * 3.2307692308).rgb * 0.0702702703;
+        gl_FragColor = vec4(s, 1.0);
+      }`,
+    depthTest: false, depthWrite: false
+  });
+}
+
+/* Final composite: scene + bloom, heat shimmer, ACES tone map, sRGB output. */
+const compositeMat = new THREE.ShaderMaterial({
+  uniforms: {
+    tScene: { value: null }, tBloomA: { value: null }, tBloomB: { value: null },
+    uBloom: { value: 1.0 }, uHeat: { value: 0 }, uEngineUV: { value: new THREE.Vector2(0.5, 0.5) },
+    uTime: { value: 0 }, uAspect: { value: 1 }, uExposure: { value: 1.0 }
+  },
+  vertexShader: POST_VS,
+  fragmentShader: `
+    uniform sampler2D tScene; uniform sampler2D tBloomA; uniform sampler2D tBloomB;
+    uniform float uBloom; uniform float uHeat; uniform vec2 uEngineUV;
+    uniform float uTime; uniform float uAspect; uniform float uExposure;
+    varying vec2 vUv;
+    ${GLSL_NOISE}
+    void main(){
+      vec2 uv = vUv;
+      vec2 d = (uv - uEngineUV) * vec2(uAspect, 1.0);
+      float r2 = dot(d, d);
+      float heat = uHeat * exp(-r2 * 7.0);
+      if (heat > 0.001) {
+        vec2 wobble = vec2(
+          sin(uv.y * 120.0 + uTime * 9.0) + 0.6 * sin(uv.y * 47.0 - uTime * 5.3),
+          cos(uv.x * 108.0 + uTime * 7.7) + 0.6 * cos(uv.x * 39.0 + uTime * 4.1));
+        uv += wobble * 0.0055 * heat;
+      }
+      vec3 col = texture2D(tScene, uv).rgb;
+      vec3 bloom = texture2D(tBloomA, uv).rgb * 0.72 + texture2D(tBloomB, uv).rgb * 0.95;
+      col += bloom * uBloom;
+      col *= uExposure;
+      gl_FragColor = vec4(col, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+  depthTest: false, depthWrite: false
+});
+compositeMat.toneMapped = true;
+
+/* ---------------------------------------------------------------------------
+   SECTION 4 — SKY DOME, SUN AND LIGHTING RIG
+   --------------------------------------------------------------------------- */
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
+  uniforms: {
+    uTop: { value: new THREE.Color(0x1450c6) },
+    uMid: { value: new THREE.Color(0x4f9ce8) },
+    uHorizon: { value: new THREE.Color(0xa6d2f4) },
+    uHaze: { value: new THREE.Color(0xe2f1ff) },
+    uGround: { value: new THREE.Color(0xc0d6e6) },
+    uSun: { value: SUN_DIR.clone() },
+    uTime: { value: 0 }
+  },
+  vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `
+    uniform vec3 uTop; uniform vec3 uMid; uniform vec3 uHorizon; uniform vec3 uHaze; uniform vec3 uGround;
+    uniform vec3 uSun; uniform float uTime;
+    varying vec3 vDir;
+    void main(){
+      vec3 d = normalize(vDir);
+      float h = clamp(d.y, -1.0, 1.0);
+      float up = clamp(h, 0.0, 1.0);
+      vec3 col = mix(uHorizon, uMid, sqrt(up) * 0.72 + up * 0.28);
+      col = mix(col, uTop, up * up);
+      col = mix(col, uHaze, exp(-abs(h) * 30.0) * 0.90);
+      col = mix(col, uGround, smoothstep(0.0, -0.10, h));
+      float sd = max(dot(d, uSun), 0.0);
+      if (sd > 0.90) {
+        col += vec3(1.0, 0.96, 0.86) * pow(sd, 900.0) * 12.0;
+        col += vec3(1.0, 0.88, 0.70) * pow(sd, 8.0) * 0.22;
+      }
+      gl_FragColor = vec4(col, 1.0);
+    }`
+});
+const skyDome = new THREE.Mesh(new THREE.SphereGeometry(14000, 32, 20), skyMat);
+skyDome.frustumCulled = false;
+skyDome.renderOrder = -1000;
+scene.add(skyDome);
+
+const sunLight = new THREE.DirectionalLight(0xfff4e0, 3.15);
+sunLight.position.copy(SUN_DIR).multiplyScalar(2600);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(1024, 1024);
+sunLight.shadow.camera.near = 200;
+sunLight.shadow.camera.far = 4200;
+sunLight.shadow.camera.left = -420;
+sunLight.shadow.camera.right = 420;
+sunLight.shadow.camera.top = 520;
+sunLight.shadow.camera.bottom = -260;
+sunLight.shadow.bias = -0.0012;
+sunLight.shadow.normalBias = 1.4;
+sunLight.target.position.set(0, PAD_Y * 0.5, 0);
+scene.add(sunLight, sunLight.target);
+
+const hemi = new THREE.HemisphereLight(0x9fd0ff, 0x7d6a45, 1.25);
+scene.add(hemi);
+const fillLight = new THREE.DirectionalLight(0xcfe6ff, 0.75);
+fillLight.position.set(-900, 700, -800);
+scene.add(fillLight);
+
+// Dynamic engine fire light (thermal + hot core) — drives the warm lighting.
+const engineLight = new THREE.PointLight(0xffa541, 0, 1500, 2.0);
+const engineCore = new THREE.PointLight(0xfff0cc, 0, 620, 2.0);
+const engineGlowLight = new THREE.PointLight(0xff8a34, 0, 3200, 2.0);
+scene.add(engineLight, engineCore, engineGlowLight);
+
+/* ---------------------------------------------------------------------------
+   SECTION 5 — TERRAIN, PATCHWORK FIELDS AND DISTANT HILLS
+   --------------------------------------------------------------------------- */
+function terrainHeight(x, z) {
+  const d = Math.hypot(x, z);
+  const flatten = smoothstep(300, 1100, d);
+  let h = (fbm2(x * 0.00032, z * 0.00032, 4) - 0.5) * 300;
+  h += (fbm2(x * 0.0015 + 13.7, z * 0.0015 - 4.2, 3) - 0.5) * 78;
+  h += (fbm2(x * 0.006 + 91.3, z * 0.006 + 7.1, 2) - 0.5) * 12;
+  h = Math.max(h, -26);
+  return h * flatten;
+}
+(function buildTerrain() {
+  const SIZE = 50000, SEG = 160;
+  const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const y = terrainHeight(x, z);
+    pos.setY(i, y);
+    // patchwork farmland palette (bright, colourful daytime terrain)
+    const patch = fbm2(x * 0.00042 + 5.1, z * 0.00042 - 2.7, 3);
+    const patch2 = fbm2(x * 0.0016 - 21.4, z * 0.0016 + 9.9, 2);
+    const near = 1 - smoothstep(200, 1500, Math.hypot(x, z));
+    let hue = 0.245 - patch * 0.075 + patch2 * 0.035;
+    let sat = 0.55 + patch2 * 0.28;
+    let lit = 0.30 + patch * 0.22 + (y > 90 ? 0.08 : 0);
+    if (patch2 > 0.72) { hue = 0.135; sat = 0.55; lit = 0.44; }         // harvested field
+    if (patch > 0.78 && patch2 < 0.4) { hue = 0.52; sat = 0.34; }        // water meadow
+    hue = lerp(hue, 0.10, near * 0.75); sat = lerp(sat, 0.34, near * 0.7); lit = lerp(lit, 0.40, near * 0.6);
+    c.setHSL(hue, clamp01(sat), clamp01(lit));
+    colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, map: TEX.terrain });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.receiveShadow = false;
+  scene.add(mesh);
+
+  // Distant mountain ring: one instanced draw for the bodies, one for the
+  // snow caps. Per-instance colour keeps the palette varied.
+  const hillGeo = new THREE.SphereGeometry(1, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+  const HILL_COUNT = 46;
+  const hillMats = [0x4f7f46, 0x5f8f6a, 0x6d7f5a, 0x7b8fa8];
+  const hills = new THREE.InstancedMesh(hillGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), HILL_COUNT);
+  const caps = new THREE.InstancedMesh(hillGeo, new THREE.MeshLambertMaterial({ color: 0xf2f7fb }), HILL_COUNT);
+  const hillScale = new THREE.Vector3(), hillPos = new THREE.Vector3(), scl = new THREE.Vector3();
+  const hcol = new THREE.Color();
+  let capCount = 0;
+  for (let i = 0; i < HILL_COUNT; i++) {
+    const a = (i / HILL_COUNT) * Math.PI * 2 + rndRange(-0.05, 0.05);
+    const dist = rndRange(5200, 17000);
+    const hgt = rndRange(360, 1250) * (0.55 + dist / 17000);
+    const rad = rndRange(900, 2600);
+    hillPos.set(Math.cos(a) * dist, -hgt * 0.12, Math.sin(a) * dist);
+    hillScale.set(rad, hgt, rad * rndRange(0.7, 1.25));
+    _q.setFromAxisAngle(UP, rnd() * 6.2832);
+    _m4.compose(hillPos, _q, hillScale);
+    hills.setMatrixAt(i, _m4);
+    hills.setColorAt(i, hcol.setHex(hillMats[i % hillMats.length]));
+    if (hgt > 800) {
+      scl.set(rad * 0.42, hgt * 0.42, rad * 0.42 * rndRange(0.7, 1.2));
+      hillPos.set(Math.cos(a) * dist, -hgt * 0.12 + hgt * 0.58, Math.sin(a) * dist);
+      _m4.compose(hillPos, _q, scl);
+      caps.setMatrixAt(capCount++, _m4);
+    }
+  }
+  hills.instanceMatrix.needsUpdate = true;
+  caps.instanceMatrix.needsUpdate = true;
+  caps.count = capCount;
+  scene.add(hills, caps);
+})();
+
+/* ---------------------------------------------------------------------------
+   SECTION 6 — LAYERED CLOUD DECKS (the rocket climbs through these)
+   --------------------------------------------------------------------------- */
+const CLOUD_LAYERS = [
+  { y: 620, thickness: 90, count: 15, scale: 420, opacity: 0.62, inner: 2100 },
+  { y: 1450, thickness: 130, count: 13, scale: 560, opacity: 0.66, inner: 2500 },
+  { y: 2450, thickness: 160, count: 12, scale: 760, opacity: 0.68, inner: 3100 },
+  { y: 3600, thickness: 190, count: 12, scale: 940, opacity: 0.66, inner: 3600 },
+  { y: 4900, thickness: 230, count: 12, scale: 1150, opacity: 0.62, inner: 4100 },
+  { y: 6200, thickness: 280, count: 10, scale: 1400, opacity: 0.58, inner: 4600 },
+  { y: 7800, thickness: 320, count: 8, scale: 1750, opacity: 0.52, inner: 5200 }
+];
+// A handful of puffs sit directly on the flight path so the rocket visibly
+// enters the first cloud decks instead of merely crossing their altitude band.
+const CLOUD_CORRIDOR = [{ layer: 0, count: 3, inner: 700, outer: 1700 },
+  { layer: 1, count: 3, inner: 900, outer: 2100 },
+  { layer: 2, count: 4, inner: 1100, outer: 2400 },
+  { layer: 3, count: 4, inner: 1200, outer: 2600 },
+  { layer: 4, count: 4, inner: 1400, outer: 3000 }];
+const cloudSprites = [];
+let cloudMesh = null;
+const CLOUD_TOTAL = CLOUD_LAYERS.reduce((a, L) => a + L.count, 0) + CLOUD_CORRIDOR.reduce((a, c) => a + c.count, 0);
+(function buildClouds() {
+  // All decks in ONE instanced draw call: alpha overdraw and draw-call count
+  // are the dominant costs on software rasterisers, so the drift is evaluated
+  // in the vertex shader and nothing is touched on the CPU per frame.
+  const base = new THREE.PlaneGeometry(1, 1);
+  const geo = new THREE.InstancedBufferGeometry();
+  geo.index = base.index;
+  geo.attributes.position = base.attributes.position;
+  geo.attributes.uv = base.attributes.uv;
+  const iPos = new Float32Array(CLOUD_TOTAL * 4);    // xyz + opacity
+  const iShape = new Float32Array(CLOUD_TOTAL * 3);  // width, height, seed
+  const iDrift = new Float32Array(CLOUD_TOTAL * 2);  // phase, amplitude
+  let n = 0;
+  function addCloud(y, radius, w, h, opacity) {
+    const a = rnd() * Math.PI * 2;
+    iPos[n * 4 + 0] = Math.cos(a) * radius;
+    iPos[n * 4 + 1] = y;
+    iPos[n * 4 + 2] = Math.sin(a) * radius;
+    iPos[n * 4 + 3] = opacity * rndRange(0.72, 1.05);
+    iShape[n * 3 + 0] = w;
+    iShape[n * 3 + 1] = h;
+    iShape[n * 3 + 2] = rnd();
+    iDrift[n * 2 + 0] = rnd() * 12.0;
+    iDrift[n * 2 + 1] = rndRange(1.5, 6.5);
+    n++;
+  }
+  for (let li = 0; li < CLOUD_LAYERS.length; li++) {
+    const L = CLOUD_LAYERS[li];
+    for (let i = 0; i < L.count; i++) {
+      const r = L.inner + Math.pow(rnd(), 0.7) * 11000;
+      const s = L.scale * rndRange(0.7, 1.4);
+      addCloud(L.y + rndRange(-L.thickness, L.thickness), r, s, s * rndRange(0.36, 0.58), L.opacity);
+    }
+  }
+  for (const c of CLOUD_CORRIDOR) {
+    const L = CLOUD_LAYERS[c.layer];
+    for (let i = 0; i < c.count; i++) {
+      const s = L.scale * 0.8;
+      addCloud(L.y + rndRange(-L.thickness * 0.6, L.thickness * 0.6), rndRange(c.inner, c.outer),
+        s, s * rndRange(0.36, 0.58), L.opacity * 0.95);
+    }
+  }
+  geo.setAttribute('iPos', new THREE.InstancedBufferAttribute(iPos, 4));
+  geo.setAttribute('iShape', new THREE.InstancedBufferAttribute(iShape, 3));
+  geo.setAttribute('iDrift', new THREE.InstancedBufferAttribute(iDrift, 2));
+  geo.instanceCount = n;
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 4000, 0), 32000);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uMap: { value: TEX.cloud }, uOpacity: { value: 1 } },
+    vertexShader: `
+      attribute vec4 iPos; attribute vec3 iShape; attribute vec2 iDrift;
+      uniform float uTime;
+      varying vec2 vUv; varying float vOpacity;
+      void main(){
+        vUv = uv;
+        vOpacity = iPos.w;
+        vec3 p = iPos.xyz;
+        p.x += sin(uTime * 0.02 + iDrift.x) * iDrift.y * 6.0;
+        p.y += sin(uTime * 0.05 + iDrift.x * 1.7) * 14.0;
+        p.z += cos(uTime * 0.017 + iDrift.x) * iDrift.y * 6.0;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        mv.xy += position.xy * iShape.xy;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform sampler2D uMap; uniform float uOpacity;
+      varying vec2 vUv; varying float vOpacity;
+      void main(){
+        vec4 t = texture2D(uMap, vUv);
+        vec3 col = mix(vec3(0.62, 0.71, 0.82), vec3(1.0), smoothstep(0.0, 0.85, vUv.y));
+        gl_FragColor = vec4(col, t.a * vOpacity * uOpacity);
+      }`,
+    transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide
+  });
+  cloudMesh = new THREE.Mesh(geo, mat);
+  cloudMesh.frustumCulled = false;
+  cloudMesh.renderOrder = 20;
+  scene.add(cloudMesh);
+})();
+
+/* ---------------------------------------------------------------------------
+   SECTION 7 — LAUNCH SITE (pad, trench, gantry, clamps, pipes, masts, props)
+   --------------------------------------------------------------------------- */
+const launchSite = new THREE.Group();
+scene.add(launchSite);
+const animProps = { clamps: [], swingArms: [], beacons: [], loose: [], flags: [] };
+
+const matConcrete = new THREE.MeshStandardMaterial({ map: TEX.concrete, roughness: 0.94, metalness: 0.02, color: 0xffffff });
+const matSteelRed = new THREE.MeshStandardMaterial({ map: TEX.steelRed, roughness: 0.62, metalness: 0.28 });
+const matSteelGrey = new THREE.MeshStandardMaterial({ map: TEX.steelGrey, roughness: 0.55, metalness: 0.45 });
+const matSteelWhite = new THREE.MeshStandardMaterial({ map: TEX.steelWhite, roughness: 0.5, metalness: 0.25 });
+const matDark = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.85, metalness: 0.35 });
+const matOrange = new THREE.MeshStandardMaterial({ color: 0xe8631f, roughness: 0.6, metalness: 0.15 });
+const matYellow = new THREE.MeshStandardMaterial({ color: 0xf6c92b, roughness: 0.62, metalness: 0.12 });
+const matBlue = new THREE.MeshStandardMaterial({ color: 0x2b6fd6, roughness: 0.6, metalness: 0.2 });
+const matTrim = new THREE.MeshStandardMaterial({ color: 0x3f4750, roughness: 0.55, metalness: 0.5 });
+
+function box(w, h, d, mat, x, y, z, parent) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  m.castShadow = true; m.receiveShadow = true;
+  (parent || launchSite).add(m);
+  return m;
+}
+function cyl(rt, rb, h, seg, mat, x, y, z, parent) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg, 1, false), mat);
+  m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true;
+  (parent || launchSite).add(m);
+  return m;
+}
+
+/* Static meshes are merged per material: draw-call count, not pixel count, is
+   the dominant cost on software rasterisers. Animated sub-trees are tagged
+   with userData.animated and left untouched. */
+function mergeStaticMeshes(root) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const candidates = [];
+  root.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh) return;
+    if (!o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
+    if (!o.material || o.material.isShaderMaterial && o.material.transparent) return;
+    let p = o, animated = false;
+    while (p && p !== root) {
+      if (p.userData && p.userData.animated) { animated = true; break; }
+      p = p.parent;
+    }
+    if (!animated) candidates.push(o);
+  });
+  const byMat = new Map();
+  for (const m of candidates) {
+    if (!byMat.has(m.material)) byMat.set(m.material, []);
+    byMat.get(m.material).push(m);
+  }
+  let merged = 0;
+  for (const [mat, list] of byMat) {
+    if (list.length < 2) continue;
+    const parts = [];
+    let total = 0;
+    const rel = new THREE.Matrix4();
+    for (const m of list) {
+      m.updateMatrixWorld(true);
+      rel.copy(inv).multiply(m.matrixWorld);
+      const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+      g.applyMatrix4(rel);
+      parts.push(g);
+      total += g.attributes.position.count;
+    }
+    const pos = new Float32Array(total * 3);
+    const nrm = new Float32Array(total * 3);
+    const tex = new Float32Array(total * 2);
+    let off = 0;
+    for (const g of parts) {
+      const c = g.attributes.position.count;
+      pos.set(g.attributes.position.array.subarray(0, c * 3), off * 3);
+      if (g.attributes.normal) nrm.set(g.attributes.normal.array.subarray(0, c * 3), off * 3);
+      if (g.attributes.uv) tex.set(g.attributes.uv.array.subarray(0, c * 2), off * 2);
+      off += c;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(tex, 2));
+    geo.computeBoundingSphere();
+    const out = new THREE.Mesh(geo, mat);
+    out.castShadow = list[0].castShadow;
+    out.receiveShadow = list[0].receiveShadow;
+    root.add(out);
+    for (const m of list) if (m.parent) m.parent.remove(m);
+    for (const g of parts) g.dispose();
+    merged += list.length - 1;
+  }
+  return merged;
+}
+
+/* -- ground apron, access road, perimeter ---------------------------------- */
+const apron = new THREE.Mesh(new THREE.PlaneGeometry(2200, 2200), matConcrete);
+apron.rotation.x = -Math.PI / 2;
+apron.position.y = 0.35;
+apron.receiveShadow = true;
+launchSite.add(apron);
+const road = box(2600, 1.2, 90, matDark, 0, 0.6, -760);
+road.receiveShadow = true;
+
+/* -- raised launch pad with a central flame trench ------------------------- */
+(function buildPad() {
+  const H = PAD_Y, half = 100, gap = 35;
+  box(2 * half, H, half - gap, matConcrete, 0, H / 2, (half + gap) / 2);
+  box(2 * half, H, half - gap, matConcrete, 0, H / 2, -(half + gap) / 2);
+  box(half - gap, H, 2 * gap, matConcrete, (half + gap) / 2, H / 2, 0);
+  box(half - gap, H, 2 * gap, matConcrete, -(half + gap) / 2, H / 2, 0);
+  // trench liner, floor and deflector wedge
+  const defl = new THREE.Mesh(new THREE.BoxGeometry(2 * gap - 2, 4, 2 * gap - 2), matDark);
+  defl.position.set(0, -62, 0); defl.receiveShadow = true; launchSite.add(defl);
+  for (const s of [1, -1]) {
+    box(4, 64, 2 * gap, matDark, s * gap, -30, 0);
+    box(2 * gap, 64, 4, matDark, 0, -30, s * gap);
+  }
+  const wedge = new THREE.Mesh(new THREE.BoxGeometry(58, 30, 58), matDark);
+  wedge.position.set(0, -46, 0); wedge.rotation.set(0.36, 0.79, 0.36);
+  launchSite.add(wedge);
+  // pad edge striping + corner floodlight bases
+  for (const s of [-1, 1]) {
+    box(2 * half + 8, 3, 8, matYellow, 0, H + 0.5, s * (half + 3));
+    box(8, 3, 2 * half + 8, matYellow, s * (half + 3), H + 0.5, 0);
+  }
+})();
+
+/* -- hold-down clamps (4) -------------------------------------------------- */
+function buildHoldDownClamp(angle) {
+  const g = new THREE.Group();
+  const pivot = new THREE.Group();
+  const R = 20;
+  const home = new THREE.Vector3(Math.cos(angle) * R, PAD_Y + 5, Math.sin(angle) * R);
+  const outward = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+  pivot.position.copy(home);
+  pivot.rotation.y = -angle;
+  pivot.userData.animated = true;
+  const body = box(18, 22, 16, matSteelGrey, -7, 2, 0, pivot);
+  body.castShadow = true;
+  box(20, 6, 18, matOrange, -7, 12, 0, pivot);
+  const jaw = box(9, 17, 11, matTrim, -15, 12, 0, pivot);
+  jaw.rotation.z = 0.18;
+  cyl(2.6, 2.6, 18, 10, matSteelGrey, -2, 7, 0, pivot).rotation.z = Math.PI / 2;
+  box(9, 9, 20, matDark, -2, -6, 0, pivot);
+  g.add(pivot);
+  launchSite.add(g);
+  return { group: g, pivot, home, outward };
+}
+for (let i = 0; i < 4; i++) animProps.clamps.push(buildHoldDownClamp(i * Math.PI / 2 + Math.PI / 4));
+
+/* -- service gantry: instanced lattice truss + swing arms + crane ---------- */
+const GANTRY_X = -76;
+(function buildGantry() {
+  const beams = [];
+  const W = 46, D = 46, BAYS = 10, BAY_H = 20, BASE = PAD_Y, top = BASE + BAYS * BAY_H;
+  const corners = [[-W / 2, -D / 2], [W / 2, -D / 2], [W / 2, D / 2], [-W / 2, D / 2]];
+  const push = (ax, ay, az, bx, by, bz, th) => beams.push([ax, ay, az, bx, by, bz, th]);
+  for (let b = 0; b <= BAYS; b++) {
+    const y = BASE + b * BAY_H;
+    for (let i = 0; i < 4; i++) {
+      const a = corners[i], c = corners[(i + 1) % 4];
+      push(a[0], y, a[1], c[0], y, c[1], 1.6);                    // ring
+      if (b < BAYS) {
+        const y2 = y + BAY_H;
+        push(a[0], y, a[1], c[0], y2, c[1], 1.0);                  // X brace
+        push(c[0], y, c[1], a[0], y2, a[1], 1.0);
+      }
+    }
+  }
+  for (let b = 0; b < BAYS; b++) {
+    const y1 = BASE + b * BAY_H, y2 = y1 + BAY_H;
+    for (const c of corners) push(c[0], y1, c[1], c[0], y2, c[1], 2.2);  // legs
+  }
+  // elevated cross-braces and light ring
+  for (const y of [BASE + 40, BASE + 100, top - 6]) {
+    push(corners[0][0], y, corners[0][1], corners[2][0], y, corners[2][1], 1.1);
+    push(corners[1][0], y, corners[1][1], corners[3][0], y, corners[3][1], 1.1);
+  }
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  const mesh = new THREE.InstancedMesh(geo, matSteelRed, beams.length);
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  for (let i = 0; i < beams.length; i++) {
+    const b = beams[i];
+    _beamDir.set(b[3] - b[0], b[4] - b[1], b[5] - b[2]);
+    const len = _beamDir.length();
+    _beamMid.set((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2);
+    _beamDir.normalize();
+    _q.setFromUnitVectors(UP, _beamDir);
+    _beamScale.set(b[6], len, b[6]);
+    _m4.compose(_beamMid, _q, _beamScale);
+    mesh.setMatrixAt(i, _m4);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  const gantry = new THREE.Group();
+  gantry.position.set(GANTRY_X, 0, 0);
+  gantry.add(mesh);
+  launchSite.add(gantry);
+
+  // service platforms + railings along the tower
+  for (const by of [3, 6, 8]) {
+    const deck = box(W + 28, 3, D + 22, matSteelGrey, 14, BASE + by * BAY_H, 0, gantry);
+    deck.receiveShadow = true;
+    for (const s of [-1, 1]) {
+      box(W + 28, 1.2, 1.2, matYellow, 14, BASE + by * BAY_H + 7, s * (D / 2 + 11), gantry);
+    }
+  }
+  // crane arm at the top with a hook block
+  const crane = new THREE.Group();
+  crane.position.set(0, top - 4, 0);
+  box(150, 5, 12, matSteelRed, 62, 0, 0, crane);
+  box(6, 30, 6, matSteelRed, 130, -16, 0, crane);
+  cyl(6, 8, 12, 12, matDark, 130, -34, 0, crane);
+  gantry.add(crane);
+  // counterweight + cab
+  box(30, 26, 26, matSteelWhite, -34, -16, 0, gantry);
+  box(22, 18, 20, matBlue, -34, 6, 0, gantry);
+
+  // 3 swing arms that hold the booster and retract before liftoff
+  for (let i = 0; i < 3; i++) {
+    const y = BASE + 40 + i * 42;
+    const arm = new THREE.Group();
+    arm.position.set(GANTRY_X + W / 2, y, 0);
+    arm.userData.animated = true;
+    const beam = box(54, 3.6, 5, matSteelGrey, 30, 0, 0, arm);
+    beam.castShadow = true;
+    box(10, 9, 12, matOrange, 55, 0, 0, arm);
+    box(6, 12, 14, matTrim, 60, 0, 0, arm);
+    box(24, 2.4, 4, matSteelGrey, 12, 3, 0, arm);
+    launchSite.add(arm);
+    animProps.swingArms.push({ group: arm, pivotY: y });
+  }
+  // piping bundles + cable trays running up the tower
+  for (let i = 0; i < 4; i++) {
+    const z = -D / 2 + 6 + i * 10;
+    const mat = i === 0 ? matOrange : (i === 2 ? matYellow : matSteelGrey);
+    cyl(2.2, 2.2, 210, 10, mat, GANTRY_X + W / 2 + 6, PAD_Y + 105, z).castShadow = true;
+  }
+})();
+
+/* -- propellant tanks, pipes, masts, floodlights, barriers, loose props ---- */
+(function buildSupport() {
+  // spherical / cylindrical tank farm
+  for (let i = 0; i < 3; i++) {
+    const tx = -250 - i * 95, tz = 150 + i * 40;
+    const t = cyl(30, 30, 74, 18, matSteelWhite, tx, 40, tz);
+    t.castShadow = true;
+    const capTop = new THREE.Mesh(new THREE.SphereGeometry(30, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), matSteelWhite);
+    capTop.position.set(tx, 77, tz); launchSite.add(capTop);
+    const capBot = new THREE.Mesh(new THREE.SphereGeometry(30, 18, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), matSteelWhite);
+    capBot.position.set(tx, 3, tz); launchSite.add(capBot);
+    cyl(34, 34, 6, 18, matOrange, tx, 74, tz);
+    box(84, 5, 84, matConcrete, tx, 2, tz);
+  }
+  // pipe runs from the farm to the gantry
+  for (let i = 0; i < 5; i++) {
+    const p = cyl(3, 3, 420, 10, i % 2 ? matYellow : matSteelGrey, -160 + i * 12, 16, 120 - i * 9);
+    p.rotation.z = Math.PI / 2; p.rotation.y = 0.55;
+  }
+  // tall lattice masts with aviation beacons
+  const mastBeams = [];
+  const masts = [[210, -230], [-320, -180], [260, 250]];
+  for (const [mx, mz] of masts) {
+    const h = 150, w = 16, seg = 8;
+    for (let s = 0; s <= seg; s++) {
+      const y = PAD_Y + (s / seg) * h;
+      const ww = w * (1 - s / seg * 0.55);
+      mastBeams.push([mx - ww / 2, y, mz - ww / 2, mx + ww / 2, y, mz - ww / 2, 1.1]);
+      mastBeams.push([mx + ww / 2, y, mz - ww / 2, mx + ww / 2, y, mz + ww / 2, 1.1]);
+      mastBeams.push([mx + ww / 2, y, mz + ww / 2, mx - ww / 2, y, mz + ww / 2, 1.1]);
+      mastBeams.push([mx - ww / 2, y, mz + ww / 2, mx - ww / 2, y, mz - ww / 2, 1.1]);
+      if (s < seg) {
+        const y2 = PAD_Y + ((s + 1) / seg) * h, w2 = w * (1 - (s + 1) / seg * 0.55);
+        mastBeams.push([mx - ww / 2, y, mz - ww / 2, mx - w2 / 2, y2, mz - w2 / 2, 1.5]);
+        mastBeams.push([mx + ww / 2, y, mz + ww / 2, mx + w2 / 2, y2, mz + w2 / 2, 1.5]);
+      }
+    }
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(3.4, 12, 8),
+      new THREE.MeshStandardMaterial({ color: 0xff2a1a, emissive: 0xff2a1a, emissiveIntensity: 1.6, roughness: 0.4 }));
+    beacon.position.set(mx, PAD_Y + h + 6, mz);
+    beacon.userData.animated = true;
+    launchSite.add(beacon);
+    animProps.beacons.push({ mesh: beacon, phase: rnd() * 6.2832 });
+  }
+  const mastMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), matSteelGrey, mastBeams.length);
+  mastMesh.castShadow = true;
+  for (let i = 0; i < mastBeams.length; i++) {
+    const b = mastBeams[i];
+    _beamDir.set(b[3] - b[0], b[4] - b[1], b[5] - b[2]);
+    const len = _beamDir.length();
+    _beamMid.set((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2);
+    _beamDir.normalize(); _q.setFromUnitVectors(UP, _beamDir); _beamScale.set(b[6], len, b[6]);
+    _m4.compose(_beamMid, _q, _beamScale);
+    mastMesh.setMatrixAt(i, _m4);
+  }
+  mastMesh.instanceMatrix.needsUpdate = true;
+  launchSite.add(mastMesh);
+
+  // floodlight towers around the pad (instanced: base, mast, head, lamps)
+  const TOWERS = 4;
+  const towerBase = new THREE.InstancedMesh(new THREE.BoxGeometry(16, 3, 16), matConcrete, TOWERS);
+  const towerMast = new THREE.InstancedMesh(new THREE.CylinderGeometry(2.6, 3.4, 130, 10), matSteelGrey, TOWERS);
+  const towerHead = new THREE.InstancedMesh(new THREE.BoxGeometry(26, 8, 12), matTrim, TOWERS);
+  const towerLamp = new THREE.InstancedMesh(new THREE.BoxGeometry(7, 5, 2),
+    new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xfff0c8, emissiveIntensity: 0.9, roughness: 0.3 }), TOWERS * 3);
+  const unit = new THREE.Vector3(1, 1, 1);
+  for (let i = 0; i < TOWERS; i++) {
+    const a = i * Math.PI / 2 + Math.PI / 8;
+    const x = Math.cos(a) * 330, z = Math.sin(a) * 330;
+    _q.setFromAxisAngle(UP, -a);
+    _m4.compose(_v3a.set(x, 2, z), _q, unit); towerBase.setMatrixAt(i, _m4);
+    _m4.compose(_v3a.set(x, 68, z), _q, unit); towerMast.setMatrixAt(i, _m4);
+    _m4.compose(_v3a.set(x, 136, z), _q, unit); towerHead.setMatrixAt(i, _m4);
+    for (let k = -1; k <= 1; k++) {
+      _m4.compose(_v3a.set(x + Math.cos(a + Math.PI / 2) * k * 8, 136, z + Math.sin(a + Math.PI / 2) * k * 8), _q, unit);
+      towerLamp.setMatrixAt(i * 3 + (k + 1), _m4);
+    }
+  }
+  for (const m of [towerBase, towerMast, towerHead, towerLamp]) {
+    m.instanceMatrix.needsUpdate = true;
+    m.castShadow = true;
+    launchSite.add(m);
+  }
+
+  // perimeter barriers (instanced)
+  const barrierCount = 72;
+  const barriers = new THREE.InstancedMesh(new THREE.BoxGeometry(26, 9, 3.2), matYellow, barrierCount);
+  barriers.castShadow = true; barriers.receiveShadow = true;
+  for (let i = 0; i < barrierCount; i++) {
+    const a = (i / barrierCount) * Math.PI * 2;
+    const r = 470;
+    _m4.compose(new THREE.Vector3(Math.cos(a) * r, 5, Math.sin(a) * r),
+      _q.setFromAxisAngle(UP, -a + Math.PI / 2), new THREE.Vector3(1, 1, 1));
+    barriers.setMatrixAt(i, _m4);
+  }
+  barriers.instanceMatrix.needsUpdate = true;
+  launchSite.add(barriers);
+
+  // crates, barrels and cones: the "loose objects" blown by the exhaust.
+  // Three instanced draws; per-instance matrices are refreshed each frame.
+  const barrelMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(5, 5, 14, 12), matSteelWhite, 9);
+  const crateMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(11, 9, 11), matSteelWhite, 17);
+  const coneMesh = new THREE.InstancedMesh(new THREE.ConeGeometry(3.6, 9, 10), matOrange, 22);
+  const propMeshes = [barrelMesh, crateMesh, coneMesh];
+  for (const m of propMeshes) { m.castShadow = true; m.receiveShadow = true; launchSite.add(m); }
+  const cvar = new THREE.Color();
+  const one = new THREE.Vector3(1, 1, 1);
+  let bi = 0, ci = 0;
+  for (let i = 0; i < 26; i++) {
+    const a = rnd() * Math.PI * 2;
+    const r = rndRange(120, 260);
+    const isBarrel = i % 3 === 0;
+    const mesh = isBarrel ? barrelMesh : crateMesh;
+    const index = isBarrel ? bi++ : ci++;
+    const home = new THREE.Vector3(Math.cos(a) * r, isBarrel ? 7 : 4.5, Math.sin(a) * r);
+    const rotY = rnd() * 6.2832;
+    mesh.setColorAt(index, cvar.setHex(isBarrel ? (i % 2 ? 0x2b6fd6 : 0xe8631f)
+      : (i % 2 ? 0xe6e8ea : 0xc8452f)));
+    _q.setFromAxisAngle(UP, rotY);
+    _m4.compose(home, _q, one);
+    mesh.setMatrixAt(index, _m4);
+    animProps.loose.push({ mesh, index, home, baseRotY: rotY, scale: one, angle: a,
+      mass: rndRange(0.4, 1.3), spin: rndRange(-2.4, 2.4) });
+  }
+  for (let i = 0; i < 22; i++) {
+    const a = rnd() * Math.PI * 2, r = rndRange(110, 300);
+    const home = new THREE.Vector3(Math.cos(a) * r, 4.5, Math.sin(a) * r);
+    _m4.compose(home, _q.setFromAxisAngle(UP, 0), one);
+    coneMesh.setMatrixAt(i, _m4);
+    animProps.loose.push({ mesh: coneMesh, index: i, home, baseRotY: 0, scale: one, angle: a, mass: 1.9, spin: rndRange(-4, 4) });
+  }
+  for (const m of propMeshes) m.instanceMatrix.needsUpdate = true;
+  launchSite.userData.propMeshes = propMeshes;
+  // service flags on the gantry (lightweight, exhaust sensitive)
+  for (let i = 0; i < 6; i++) {
+    const f = new THREE.Mesh(new THREE.PlaneGeometry(14, 9), new THREE.MeshStandardMaterial({
+      color: [0xff5a3c, 0xffd21f, 0x35a7ff][i % 3], side: THREE.DoubleSide, roughness: 0.8
+    }));
+    f.position.set(GANTRY_X + 26, PAD_Y + 165 + (i % 3) * 22, -20 + (i % 2) * 40);
+    f.castShadow = true;
+    f.userData.animated = true;
+    launchSite.add(f);
+    animProps.flags.push({ mesh: f, phase: rnd() * 6.2832, base: f.position.clone() });
+  }
+})();
+// Static launch-site geometry merged per material (draw-call budget).
+mergeStaticMeshes(launchSite);
+
+/* ---------------------------------------------------------------------------
+   SECTION 8 — HERO ROCKET (body, nose, fins, engines, greebles)
+   --------------------------------------------------------------------------- */
+const rocket = new THREE.Group();
+rocket.position.set(0, PAD_Y, 0);
+scene.add(rocket);
+
+const matBody = new THREE.MeshStandardMaterial({ map: TEX.rocket, roughness: 0.44, metalness: 0.16, color: 0xffffff });
+const matBodyPlain = new THREE.MeshStandardMaterial({ color: 0xdcd8cf, roughness: 0.5, metalness: 0.22 });
+const matBell = new THREE.MeshStandardMaterial({ color: 0x5c5f66, roughness: 0.36, metalness: 0.85, side: THREE.DoubleSide });
+const matBlackBand = new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.5, metalness: 0.4 });
+const matAccent = new THREE.MeshStandardMaterial({ color: 0xe3362a, roughness: 0.42, metalness: 0.24 });
+
+(function buildRocket() {
+  const R = 9.6;
+  // main tank barrel
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(R, R, ROCKET_BODY, 44, 1, true), matBody);
+  body.position.y = ROCKET_TAIL + ROCKET_BODY / 2;
+  body.castShadow = true; body.receiveShadow = true;
+  rocket.add(body);
+  // boat-tail thrust structure
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 0.72, ROCKET_TAIL, 44, 1, true), matBlackBand);
+  tail.position.y = ROCKET_TAIL / 2;
+  tail.castShadow = true; rocket.add(tail);
+  // skirt rings
+  for (const [y, r, h, m] of [
+    [ROCKET_TAIL + 1.5, R * 1.035, 4, matBodyPlain],
+    [ROCKET_TAIL + ROCKET_BODY - 3, R * 1.03, 6, matBodyPlain],
+    [ROCKET_TAIL + ROCKET_BODY * 0.58, R * 1.025, 3, matAccent],
+    [ROCKET_TAIL + ROCKET_BODY * 0.16, R * 1.028, 3, matAccent]
+  ]) {
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 44, 1, true), m);
+    ring.position.y = y; ring.castShadow = true; rocket.add(ring);
+  }
+  // ogive nose cone
+  const pts = [];
+  for (let i = 0; i <= 26; i++) {
+    const t = i / 26;
+    const rr = R * Math.sqrt(Math.max(0, 1 - Math.pow(t, 1.9)));
+    pts.push(new THREE.Vector2(Math.max(rr, 0.02), t * ROCKET_NOSE));
+  }
+  const nose = new THREE.Mesh(new THREE.LatheGeometry(pts, 44), matBodyPlain);
+  nose.position.y = ROCKET_TAIL + ROCKET_BODY;
+  nose.castShadow = true; rocket.add(nose);
+  // nose cap + canard fins
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(R * 0.34, 16, 10), matAccent);
+  cap.position.y = ROCKET_TAIL + ROCKET_BODY + ROCKET_NOSE - 1.4; rocket.add(cap);
+  // main fins
+  const finShape = new THREE.Shape();
+  finShape.moveTo(0, 0); finShape.lineTo(0, 30); finShape.lineTo(17, 3.5); finShape.lineTo(14, 0);
+  finShape.closePath();
+  const finGeo = new THREE.ExtrudeGeometry(finShape, { depth: 3.2, bevelEnabled: false });
+  finGeo.translate(0, 0, -1.6);
+  for (let i = 0; i < 4; i++) {
+    const fin = new THREE.Mesh(finGeo, matAccent);
+    fin.rotation.y = i * Math.PI / 2;
+    fin.position.set(R * 0.96, 0.4, 0);
+    fin.castShadow = true; fin.receiveShadow = true;
+    const holder = new THREE.Group();
+    holder.rotation.y = i * Math.PI / 2;
+    holder.add(fin);
+    rocket.add(holder);
+  }
+  // engine bells: 1 centre + 4 outboard
+  const engineY = 4.6;
+  const bellGeo = new THREE.CylinderGeometry(2.5, 4.4, 11, 20, 1, true);
+  const bellPositions = [[0, 0]];
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2 + Math.PI / 4;
+    bellPositions.push([Math.cos(a) * 5.3, Math.sin(a) * 5.3]);
+  }
+  for (const [bx, bz] of bellPositions) {
+    const bell = new THREE.Mesh(bellGeo, matBell);
+    bell.position.set(bx, engineY, bz);
+    bell.castShadow = true;
+    rocket.add(bell);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(4.3, 0.7, 8, 20), matTrim);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(bx, engineY - 5.2, bz);
+    rocket.add(ring);
+  }
+  // greebles (instanced plumbing / access panels around the barrel)
+  const greebleCount = 190;
+  const greebles = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), matTrim, greebleCount);
+  greebles.castShadow = true;
+  for (let i = 0; i < greebleCount; i++) {
+    const a = rnd() * Math.PI * 2;
+    const y = ROCKET_TAIL + rndRange(4, ROCKET_BODY - 6);
+    const rr = R + rndRange(0.4, 1.3);
+    const s = new THREE.Vector3(rndRange(0.7, 2.6), rndRange(1.5, 9), rndRange(0.6, 2.2));
+    _q.setFromEuler(new THREE.Euler(0, -a + Math.PI / 2, 0));
+    _m4.compose(new THREE.Vector3(Math.cos(a) * rr, y, Math.sin(a) * rr), _q, s);
+    greebles.setMatrixAt(i, _m4);
+  }
+  greebles.instanceMatrix.needsUpdate = true;
+  rocket.add(greebles);
+  // umbilical cables running up the side
+  for (let i = 0; i < 3; i++) {
+    const a = -1.1 + i * 0.55;
+    const cab = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, ROCKET_BODY * 0.86, 8), matTrim);
+    cab.position.set(Math.cos(a) * (R + 0.9), ROCKET_TAIL + ROCKET_BODY * 0.47, Math.sin(a) * (R + 0.9));
+    rocket.add(cab);
+  }
+})();
+// Static rocket geometry merged per material (draw-call budget).
+mergeStaticMeshes(rocket);
+
+/* ---------------------------------------------------------------------------
+   SECTION 9 — MULTI-LAYER ENGINE FIRE, GLOW AND DYNAMIC EXHAUST PLUME
+   --------------------------------------------------------------------------- */
+const flameMat = () => new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: { value: 0 }, uIntensity: { value: 0 }, uFlicker: { value: 1 },
+    uSeed: { value: rnd() * 40 }, uProfileR: { value: 1 }, uA: { value: new THREE.Color(1, 1, 1) },
+    uB: { value: new THREE.Color(1, 0.3, 0) }, uSoft: { value: 0.5 }, uGain: { value: 1 }
+  },
+  vertexShader: `
+    uniform float uProfileR;
+    varying vec2 vUvf; varying float vY; varying float vR;
+    void main(){
+      vUvf = uv; vY = uv.y; vR = length(position.xz) / uProfileR;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    uniform float uTime; uniform float uIntensity; uniform float uFlicker; uniform float uSeed;
+    uniform vec3 uA; uniform vec3 uB; uniform float uSoft; uniform float uGain;
+    varying vec2 vUvf; varying float vY; varying float vR;
+    ${GLSL_NOISE}
+    void main(){
+      float t = uTime;
+      float ang = vUvf.x * 6.2831853;
+      vec2 ring = vec2(cos(ang), sin(ang));
+      float n1 = fbm2d(ring * 3.0 + vec2(uSeed, vY * 6.0 - t * 2.6));
+      float n2 = fbm2d(ring * 7.0 + vec2(-uSeed * 1.7, vY * 13.0 - t * 4.7));
+      float turb = mix(n1, n2, 0.42);
+      float shape = 1.0 - vY;
+      float a = pow(shape, 0.85) * (0.55 + 0.85 * turb) * uIntensity * uFlicker * uGain;
+      a *= 1.0 - smoothstep(0.35, 1.0 + uSoft, vR);
+      a = clamp(a, 0.0, 1.0);
+      vec3 col = mix(uA, uB, clamp(vY * 1.15 + turb * 0.25, 0.0, 1.0));
+      col += vec3(0.9, 1.0, 1.5) * pow(1.0 - vY, 6.0) * 0.55;
+      gl_FragColor = vec4(col * (0.55 + 0.9 * turb), a);
+    }`,
+  transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+});
+
+function flameMesh(profile, rTop) {
+  const pts = profile.map(p => new THREE.Vector2(Math.max(p[0], 0.001), -p[1]));
+  const geo = new THREE.LatheGeometry(pts, 26);
+  const mat = flameMat();
+  mat.uniforms.uProfileR.value = rTop;
+  const m = new THREE.Mesh(geo, mat);
+  m.frustumCulled = false;
+  return m;
+}
+const flameGroup = new THREE.Group();
+flameGroup.userData.animated = true;
+rocket.add(flameGroup);
+
+const flameCore = flameMesh([[1.1, 0], [2.9, 0.18], [2.2, 0.52], [0.001, 1]], 2.9);
+flameCore.material.uniforms.uA.value.setRGB(1.0, 1.0, 1.0);
+flameCore.material.uniforms.uB.value.setRGB(0.75, 0.92, 1.0);
+flameCore.material.uniforms.uGain.value = 1.35;
+flameCore.renderOrder = 6;
+flameGroup.add(flameCore);
+
+const flameInner = flameMesh([[3.4, 0], [6.0, 0.2], [4.6, 0.58], [0.001, 1]], 6.0);
+flameInner.material.uniforms.uA.value.setRGB(1.0, 0.97, 0.72);
+flameInner.material.uniforms.uB.value.setRGB(1.0, 0.58, 0.14);
+flameInner.renderOrder = 5;
+flameGroup.add(flameInner);
+
+const flameMid = flameMesh([[5.4, 0], [8.6, 0.28], [6.2, 0.66], [0.001, 1]], 8.6);
+flameMid.material.uniforms.uA.value.setRGB(1.0, 0.72, 0.24);
+flameMid.material.uniforms.uB.value.setRGB(0.95, 0.28, 0.06);
+flameMid.material.uniforms.uSoft.value = 0.85;
+flameMid.renderOrder = 4;
+flameGroup.add(flameMid);
+
+const flamePlume = flameMesh([[7.4, 0], [11.5, 0.34], [8.0, 0.7], [0.001, 1]], 11.5);
+flamePlume.material.uniforms.uA.value.setRGB(1.0, 0.48, 0.12);
+flamePlume.material.uniforms.uB.value.setRGB(0.85, 0.20, 0.05);
+flamePlume.material.uniforms.uGain.value = 0.62;
+flamePlume.material.uniforms.uSoft.value = 1.05;
+flamePlume.renderOrder = 3;
+flameGroup.add(flamePlume);
+
+const FLAME_LAYERS = [flameCore, flameInner, flameMid, flamePlume];
+const FLAME_BASE_LEN = [30, 62, 96, 130];
+
+// additive glow card at the nozzle (bloom seed) + ground fire glow
+const glowCard = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
+  map: TEX.glow, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true, color: 0xffc477
+}));
+glowCard.renderOrder = 7;
+glowCard.frustumCulled = false;
+glowCard.userData.animated = true;
+rocket.add(glowCard);
+
+const groundGlow = new THREE.Mesh(new THREE.CircleGeometry(1, 40), new THREE.MeshBasicMaterial({
+  map: TEX.glow, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffb066, opacity: 0.9
+}));
+groundGlow.rotation.x = -Math.PI / 2;
+groundGlow.position.y = PAD_Y + 0.6;
+groundGlow.renderOrder = 8;
+scene.add(groundGlow);
+
+/* ---------------------------------------------------------------------------
+   SECTION 10 — GPU SMOKE / DUST / TRAIL SYSTEMS (fully analytic, no CPU work)
+   --------------------------------------------------------------------------- */
+/* Every particle is a pure function of sim time: age is derived from a seeded
+   birth time, so seek(t) is exact and the CPU cost per frame is one uniform. */
+function smokeShader(kind) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 }, uLife: { value: 20 }, uBirthStart: { value: 0 }, uBirthRamp: { value: 1 },
+      uEmitter: { value: new THREE.Vector3(0, PAD_Y, 0) }, uSpread: { value: 0 }, uRise: { value: 12 },
+      uSwirl: { value: 0.6 }, uSize: { value: 40 }, uOpacity: { value: 0.75 }, uTex: { value: TEX.puff },
+      uTint: { value: new THREE.Color(0xffffff) }, uShade: { value: new THREE.Color(0xbfc3c9) },
+      uEnginePos: { value: new THREE.Vector3(0, PAD_Y, 0) }, uHeat: { value: 0 }, uRecycle: { value: 1 },
+      uVmax: { value: V_MAX }, uTauV: { value: TAU_V }, uLiftoff: { value: T.liftoff },
+      uPadY: { value: PAD_Y }, uFogColor: { value: FOG_COLOR }, uFollow: { value: 0 }
+    },
+    vertexShader: `
+      attribute vec4 iSeed;   // x: angle  y: radial bias  z: size bias  w: birth bias
+      uniform float uTime, uLife, uBirthStart, uBirthRamp, uSpread, uRise, uSwirl, uSize, uFollow, uRecycle;
+      uniform vec3 uEmitter;
+      uniform float uVmax, uTauV, uLiftoff, uPadY;
+      varying vec2 vUv; varying float vAlpha; varying vec3 vWorld; varying float vSeed;
+      float altAt(float t){
+        float tau = t - uLiftoff;
+        if (tau <= 0.0) return 0.0;
+        return uVmax * (tau - uTauV * (1.0 - exp(-tau / uTauV)));
+      }
+      void main(){
+        vUv = uv;
+        float birth = uBirthStart + iSeed.w * uBirthRamp;
+        float raw = uTime - birth;
+        float live = step(0.0, raw);
+        float age = mix(max(raw, 0.0), mod(max(raw, 0.0), uLife), uRecycle);
+        float an = clamp(age / uLife, 0.0, 1.0);
+        float a = iSeed.x * 6.2831853;
+        float grow = pow(an, 0.55);
+        float rad = uSpread * (0.12 + iSeed.y) * grow;
+        float swirl = a + an * (1.2 + iSeed.y) * uSwirl;
+        vec3 base = uEmitter;
+        if (uFollow > 0.5) base.y = uPadY + altAt(birth);
+        vec3 p = base;
+        p.x += cos(swirl) * rad;
+        p.z += sin(swirl) * rad;
+        p.y += uRise * an * (0.45 + 0.75 * iSeed.y) * (0.5 + grow * 0.6);
+        p.x += sin(an * 6.0 + iSeed.w * 12.0) * rad * 0.16;
+        p.z += cos(an * 5.2 + iSeed.z * 12.0) * rad * 0.16;
+        float size = uSize * (0.42 + iSeed.z) * (0.4 + 1.7 * an);
+        vWorld = p;
+        vSeed = iSeed.w;
+        vAlpha = live * smoothstep(0.0, 0.12, an) * (1.0 - smoothstep(0.55, 1.0, an));
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        mv.xy += position.xy * size;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform sampler2D uTex; uniform float uOpacity, uHeat;
+      uniform vec3 uTint, uShade, uEnginePos, uFogColor;
+      varying vec2 vUv; varying float vAlpha; varying vec3 vWorld; varying float vSeed;
+      void main(){
+        vec4 tex = texture2D(uTex, vUv);
+        float d = distance(vWorld, uEnginePos);
+        float hot = uHeat * exp(-d * d / 12000.0);
+        vec3 col = mix(uShade, uTint, clamp(1.0 - d / 5000.0, 0.0, 1.0));
+        col = mix(col, vec3(1.0, 0.66, 0.28), clamp(hot * 1.15, 0.0, 0.85));
+        float alpha = tex.a * vAlpha * uOpacity;
+        if (alpha < 0.004) discard;
+        gl_FragColor = vec4(col, alpha);
+      }`,
+    transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide
+  });
+}
+
+function makeSmokeSystem(count, kind) {
+  const base = new THREE.PlaneGeometry(1, 1);
+  const geo = new THREE.InstancedBufferGeometry();
+  geo.index = base.index;
+  geo.attributes.position = base.attributes.position;
+  geo.attributes.uv = base.attributes.uv;
+  const seeds = new Float32Array(count * 4);
+  for (let i = 0; i < count; i++) {
+    seeds[i * 4 + 0] = rnd();
+    seeds[i * 4 + 1] = Math.pow(rnd(), 1.5);
+    seeds[i * 4 + 2] = rnd();
+    seeds[i * 4 + 3] = i / count;
+  }
+  geo.setAttribute('iSeed', new THREE.InstancedBufferAttribute(seeds, 4));
+  geo.instanceCount = count;
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 200, 0), 12000);
+  const mat = smokeShader(kind);
+  mat.uniforms.uTex.value = kind === 'dust' ? TEX.dust : (kind === 'cloud' ? TEX.cloud : TEX.puff);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 30;
+  scene.add(mesh);
+  return { mesh, mat, count };
+}
+
+const smokeDust = makeSmokeSystem(760, 'dust');
+smokeDust.mat.uniforms.uLife.value = 70;
+smokeDust.mat.uniforms.uRecycle.value = 0;
+smokeDust.mat.uniforms.uBirthStart.value = T.ignite + 0.2;
+smokeDust.mat.uniforms.uBirthRamp.value = 6.0;
+smokeDust.mat.uniforms.uRise.value = 7;
+smokeDust.mat.uniforms.uSwirl.value = 1.5;
+smokeDust.mat.uniforms.uSize.value = 62;
+smokeDust.mat.uniforms.uOpacity.value = 0.62;
+smokeDust.mat.uniforms.uTint.value.setHex(0xf0e2cd);
+smokeDust.mat.uniforms.uShade.value.setHex(0xb9a98f);
+
+const smokeColumn = makeSmokeSystem(560, 'smoke');
+smokeColumn.mat.uniforms.uLife.value = 44;
+smokeColumn.mat.uniforms.uRecycle.value = 0;
+smokeColumn.mat.uniforms.uBirthStart.value = T.ignite;
+smokeColumn.mat.uniforms.uBirthRamp.value = 9.0;
+smokeColumn.mat.uniforms.uRise.value = 46;
+smokeColumn.mat.uniforms.uSwirl.value = 1.05;
+smokeColumn.mat.uniforms.uSize.value = 84;
+smokeColumn.mat.uniforms.uOpacity.value = 0.55;
+smokeColumn.mat.uniforms.uTint.value.setHex(0xffffff);
+smokeColumn.mat.uniforms.uShade.value.setHex(0xa9b0ba);
+
+const smokeTrail = makeSmokeSystem(520, 'smoke');
+smokeTrail.mat.uniforms.uLife.value = 16;
+smokeTrail.mat.uniforms.uBirthStart.value = T.liftoff;
+smokeTrail.mat.uniforms.uBirthRamp.value = 82;
+smokeTrail.mat.uniforms.uFollow.value = 1;
+smokeTrail.mat.uniforms.uRise.value = 12;
+smokeTrail.mat.uniforms.uSwirl.value = 0.7;
+smokeTrail.mat.uniforms.uSize.value = 56;
+smokeTrail.mat.uniforms.uOpacity.value = 0.5;
+smokeTrail.mat.uniforms.uTint.value.setHex(0xf4f4f2);
+smokeTrail.mat.uniforms.uShade.value.setHex(0xb0b6bf);
+
+const steamVent = makeSmokeSystem(150, 'smoke');
+steamVent.mat.uniforms.uLife.value = 30;
+steamVent.mat.uniforms.uRecycle.value = 0;
+steamVent.mat.uniforms.uBirthStart.value = 0;
+steamVent.mat.uniforms.uBirthRamp.value = 14;
+steamVent.mat.uniforms.uRise.value = 24;
+steamVent.mat.uniforms.uSwirl.value = 0.5;
+steamVent.mat.uniforms.uSize.value = 30;
+steamVent.mat.uniforms.uOpacity.value = 0.3;
+steamVent.mat.uniforms.uEmitter.value.set(-120, PAD_Y + 4, 90);
+steamVent.mat.uniforms.uTint.value.setHex(0xffffff);
+steamVent.mat.uniforms.uShade.value.setHex(0xd8e4ee);
+
+const SMOKE_SYSTEMS = [smokeDust, smokeColumn, smokeTrail, steamVent];
+
+/* ---------------------------------------------------------------------------
+   SECTION 11 — SPARKS, EMBERS, DEBRIS
+   --------------------------------------------------------------------------- */
+function makeSparkSystem(count, size, color, speed, life) {
+  const base = new THREE.PlaneGeometry(1, 1);
+  const geo = new THREE.InstancedBufferGeometry();
+  geo.index = base.index;
+  geo.attributes.position = base.attributes.position;
+  geo.attributes.uv = base.attributes.uv;
+  const seeds = new Float32Array(count * 4);
+  for (let i = 0; i < count; i++) {
+    seeds[i * 4 + 0] = rnd();
+    seeds[i * 4 + 1] = rnd();
+    seeds[i * 4 + 2] = rnd();
+    seeds[i * 4 + 3] = i / count;
+  }
+  geo.setAttribute('iSeed', new THREE.InstancedBufferAttribute(seeds, 4));
+  geo.instanceCount = count;
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 200, 0), 12000);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 }, uLife: { value: life }, uStart: { value: T.ignite }, uRamp: { value: 4 },
+      uSize: { value: size }, uSpeed: { value: speed }, uColor: { value: new THREE.Color(color) },
+      uEmitter: { value: new THREE.Vector3(0, PAD_Y, 0) }, uGravity: { value: -34 }, uThrust: { value: 0 },
+      uTex: { value: TEX.spark }, uOpacity: { value: 0.95 }
+    },
+    vertexShader: `
+      attribute vec4 iSeed;
+      uniform float uTime, uLife, uStart, uRamp, uSize, uSpeed, uGravity, uThrust;
+      uniform vec3 uEmitter;
+      varying vec2 vUv; varying float vFade;
+      void main(){
+        vUv = uv;
+        float birth = uStart + iSeed.w * uRamp;
+        float cyc = uLife;
+        float age = mod(max(uTime - birth, 0.0), cyc);
+        float live = step(birth, uTime);
+        float a = iSeed.x * 6.2831853;
+        float el = 0.15 + iSeed.y * 1.25;
+        float sp = uSpeed * (0.4 + iSeed.z * 1.6) * (0.35 + uThrust);
+        vec3 v0 = vec3(cos(a) * cos(el), sin(el), sin(a) * cos(el)) * sp;
+        vec3 p = uEmitter + v0 * age + vec3(0.0, 0.5 * uGravity * age * age, 0.0);
+        p.x += sin(age * 9.0 + iSeed.x * 20.0) * 2.2;
+        p.z += cos(age * 8.0 + iSeed.y * 20.0) * 2.2;
+        float lifeN = age / cyc;
+        vFade = live * smoothstep(0.0, 0.08, lifeN) * (1.0 - smoothstep(0.45, 1.0, lifeN));
+        float size = uSize * (0.5 + iSeed.z);
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        mv.xy += position.xy * size;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform sampler2D uTex; uniform vec3 uColor; uniform float uOpacity;
+      varying vec2 vUv; varying float vFade;
+      void main(){
+        vec4 t = texture2D(uTex, vUv);
+        float a = t.a * vFade * uOpacity;
+        if (a < 0.01) discard;
+        gl_FragColor = vec4(uColor, a);
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 40;
+  scene.add(mesh);
+  return { mesh, mat, count };
+}
+const sparks = makeSparkSystem(420, 2.6, 0xffd08a, 120, 1.9);
+const embers = makeSparkSystem(260, 4.4, 0xff8a3c, 78, 3.1);
+const debris = makeSparkSystem(120, 3.2, 0xfff0c0, 150, 2.3);
+debris.mat.uniforms.uGravity.value = -52;
+const PARTICLE_SYSTEMS = [sparks, embers, debris];
+
+/* ---------------------------------------------------------------------------
+   SECTION 12 — EXHAUST-SENSITIVE VEGETATION AND WIND
+   --------------------------------------------------------------------------- */
+const uTimeU = { value: 0 };
+const uThrustU = { value: 0 };
+const GRASS_ZONES = [
+  { count: 3400, rMin: 118, rMax: 320, h: 3.6, w: 0.9 },
+  { count: 1600, rMin: 320, rMax: 720, h: 5.4, w: 1.25 }
+];
+let grassCount = 0;
+const grassMeshes = [];
+(function buildVegetation() {
+  const VERT_SRC = `
+    attribute vec3 aOrigin;   // blade root in world space
+    attribute vec3 aBlade;    // x: seed, y: height fraction 0..1, z: unused
+    uniform float uTime, uThrust;
+    varying vec2 vUv; varying float vSeed; varying float vDist; varying vec3 vNormalW; varying float vDepth;
+    void main(){
+      vUv = uv;
+      vSeed = aBlade.x;
+      vDist = length(aOrigin.xz);
+      float bend = aBlade.y * aBlade.y;
+      float suction = uThrust * 34.0 / (vDist * 0.055 + 1.0);
+      vec2 away = normalize(aOrigin.xz + vec2(0.0001));
+      float wind = sin(uTime * 1.7 + aOrigin.x * 0.05 + aBlade.x * 6.0) * 0.35
+                 + sin(uTime * 0.7 + aOrigin.z * 0.03) * 0.22;
+      vec3 trans = position;
+      trans.xz += (away * suction + normalize(vec2(1.0, 0.4)) * wind) * bend * 2.6;
+      trans.y -= suction * bend * 1.1;
+      vec4 wp = modelMatrix * vec4(trans, 1.0);
+      vec4 mv = viewMatrix * wp;
+      vDepth = -mv.z;
+      vNormalW = normalize((modelMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+      gl_Position = projectionMatrix * mv;
+    }`;
+  const FRAG_SRC = `
+    uniform vec3 uColA, uColB, uColC, uSun, uFogColor; uniform float uFogDensity, uGlow;
+    varying vec2 vUv; varying float vSeed; varying float vDist; varying vec3 vNormalW; varying float vDepth;
+    void main(){
+      vec3 base = mix(uColC, uColA, vSeed);
+      base = mix(base, uColB, clamp(vUv.y * 0.85 + vSeed * 0.25, 0.0, 1.0));
+      float ndl = 0.40 + 0.80 * max(dot(normalize(vNormalW), uSun), 0.0)
+                + 0.35 * max(dot(normalize(vNormalW), normalize(vec3(0.3, 1.0, 0.4))), 0.0);
+      vec3 col = base * ndl;
+      col += vec3(1.0, 0.62, 0.28) * uGlow * exp(-vDist / 260.0) * 0.8;
+      float f = 1.0 - exp(-pow(uFogDensity * vDepth, 2.0));
+      col = mix(col, uFogColor, clamp(f, 0.0, 1.0));
+      gl_FragColor = vec4(col, 1.0);
+    }`;
+  for (const zone of GRASS_ZONES) {
+    const n = zone.count;
+    const pos = new Float32Array(n * 4 * 3);
+    const uv = new Float32Array(n * 4 * 2);
+    const origin = new Float32Array(n * 4 * 3);
+    const blade = new Float32Array(n * 4 * 3);
+    const idx = new Uint32Array(n * 6);
+    for (let i = 0; i < n; i++) {
+      const a = rnd() * Math.PI * 2;
+      const r = zone.rMin + Math.pow(rnd(), 0.6) * (zone.rMax - zone.rMin);
+      const cx = Math.cos(a) * r, cz = Math.sin(a) * r;
+      const s = rndRange(0.7, 1.5);
+      const hgt = zone.h * s, halfW = zone.w * s * 0.5;
+      const facing = rnd() * Math.PI * 2;
+      const dx = Math.cos(facing) * halfW, dz = Math.sin(facing) * halfW;
+      const seed = rnd();
+      const p = [
+        cx - dx, 0.05, cz - dz,
+        cx + dx, 0.05, cz + dz,
+        cx + dx, hgt, cz + dz,
+        cx - dx, hgt, cz - dz
+      ];
+      const hf = [0, 0, 1, 1];
+      const uvf = [0, 0, 1, 0, 1, 1, 0, 1];
+      for (let v = 0; v < 4; v++) {
+        const o = (i * 4 + v);
+        pos[o * 3] = p[v * 3]; pos[o * 3 + 1] = p[v * 3 + 1]; pos[o * 3 + 2] = p[v * 3 + 2];
+        uv[o * 2] = uvf[v * 2]; uv[o * 2 + 1] = uvf[v * 2 + 1];
+        origin[o * 3] = cx; origin[o * 3 + 1] = 0.05; origin[o * 3 + 2] = cz;
+        blade[o * 3] = seed; blade[o * 3 + 1] = hf[v]; blade[o * 3 + 2] = 0;
+      }
+      const b = i * 4;
+      idx[i * 6 + 0] = b; idx[i * 6 + 1] = b + 1; idx[i * 6 + 2] = b + 2;
+      idx[i * 6 + 3] = b; idx[i * 6 + 4] = b + 2; idx[i * 6 + 5] = b + 3;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setAttribute('aOrigin', new THREE.BufferAttribute(origin, 3));
+    geo.setAttribute('aBlade', new THREE.BufferAttribute(blade, 3));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 20, 0), 3000);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: uTimeU, uThrust: uThrustU,
+        uColA: { value: new THREE.Color(0x74c645) }, uColB: { value: new THREE.Color(0xd6ee79) },
+        uColC: { value: new THREE.Color(0x2f8f3c) }, uSun: { value: SUN_DIR.clone() },
+        uFogColor: { value: FOG_COLOR.clone() }, uFogDensity: { value: 0.000026 },
+        uGlow: { value: 0 }
+      },
+      vertexShader: VERT_SRC, fragmentShader: FRAG_SRC, side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 1;
+    scene.add(mesh);
+    grassMeshes.push(mesh);
+    grassCount += n;
+  }
+})();
+const grassMatRefs = grassMeshes.map(m => m.material);
+
+/* ---------------------------------------------------------------------------
+   SECTION 13 — DETERMINISTIC SIMULATION MODEL
+   --------------------------------------------------------------------------- */
+function altitudeAt(t) {
+  const tau = t - T.liftoff;
+  if (tau <= 0) return 0;
+  return V_MAX * (tau - TAU_V * (1 - Math.exp(-tau / TAU_V)));
+}
+function velocityAt(t) {
+  const tau = t - T.liftoff;
+  if (tau <= 0) return 0;
+  return V_MAX * (1 - Math.exp(-tau / TAU_V));
+}
+function accelAt(t) {
+  const tau = t - T.liftoff;
+  if (tau <= 0) return 0;
+  return (V_MAX / TAU_V) * Math.exp(-tau / TAU_V);
+}
+// Thrust (0..1) and flame intensity (0..1) — both strictly increasing while lighting.
+const thrustAt = t => smoothstep(T.ignite, T.thrustEnd, t);
+const flameAt = t => smoothstep(T.ignite, T.thrustEnd, t) * 0.72 + smoothstep(T.ignite, T.igniteFull, t) * 0.28;
+const clampReleaseAt = t => smoothstep(T.release, T.release + 0.42, t);
+const shakeAmpAt = t => 1.05 * smoothstep(T.ignite, T.liftoff - 0.2, t) * (1 - smoothstep(T.liftoff + 0.2, 24.0, t));
+const plumeLenAt = t => {
+  const altN = clamp01(altitudeAt(t) / 3000);
+  const th = thrustAt(t);
+  return (28 + 122 * th) + altN * (170 + 130 * th);
+};
+function smokeRadiusAt(t) {
+  const a = clamp01((t - (T.ignite + 0.2)) / 6.0);
+  let r = 12 + 44 * a;
+  if (t > T.liftoff - 0.2) r += 5.2 * (t - (T.liftoff - 0.2));
+  return Math.min(r, 430);
+}
+function activeCount(system, t, rampScale) {
+  const u = system.mat.uniforms;
+  const start = u.uBirthStart ? u.uBirthStart.value : u.uStart.value;
+  const ramp = u.uBirthRamp ? u.uBirthRamp.value : u.uRamp.value;
+  const up = clamp01((t - start) / (ramp * (rampScale || 1)));
+  const live = (system.mesh && system.mesh.geometry.instanceCount !== undefined)
+    ? Math.min(system.count, system.mesh.geometry.instanceCount) : system.count;
+  return Math.round(live * up);
+}
+const PHASES = [
+  ['prelaunch', 0], ['ignition', T.ignite], ['thrust-build', T.igniteFull],
+  ['clamps-released', T.release], ['liftoff', T.liftoff], ['ascent', T.liftoff + 3],
+  ['cloud-climb', 32]
+];
+function phaseInfo(t) {
+  let idx = 0;
+  for (let i = 0; i < PHASES.length; i++) if (t >= PHASES[i][1]) idx = i;
+  return { name: PHASES[idx][0], index: idx };
+}
+
+// Engine-exhaust reaction of loose props: zero at idle, grows with thrust.
+function propDisplacementAt(t) {
+  const th = thrustAt(t);
+  return th * 34 * smoothstep(T.ignite, T.liftoff + 1.2, t);
+}
+function grassDisplacementAt(t) {
+  return thrustAt(t) * 1.35 * smoothstep(T.ignite, T.thrustEnd, t);
+}
+function cloudDensityAt(y) {
+  let best = 0, bestIdx = -1;
+  for (let i = 0; i < CLOUD_LAYERS.length; i++) {
+    const L = CLOUD_LAYERS[i];
+    const d = Math.abs(y - L.y);
+    if (d < L.thickness) {
+      const v = 1 - d / L.thickness;
+      if (v > best) { best = v; bestIdx = i; }
+    }
+  }
+  return { density: best, index: bestIdx };
+}
+
+/* ---------------------------------------------------------------------------
+   SECTION 14 — CAMERA RIG (cinematic follow + optional orbit/zoom input)
+   --------------------------------------------------------------------------- */
+const userCam = { az: 0, el: 0, zoom: 1, dragging: false, active: 0, vAz: 0, vEl: 0, lastInput: 0 };
+const camTarget = new THREE.Vector3(0, PAD_Y + 66, 0);
+const camDesired = new THREE.Vector3();
+const rocketCenter = new THREE.Vector3();
+const shakeOffset = new THREE.Vector3();
+
+function cameraParams(t) {
+  const climb = smoothstep(T.liftoff, CLIMB_FULL, t);
+  const dist = lerp(250, 380, climb) - 6 * smoothstep(0, T.liftoff, t);
+  const el = lerp(-0.165, 0.02, climb);
+  const az = 0.62 + 0.14 * climb + 0.02 * Math.sin(t * 0.11);
+  return { dist, el, az };
+}
+function updateCamera(t, vh) {
+  const p = cameraParams(t);
+  const followY = PAD_Y + altitudeAt(Math.max(0, t - 0.12)) + 66;
+  camTarget.set(0, followY, 0);
+  const az = p.az + userCam.az;
+  const el = clamp(p.el + userCam.el, -0.72, 0.50);
+  let dist = clamp(p.dist / Math.max(0.35, userCam.zoom), 130, 386);
+  // never let the rocket shrink below a comfortable size
+  const foreshorten = Math.max(0.62, Math.cos(clamp(el, -0.72, 0.5)));
+  const needed = ROCKET_HEIGHT * foreshorten / (0.30 * 2 * Math.tan(camera.fov * Math.PI / 360));
+  dist = Math.min(dist, Math.max(needed, 130));
+  const amp = shakeAmpAt(t);
+  const st = t * 6.1;
+  shakeOffset.set(
+    (vnoise(st, 1.7) - 0.5) * 2 * amp * 1.5,
+    (vnoise(st, 5.3) - 0.5) * 2 * amp * 1.9,
+    (vnoise(st, 9.1) - 0.5) * 2 * amp * 1.5
+  );
+  camDesired.set(
+    camTarget.x + Math.cos(el) * Math.sin(az) * dist,
+    camTarget.y + Math.sin(el) * dist,
+    camTarget.z + Math.cos(el) * Math.cos(az) * dist
+  ).add(shakeOffset);
+  camDesired.y = Math.max(camDesired.y, 6);
+  camera.position.copy(camDesired);
+  skyDome.position.copy(camera.position);
+  camera.up.set(0, 1, 0);
+  const roll = (vnoise(t * 5.1, 12.5) - 0.5) * 0.02 * amp;
+  camera.lookAt(camTarget);
+  camera.rotateZ(roll);
+  camera.updateMatrixWorld(true);
+  // keep the sun's shadow frustum centred on the launch site
+  sunLight.target.updateMatrixWorld();
+  return { dist, az, el, amp };
+}
+
+/* ---------------------------------------------------------------------------
+   SECTION 15 — INPUT: subtle drag-orbit and wheel/pinch zoom (non-blocking)
+   --------------------------------------------------------------------------- */
+(function bindInput() {
+  let lastX = 0, lastY = 0, pinchDist = 0;
+  const el = renderer.domElement;
+  el.addEventListener('pointerdown', e => {
+    userCam.dragging = true; lastX = e.clientX; lastY = e.clientY;
+    userCam.lastInput = performance.now();
+    try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  });
+  el.addEventListener('pointermove', e => {
+    if (!userCam.dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    userCam.az -= dx * 0.0038;
+    userCam.el = clamp(userCam.el - dy * 0.0022, -0.55, 0.75);
+    userCam.lastInput = performance.now();
+  });
+  const endDrag = () => { userCam.dragging = false; userCam.lastInput = performance.now(); };
+  el.addEventListener('pointerup', endDrag);
+  el.addEventListener('pointercancel', endDrag);
+  el.addEventListener('pointerleave', endDrag);
+  el.addEventListener('wheel', e => {
+    e.preventDefault();
+    userCam.zoom = clamp(userCam.zoom * (1 - Math.sign(e.deltaY) * 0.08), 0.55, 1.45);
+    userCam.lastInput = performance.now();
+  }, { passive: false });
+  el.addEventListener('touchmove', e => {
+    if (e.touches.length !== 2) return;
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    if (pinchDist > 0) userCam.zoom = clamp(userCam.zoom * (d / pinchDist), 0.55, 1.45);
+    pinchDist = d;
+    userCam.lastInput = performance.now();
+  }, { passive: true });
+  el.addEventListener('touchend', () => { pinchDist = 0; });
+  el.addEventListener('contextmenu', e => e.preventDefault());
+})();
+
+/* ---------------------------------------------------------------------------
+   SECTION 16 — RENDER TARGETS, RESIZE AND QUALITY MANAGEMENT
+   --------------------------------------------------------------------------- */
+let renderScale = 1, viewW = 1, viewH = 1;
+let qualityName = 'auto', qualityLocked = false;
+const blurH = blurMaterial(1, 0);
+const blurV = blurMaterial(0, 1);
+
+function disposeTargets() {
+  for (const rt of [rtScene, rtBright, rtBlurA, rtBlurB, rtHalfA, rtHalfB]) if (rt) rt.dispose();
+}
+/* Targets follow the current render budget: in a software rasteriser the
+   per-framebuffer cost is proportional to the allocation, so allocating exactly
+   what is needed beats rendering a sub-rectangle of a larger buffer. The
+   adaptive controller is throttled so reallocations stay rare. */
+function allocTargets(pr) {
+  disposeTargets();
+  const w = Math.max(2, Math.floor(viewW * pr)), h = Math.max(2, Math.floor(viewH * pr));
+  rtScene = new THREE.WebGLRenderTarget(w, h, Object.assign({ depthBuffer: true }, RT_OPTS));
+  const bw = Math.max(2, Math.floor(w / 4)), bh = Math.max(2, Math.floor(h / 4));
+  rtBright = new THREE.WebGLRenderTarget(bw, bh, RT_OPTS);
+  rtBlurA = new THREE.WebGLRenderTarget(bw, bh, RT_OPTS);
+  rtBlurB = new THREE.WebGLRenderTarget(bw, bh, RT_OPTS);
+  const hw = Math.max(2, Math.floor(w / 8)), hh = Math.max(2, Math.floor(h / 8));
+  rtHalfA = new THREE.WebGLRenderTarget(hw, hh, RT_OPTS);
+  rtHalfB = new THREE.WebGLRenderTarget(hw, hh, RT_OPTS);
+  renderer.setPixelRatio(1);
+  renderer.setSize(viewW, viewH, false);
+  compositeMat.uniforms.uAspect.value = viewW / Math.max(1, viewH);
+}
+/* Instance counts follow the render budget so a heavy fill-rate scene stays
+   fluid on software rasterisers without altering the deterministic simulation. */
+function applyParticleScale(f) {
+  const s = clamp(f, 0.25, 1);
+  const sizeScale = 0.55 + 0.45 * s;
+  for (const sys of SMOKE_SYSTEMS) {
+    if (sys.size0 === undefined) sys.size0 = sys.mat.uniforms.uSize.value;
+    sys.mesh.geometry.instanceCount = Math.max(12, Math.round(sys.count * s));
+    sys.mat.uniforms.uSize.value = sys.size0 * sizeScale;
+  }
+  for (const sys of PARTICLE_SYSTEMS) {
+    if (sys.size0 === undefined) sys.size0 = sys.mat.uniforms.uSize.value;
+    sys.mesh.geometry.instanceCount = Math.max(10, Math.round(sys.count * s));
+    sys.mat.uniforms.uSize.value = sys.size0 * sizeScale;
+  }
+  const grassScale = 0.32 + 0.68 * s;
+  for (let i = 0; i < grassMeshes.length; i++) {
+    const total = GRASS_ZONES[i] ? GRASS_ZONES[i].count : 0;
+    grassMeshes[i].geometry.setDrawRange(0, Math.max(240, Math.round(total * grassScale)) * 6);
+  }
+}
+function particleScaleFor(scale) { return 0.45 + 0.55 * clamp01((scale - 0.4) / 0.6); }
+
+function resize() {
+  viewW = Math.max(1, window.innerWidth);
+  viewH = Math.max(1, window.innerHeight);
+  camera.aspect = viewW / viewH;
+  camera.updateProjectionMatrix();
+  allocTargets(renderScale * Math.min(window.devicePixelRatio || 1, 2));
+  applyParticleScale(particleScaleFor(renderScale));
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
+
+const QUALITY_PRESETS = {
+  low: { scale: 0.42, glow: 0.85, shadows: false },
+  medium: { scale: 0.72, glow: 1.0, shadows: true },
+  high: { scale: 1.0, glow: 1.0, shadows: true }
+};
+function applyQuality(name) {
+  qualityName = name; qualityLocked = name !== 'auto';
+  if (name === 'auto') {
+    renderer.shadowMap.enabled = QUALITY_PRESETS.high.shadows;
+    compositeMat.uniforms.uBloom.value = QUALITY_PRESETS.high.glow;
+    resize();
+    return;
+  }
+  const preset = QUALITY_PRESETS[name] || QUALITY_PRESETS.high;
+  renderScale = preset.scale;
+  renderer.shadowMap.enabled = preset.shadows;
+  compositeMat.uniforms.uBloom.value = preset.glow;
+  resize();
+}
+/* Time-based, throttled, hysteretic adaptation: reallocating render targets
+   every frame would itself cause stalls, but a frame-count trigger would never
+   fire on a very slow software rasteriser. */
+let perfAccum = 0, perfSamples = 0, perfCooldownMs = 0;
+function adaptQuality(frameSeconds) {
+  if (qualityLocked || paused) return;
+  perfAccum += frameSeconds; perfSamples++;
+  if (perfCooldownMs > 0) { perfCooldownMs -= frameSeconds * 1000; return; }
+  if (perfAccum < 1.2) return;
+  const avg = perfAccum / perfSamples;
+  perfAccum = 0; perfSamples = 0;
+  let next = renderScale;
+  if (avg > 0.14) next = Math.max(0.34, renderScale - 0.16);
+  else if (avg > 0.085) next = Math.max(0.45, renderScale - 0.10);
+  else if (avg < 0.028) next = Math.min(1.0, renderScale + 0.06);
+  if (Math.abs(next - renderScale) > 0.004) {
+    renderScale = next;
+    perfCooldownMs = 2500;
+    resize();
+  }
+}
+
+function renderFrame() {
+  renderer.info.reset();
+  renderer.setRenderTarget(rtScene);
+  renderer.clear();
+  renderer.render(scene, camera);
+  // bright pass
+  postQuad.material = brightMat;
+  brightMat.uniforms.tDiffuse.value = rtScene.texture;
+  renderer.setRenderTarget(rtBright);
+  renderer.render(postScene, postCamera);
+  // blur chain (quarter res then eighth res)
+  postQuad.material = blurH;
+  blurH.uniforms.tDiffuse.value = rtBright.texture;
+  blurH.uniforms.uTexel.value.set(1 / rtBright.width, 1 / rtBright.height);
+  renderer.setRenderTarget(rtBlurA);
+  renderer.render(postScene, postCamera);
+  postQuad.material = blurV;
+  blurV.uniforms.tDiffuse.value = rtBlurA.texture;
+  blurV.uniforms.uTexel.value.set(1 / rtBlurA.width, 1 / rtBlurA.height);
+  renderer.setRenderTarget(rtBlurB);
+  renderer.render(postScene, postCamera);
+  postQuad.material = blurH;
+  blurH.uniforms.tDiffuse.value = rtBlurB.texture;
+  blurH.uniforms.uTexel.value.set(1 / rtHalfA.width, 1 / rtHalfA.height);
+  renderer.setRenderTarget(rtHalfA);
+  renderer.render(postScene, postCamera);
+  postQuad.material = blurV;
+  blurV.uniforms.tDiffuse.value = rtHalfA.texture;
+  blurV.uniforms.uTexel.value.set(1 / rtHalfB.width, 1 / rtHalfB.height);
+  renderer.setRenderTarget(rtHalfB);
+  renderer.render(postScene, postCamera);
+  // composite to the canvas
+  postQuad.material = compositeMat;
+  compositeMat.uniforms.tScene.value = rtScene.texture;
+  compositeMat.uniforms.tBloomA.value = rtBlurB.texture;
+  compositeMat.uniforms.tBloomB.value = rtHalfB.texture;
+  renderer.setRenderTarget(null);
+  renderer.render(postScene, postCamera);
+}
+
+/* ---------------------------------------------------------------------------
+   SECTION 17 — PER-FRAME SIMULATION APPLY (pure function of simTime)
+   --------------------------------------------------------------------------- */
+let simTime = 0;
+let engineWorldPos = new THREE.Vector3(0, PAD_Y, 0);
+let lastFollowError = 0;
+let lastProjectedHeight = 0;
+let lastCamInfo = { dist: 250, az: 0.62, el: -0.17, amp: 0 };
+let lastVibration = 0;
+
+function applySim(t) {
+  const alt = altitudeAt(t);
+  const baseY = PAD_Y + alt;
+  const th = thrustAt(t);
+  const fl = flameAt(t);
+
+  // ---- rocket transform + vibration -------------------------------------
+  const vibAmp = 0.22 * shakeAmpAt(t) * (0.35 + 0.65 * th);
+  lastVibration = vibAmp;
+  rocket.position.set(
+    (vnoise(t * 23.0, 1.7) - 0.5) * 2 * vibAmp,
+    baseY,
+    (vnoise(t * 21.0, 4.2) - 0.5) * 2 * vibAmp
+  );
+  rocket.rotation.z = (vnoise(t * 19.0, 8.1) - 0.5) * vibAmp * 0.05;
+  rocket.rotation.x = (vnoise(t * 17.0, 3.3) - 0.5) * vibAmp * 0.04;
+
+  // ---- engines / clamps / arms ------------------------------------------
+  const rel = clampReleaseAt(t);
+  for (const c of animProps.clamps) {
+    // hold-down clamps swing outward and release the booster
+    c.pivot.position.copy(c.home).addScaledVector(c.outward, rel * 17);
+    c.pivot.rotation.z = -rel * 0.5;
+  }
+  for (const a of animProps.swingArms) {
+    a.group.rotation.y = -rel * 1.55;
+  }
+
+  // ---- flames ------------------------------------------------------------
+  const flicker = 0.86 + 0.28 * fbm2(t * 6.5, 3.1, 3);
+  const plumeLen = plumeLenAt(t);
+  const widths = [1, 1, 1 + 0.22 * clamp01(alt / 3000), 1 + 0.34 * clamp01(alt / 3000)];
+  for (let i = 0; i < FLAME_LAYERS.length; i++) {
+    const m = FLAME_LAYERS[i];
+    const len = FLAME_BASE_LEN[i] * (i === 3 ? plumeLen / 130 : (0.30 + 0.95 * fl));
+    m.scale.set(widths[i] * (0.55 + 0.5 * fl), Math.max(0.02, len), widths[i] * (0.55 + 0.5 * fl));
+    // kept visible (alpha 0 when cold) so the shaders are compiled at load
+    // time instead of hitching at ignition
+    m.visible = true;
+    m.material.uniforms.uTime.value = t;
+    m.material.uniforms.uIntensity.value = fl;
+    m.material.uniforms.uFlicker.value = flicker;
+  }
+  glowCard.position.set(0, ROCKET_TAIL * 0.35, 0);
+  const gs = (2.5 + 9 * th) * (0.85 + 0.3 * flicker);
+  glowCard.scale.set(gs * 2.4, gs * 2.4, 1);
+  glowCard.visible = th > 0.01;
+  glowCard.material.opacity = 0.55 + 0.4 * th;
+  glowCard.quaternion.copy(camera.quaternion);
+  const groundGlowScale = 26 + 44 * th;
+  groundGlow.scale.set(groundGlowScale, groundGlowScale, 1);
+  groundGlow.material.opacity = 0.85 * th * flicker;
+  groundGlow.visible = th > 0.02;
+
+  // ---- dynamic engine lighting ------------------------------------------
+  engineWorldPos.set(0, baseY + 4, 0);
+  engineLight.position.copy(engineWorldPos);
+  engineLight.intensity = 9000 * th * (0.85 + 0.3 * flicker);
+  engineCore.position.set(0, baseY + 9, 0);
+  engineCore.intensity = 4200 * th * flicker;
+  engineGlowLight.position.set(0, baseY + 18, 0);
+  engineGlowLight.intensity = 26000 * th;
+  hemi.intensity = 1.25 + 0.35 * th;
+  sunLight.intensity = 3.15 + 0.35 * th;
+
+  // ---- smoke / particle uniforms ----------------------------------------
+  const spread = smokeRadiusAt(t);
+  for (const s of SMOKE_SYSTEMS) {
+    const u = s.mat.uniforms;
+    u.uTime.value = t;
+    u.uSpread.value = spread;
+    u.uEnginePos.value.copy(engineWorldPos);
+    u.uHeat.value = th;
+  }
+  smokeTrail.mat.uniforms.uEmitter.value.set(0, PAD_Y, 0);
+  for (const p of PARTICLE_SYSTEMS) {
+    const u = p.mat.uniforms;
+    u.uTime.value = t;
+    u.uThrust.value = th;
+    u.uEmitter.value.set(0, baseY + 2, 0);
+  }
+  uTimeU.value = t;
+  uThrustU.value = th;
+  for (const gm of grassMatRefs) gm.uniforms.uGlow.value = th * 0.8;
+
+  // ---- vegetation / loose props (exhaust reaction) -----------------------
+  const pd = propDisplacementAt(t);
+  for (const o of animProps.loose) {
+    const dirX = Math.cos(o.angle), dirZ = Math.sin(o.angle);
+    const k = pd * o.mass * (0.35 + 0.65 * vnoise(o.angle * 3.1, 2.2));
+    const jitter = 0.5 * th * vnoise(t * 9 + o.angle, 5.5);
+    _v3a.set(
+      o.home.x + dirX * k + jitter,
+      Math.max(2.5, o.home.y - k * 0.22),
+      o.home.z + dirZ * k + jitter
+    );
+    _euler.set(k * 0.03 * o.spin, o.baseRotY, k * 0.05 * o.spin);
+    _q.setFromEuler(_euler);
+    _m4.compose(_v3a, _q, o.scale);
+    o.mesh.setMatrixAt(o.index, _m4);
+  }
+  for (const m of launchSite.userData.propMeshes) m.instanceMatrix.needsUpdate = true;
+  for (const f of animProps.flags) {
+    f.mesh.rotation.y = Math.sin(t * 2.4 + f.phase) * 0.22 * (1 + 1.6 * th);
+    f.mesh.position.x = f.base.x + th * 3.2 * Math.sin(t * 7.1 + f.phase);
+    f.mesh.position.z = f.base.z + th * 3.2 * Math.cos(t * 6.3 + f.phase);
+  }
+  for (const b of animProps.beacons) {
+    const pulse = 0.35 + 0.65 * Math.max(0, Math.sin(t * 3.1 + b.phase));
+    b.mesh.material.emissiveIntensity = 0.6 + 2.6 * pulse;
+    b.mesh.scale.setScalar(0.85 + 0.35 * pulse);
+  }
+  // ---- camera ------------------------------------------------------------
+  lastCamInfo = updateCamera(t, viewH);
+  camera.updateMatrixWorld(true);
+  scene.updateMatrixWorld(true);
+
+  // ---- camera-facing cloud billboards with deterministic drift -----------
+  cloudMesh.material.uniforms.uTime.value = t;
+
+  // ---- metrics -----------------------------------------------------------
+  rocketCenter.set(0, baseY + ROCKET_HEIGHT * 0.5, 0);
+  _v3a.set(0, baseY, 0).project(camera);
+  _v3b.set(0, baseY + ROCKET_HEIGHT, 0).project(camera);
+  lastProjectedHeight = Math.abs(_v3b.y - _v3a.y) * 0.5;
+  _v3c.copy(rocketCenter).project(camera);
+  lastFollowError = Math.hypot(_v3c.x, _v3c.y);
+
+  // ---- heat shimmer follows the engine on screen -------------------------
+  _v3a.copy(engineWorldPos).project(camera);
+  const engineOnScreen = _v3a.z < 1 && Math.abs(_v3a.x) < 1.25 && Math.abs(_v3a.y) < 1.25;
+  compositeMat.uniforms.uEngineUV.value.set(_v3a.x * 0.5 + 0.5, _v3a.y * 0.5 + 0.5);
+  compositeMat.uniforms.uHeat.value = engineOnScreen ? th * 1.15 : 0;
+  compositeMat.uniforms.uTime.value = t;
+}
+
+/* ---------------------------------------------------------------------------
+   SECTION 18 — MAIN LOOP (auto-starts; simulated with a fixed real-time step)
+   --------------------------------------------------------------------------- */
+let paused = false;
+let frames = 0;
+let fpsAvg = 0;
+let lastMs = performance.now();
+let ready = false;
+
+function frame(nowMs) {
+  const dtReal = Math.min(0.5, Math.max(0, (nowMs - lastMs) / 1000));
+  lastMs = nowMs;
+  if (dtReal > 0) fpsAvg = fpsAvg * 0.9 + (1 / dtReal) * 0.1;
+  if (!paused) simTime = Math.min(simTime + dtReal, T.max + 400);
+  applySim(simTime);
+  renderer.shadowMap.needsUpdate = (frames % 2) === 0;
+  renderFrame();
+  frames++;
+  adaptQuality(dtReal);
+  // optional camera controls hand back to the cinematic rig once idle
+  if (!userCam.dragging && nowMs - (userCam.lastInput || 0) > 2600) {
+    // time-constant decay, independent of frame rate
+    const fa = Math.exp(-dtReal / 2.5);
+    const fz = Math.exp(-dtReal / 1.2);
+    userCam.az *= fa; userCam.el *= fa;
+    userCam.zoom = 1 + (userCam.zoom - 1) * fz;
+    if (Math.abs(userCam.az) < 1e-3) userCam.az = 0;
+    if (Math.abs(userCam.el) < 1e-3) userCam.el = 0;
+    if (Math.abs(userCam.zoom - 1) < 1e-3) userCam.zoom = 1;
+  }
+  if (!ready && frames >= 1) ready = true;
+  requestAnimationFrame(frame);
+}
+
+resize();
+applySim(0);
+renderFrame();
+requestAnimationFrame(ts => { lastMs = ts; frame(ts); });
+
+/* ---------------------------------------------------------------------------
+   SECTION 19 — NON-VISUAL DEBUG / VERIFICATION HOOK (no DOM, no text, no HUD)
+   --------------------------------------------------------------------------- */
+function sample() {
+  const t = simTime;
+  const ph = phaseInfo(t);
+  const alt = altitudeAt(t);
+  const th = thrustAt(t);
+  const cd = cloudDensityAt(alt);
+  return {
+    ready, frames, fps: Math.round(fpsAvg * 10) / 10, simTime: t,
+    phase: ph.name, phaseIndex: ph.index, quality: qualityName, renderScale,
+    paused,
+    rocket: {
+      baseY: PAD_Y + alt, padY: PAD_Y, altitude: alt,
+      velocity: velocityAt(t), acceleration: accelAt(t),
+      vibration: lastVibration, projectedScreenHeight: lastProjectedHeight,
+      height: ROCKET_HEIGHT
+    },
+    flame: {
+      intensity: flameAt(t), thrust: th, plumeLength: plumeLenAt(t), layerCount: FLAME_LAYERS.length,
+      visible: FLAME_LAYERS[0].visible, plumeScale: flamePlume.scale.y
+    },
+    engineLight: {
+      intensity: engineLight.intensity, core: engineCore.intensity, glow: engineGlowLight.intensity
+    },
+    smoke: {
+      particleCount: activeCount(smokeDust, t, 1) + activeCount(smokeColumn, t, 1) + activeCount(smokeTrail, t, 1) + activeCount(steamVent, t, 1),
+      groundRadius: smokeRadiusAt(t),
+      systems: SMOKE_SYSTEMS.map(s => ({ count: s.count, active: activeCount(s, t, 1) }))
+    },
+    particles: {
+      sparks: activeCount(sparks, t, 1), embers: activeCount(embers, t, 1), debris: activeCount(debris, t, 1),
+      active: activeCount(sparks, t, 1) + activeCount(embers, t, 1) + activeCount(debris, t, 1)
+    },
+    clamps: { released: t >= T.release, releaseTime: T.release, angle: clampReleaseAt(t), swingArms: animProps.swingArms.length, holdDowns: animProps.clamps.length },
+    camera: {
+      distance: lastCamInfo.dist, azimuth: lastCamInfo.az, elevation: lastCamInfo.el,
+      shake: lastCamInfo.amp, followError: lastFollowError, y: camera.position.y, x: camera.position.x
+    },
+    vegetation: { displacement: grassDisplacementAt(t), count: grassCount, sway: grassMatRefs[0].uniforms.uTime.value },
+    props: { displacement: propDisplacementAt(t), count: animProps.loose.length },
+    clouds: { insideLayer: cd.index >= 0, layerIndex: cd.index, localDensity: cd.density, layers: CLOUD_LAYERS.map(l => ({ y: l.y, thickness: l.thickness })) },
+    render: {
+      drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
+      programs: renderer.info.programs ? renderer.info.programs.length : 0,
+      geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures
+    }
+  };
+}
+function seek(t) {
+  paused = true;
+  simTime = clamp(t, 0, T.max + 400);
+  applySim(simTime);
+  renderFrame();
+  return sample();
+}
+function restart() {
+  simTime = 0;
+  userCam.az = 0; userCam.el = 0; userCam.zoom = 1;
+  paused = false;
+  lastMs = performance.now();
+  applySim(simTime);
+  renderFrame();
+  return sample();
+}
+function play() { paused = false; lastMs = performance.now(); return paused; }
+function pause() { paused = true; return paused; }
+
+const LAUNCH = {};
+const GETTERS = {
+  ready: () => ready,
+  phase: () => phaseInfo(simTime).name,
+  phaseIndex: () => phaseInfo(simTime).index,
+  simTime: () => simTime,
+  paused: () => paused,
+  frames: () => frames,
+  fps: () => fpsAvg,
+  quality: () => qualityName,
+  renderScale: () => renderScale
+};
+for (const k of Object.keys(GETTERS)) Object.defineProperty(LAUNCH, k, { get: GETTERS[k], enumerable: true });
+LAUNCH.timeline = Object.assign({}, T);
+LAUNCH.sample = sample;
+LAUNCH.seek = seek;
+LAUNCH.restart = restart;
+LAUNCH.play = play;
+LAUNCH.pause = pause;
+LAUNCH.setQuality = q => { applyQuality(q); applySim(simTime); renderFrame(); return qualityName; };
+window.__LAUNCH__ = LAUNCH;
+</script>
+</body>
+</html>
