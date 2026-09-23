@@ -9,6 +9,7 @@
 
 import './app.css';
 
+import { bootAudioDirector, type AudioDirector, type AudioDirectorBoot } from './audio/audioDirector';
 import { CELL_HALF_DEPTH, CELL_HALF_WIDTH } from './core/blockLayout';
 import {
   createSceneContextApp,
@@ -19,6 +20,9 @@ import {
 
 /** Currently booted app, if any. */
 let activeApp: SceneContextApp | null = null;
+
+/** Audio boot handle for the running app: unlock affordance + scene tick. */
+let activeAudio: AudioDirectorBoot | null = null;
 
 /**
  * Neutral establishing shot of the block: high, slightly south of the centre,
@@ -57,14 +61,39 @@ export function bootChronoCity(options: SceneContextOptions = {}): SceneContextA
 
   frameBlock(app);
   markReady(app);
+  startAudio(app);
   app.start();
   integrateSceneContextGlobal(app);
   activeApp = app;
   return app;
 }
 
+/**
+ * Boots the audio engine for the scene: the synthesized cue set, the
+ * gesture-gated unlock affordance (which doubles as the mute toggle) and the
+ * tick system that keeps the listener glued to the camera.
+ *
+ * Audio is additive by contract — a failure here must never stop the city from
+ * booting, so the boot is defensive and simply logs when it cannot start.
+ */
+function startAudio(app: SceneContextApp): void {
+  try {
+    activeAudio = bootAudioDirector({
+      scene: app.context,
+      documentRef: document,
+      container: app.overlayRoot,
+    });
+  } catch (error) {
+    console.error('[chrono-city] audio boot failed', error);
+  }
+}
+
 /** Stops the running app and clears the global handle (used by tests/HMR). */
 export function stopChronoCity(): void {
+  if (activeAudio) {
+    activeAudio.dispose();
+    activeAudio = null;
+  }
   if (!activeApp) return;
   activeApp.dispose();
   activeApp = null;
@@ -75,6 +104,11 @@ export function stopChronoCity(): void {
 /** The live app handle, or `null` before boot. */
 export function getChronoCity(): SceneContextApp | null {
   return activeApp;
+}
+
+/** The live audio engine, or `null` before boot (see `window.__chronoCityAudio`). */
+export function getChronoCityAudio(): AudioDirector | null {
+  return activeAudio?.director ?? null;
 }
 
 function bootFromDocument(): void {
