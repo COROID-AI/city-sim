@@ -1,0 +1,95 @@
+/*
+ * Chrono City — application shell styles.
+ *
+ * Only the shell lives here: a full-bleed WebGL stage and a transparent,
+ * click-through overlay root the HUD builds on top of, plus a few shared
+ * overlay primitives so later HUD tasks look consistent from the first frame.
+ */
+
+:root {
+  color-scheme: dark;
+  --chrono-surface: #05070d;
+  --chrono-ink: #e8eef7;
+  --chrono-muted: rgba(232, 238, 247, 0.62);
+  --chrono-accent: #6fd3ff;
+  --chrono-font:
+    'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--chrono-surface);
+  color: var(--chrono-ink);
+  font-family: var(--chrono-font);
+  overflow: hidden;
+}
+
+/* WebGL stage: the renderer canvas fills it and never scrolls the page. */
+.chrono-stage {
+  position: fixed;
+  inset: 0;
+}
+
+canvas.chrono-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+}
+
+/* Overlay root: above the canvas, click-through by default. */
+.chrono-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: block;
+  pointer-events: none;
+  color: var(--chrono-ink);
+}
+
+/* Interactive HUD widgets re-enable pointer events for themselves. */
+.chrono-overlay > * {
+  pointer-events: auto;
+}
+
+/* Shared overlay primitives (era-neutral, filled in by HUD tasks). */
+.chrono-panel {
+  background: rgba(6, 12, 22, 0.62);
+  border: 1px solid rgba(111, 211, 255, 0.18);
+  border-radius: 12px;
+  padding: 12px 14px;
+  backdrop-filter: blur(10px);
+}
+
+.chrono-label {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--chrono-muted);
+}
+
+.chrono-value {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chrono-accent {
+  color: var(--chrono-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrono-overlay * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

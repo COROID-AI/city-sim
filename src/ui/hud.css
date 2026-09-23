@@ -1,0 +1,694 @@
+/*
+ * Chrono City — HUD chrome.
+ *
+ * Styles for the top-of-screen timeline slider, the era tooltip, the mute /
+ * help actions and their toasts. The layout keeps the slider as the primary
+ * control (top centre) and leaves the rest of the viewport click-through, so
+ * the camera keeps working right up to the widget edges.
+ *
+ * All values inherit the shell tokens declared in `src/app.css`
+ * (`--chrono-ink`, `--chrono-accent`, `--chrono-panel`, …) and add a small set
+ * of HUD-local tokens so the chrome stays themeable from one place.
+ */
+
+.chrono-hud {
+  --chrono-hud-surface: rgba(6, 12, 22, 0.66);
+  --chrono-hud-surface-strong: rgba(6, 12, 22, 0.86);
+  --chrono-hud-border: rgba(111, 211, 255, 0.2);
+  --chrono-hud-border-strong: rgba(111, 211, 255, 0.42);
+  --chrono-hud-shadow: 0 18px 48px rgba(2, 6, 16, 0.55);
+  --chrono-hud-toast-offset: 28px;
+
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+  color: var(--chrono-ink, #e8eef7);
+}
+
+/* ------------------------------------------------------------------------- *
+ * Top bar
+ * ------------------------------------------------------------------------- */
+
+.chrono-hud__top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  padding: calc(env(safe-area-inset-top, 0px) + 64px) 20px 0;
+  pointer-events: none;
+}
+
+.chrono-hud__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 6px;
+  opacity: 0.92;
+}
+
+.chrono-hud__mark {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--chrono-accent, #6fd3ff);
+  box-shadow: 0 0 14px rgba(111, 211, 255, 0.35);
+}
+
+.chrono-hud__mark::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 7px;
+  border-radius: 1px;
+  background: var(--chrono-accent, #6fd3ff);
+  transform: translate(-50%, -100%) rotate(38deg);
+  transform-origin: 50% 100%;
+}
+
+.chrono-hud__wordmark {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.chrono-hud__center {
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.chrono-hud__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+/* ------------------------------------------------------------------------- *
+ * Timeline slider
+ * ------------------------------------------------------------------------- */
+
+.chrono-timeline {
+  position: relative;
+  width: clamp(320px, 46vw, 620px);
+  padding: 10px 20px 14px;
+  border: 1px solid var(--chrono-hud-border);
+  border-radius: 16px;
+  background: linear-gradient(
+    180deg,
+    rgba(12, 22, 38, 0.86) 0%,
+    rgba(6, 12, 22, 0.72) 100%
+  );
+  box-shadow: var(--chrono-hud-shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.chrono-timeline::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  border-radius: 16px 16px 0 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(111, 211, 255, 0.5),
+    transparent
+  );
+  opacity: calc(0.35 + 0.65 * var(--chrono-timeline-progress, 1));
+  transition: opacity 220ms ease;
+}
+
+.chrono-timeline__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.chrono-timeline__caption {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(232, 238, 247, 0.5);
+}
+
+.chrono-timeline__title {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chrono-timeline__year {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--chrono-accent, #6fd3ff);
+  text-shadow: 0 0 18px rgba(111, 211, 255, 0.45);
+}
+
+.chrono-timeline__track {
+  position: relative;
+  height: 42px;
+  cursor: pointer;
+  outline: none;
+  touch-action: none;
+}
+
+.chrono-timeline__track:focus-visible {
+  outline: 2px solid var(--chrono-accent, #6fd3ff);
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+
+.chrono-timeline__rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(232, 238, 247, 0.18);
+}
+
+.chrono-timeline__fill {
+  position: absolute;
+  left: 0;
+  top: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(111, 211, 255, 0.45), var(--chrono-accent, #6fd3ff));
+  box-shadow: 0 0 14px rgba(111, 211, 255, 0.45);
+  transition: width 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.chrono-timeline[data-chrono-timeline-state='dragging'] .chrono-timeline__fill {
+  transition: none;
+}
+
+.chrono-timeline__thumb {
+  position: absolute;
+  top: 13px;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border-radius: 50%;
+  background: #eaf7ff;
+  border: 2px solid var(--chrono-accent, #6fd3ff);
+  box-shadow:
+    0 0 0 4px rgba(111, 211, 255, 0.16),
+    0 0 20px rgba(111, 211, 255, 0.6);
+  transform: translate(-50%, -50%);
+  transition: left 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.chrono-timeline[data-chrono-timeline-state='dragging'] .chrono-timeline__thumb {
+  transition: none;
+  box-shadow:
+    0 0 0 6px rgba(111, 211, 255, 0.24),
+    0 0 26px rgba(111, 211, 255, 0.8);
+}
+
+.chrono-timeline__stops {
+  position: absolute;
+  inset: 0;
+}
+
+.chrono-timeline__stop {
+  position: absolute;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 52px;
+  padding: 4px 6px;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: rgba(232, 238, 247, 0.6);
+  font: inherit;
+  cursor: pointer;
+  transform: translateX(-50%);
+  transition: color 180ms ease;
+}
+
+.chrono-timeline__stop-dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 8px;
+  border-radius: 50%;
+  background: rgba(232, 238, 247, 0.32);
+  box-shadow: 0 0 0 0 rgba(111, 211, 255, 0);
+  transition:
+    background 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.chrono-timeline__stop-year {
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+.chrono-timeline__stop:hover,
+.chrono-timeline__stop[data-chrono-timeline-highlighted='true'] {
+  color: var(--chrono-ink, #e8eef7);
+}
+
+.chrono-timeline__stop:hover .chrono-timeline__stop-dot,
+.chrono-timeline__stop[data-chrono-timeline-highlighted='true'] .chrono-timeline__stop-dot {
+  background: rgba(111, 211, 255, 0.85);
+  transform: scale(1.15);
+}
+
+.chrono-timeline__stop[data-chrono-timeline-active='true'] {
+  color: var(--chrono-accent, #6fd3ff);
+}
+
+.chrono-timeline__stop[data-chrono-timeline-active='true'] .chrono-timeline__stop-dot {
+  background: var(--chrono-accent, #6fd3ff);
+  box-shadow:
+    0 0 0 4px rgba(111, 211, 255, 0.18),
+    0 0 16px rgba(111, 211, 255, 0.7);
+  transform: scale(1.3);
+}
+
+.chrono-timeline__tooltip {
+  position: absolute;
+  top: -14px;
+  max-width: min(320px, 62vw);
+  padding: 8px 12px;
+  border: 1px solid var(--chrono-hud-border);
+  border-radius: 10px;
+  background: var(--chrono-hud-surface-strong);
+  box-shadow: var(--chrono-hud-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  opacity: 0.96;
+}
+
+.chrono-timeline__tooltip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  background: var(--chrono-hud-surface-strong);
+  border-right: 1px solid var(--chrono-hud-border);
+  border-bottom: 1px solid var(--chrono-hud-border);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.chrono-timeline__tooltip-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.chrono-timeline__tooltip-copy {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(232, 238, 247, 0.66);
+}
+
+/* ------------------------------------------------------------------------- *
+ * Action buttons
+ * ------------------------------------------------------------------------- */
+
+.chrono-hud__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 1px solid var(--chrono-hud-border);
+  border-radius: 999px;
+  background: var(--chrono-hud-surface);
+  color: var(--chrono-ink, #e8eef7);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    transform 180ms ease;
+}
+
+.chrono-hud__action:hover:not(:disabled) {
+  border-color: var(--chrono-hud-border-strong);
+  background: rgba(12, 24, 42, 0.82);
+}
+
+.chrono-hud__action:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.chrono-hud__action:focus-visible {
+  outline: 2px solid var(--chrono-accent, #6fd3ff);
+  outline-offset: 3px;
+}
+
+.chrono-hud__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chrono-hud__action-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--chrono-accent, #6fd3ff);
+}
+
+.chrono-hud__action[data-chrono-hud-mute-state='muted'] .chrono-hud__action-glyph {
+  color: rgba(232, 238, 247, 0.45);
+}
+
+.chrono-hud__action[data-chrono-hud-help-state='open'] {
+  border-color: var(--chrono-hud-border-strong);
+  background: rgba(20, 40, 68, 0.85);
+}
+
+/* ------------------------------------------------------------------------- *
+ * Toasts
+ * ------------------------------------------------------------------------- */
+
+.chrono-hud__toasts {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--chrono-hud-toast-offset));
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 8px;
+  width: min(420px, 82vw);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.chrono-hud__toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--chrono-hud-border);
+  border-left: 3px solid var(--chrono-accent, #6fd3ff);
+  border-radius: 12px;
+  background: var(--chrono-hud-surface-strong);
+  box-shadow: var(--chrono-hud-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: auto;
+  animation: chrono-hud-toast-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.chrono-hud__toast[data-chrono-hud-toast-tone='audio'] {
+  border-left-color: #9ef0c0;
+}
+
+.chrono-hud__toast[data-chrono-hud-toast-tone='warning'] {
+  border-left-color: #ffc36f;
+}
+
+.chrono-hud__toast-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--chrono-accent, #6fd3ff);
+}
+
+.chrono-hud__toast-message {
+  flex: 1;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.chrono-hud__toast-close {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: rgba(232, 238, 247, 0.5);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.chrono-hud__toast-close:hover {
+  color: var(--chrono-ink, #e8eef7);
+  background: rgba(232, 238, 247, 0.1);
+}
+
+@keyframes chrono-hud-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ------------------------------------------------------------------------- *
+ * Controls help overlay
+ * ------------------------------------------------------------------------- */
+
+.chrono-help {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 180px);
+  left: 20px;
+  z-index: 14;
+  pointer-events: none;
+}
+
+.chrono-help[hidden] {
+  display: none !important;
+}
+
+.chrono-help__panel {
+  width: min(340px, calc(100vw - 40px));
+  max-height: min(70vh, 560px);
+  overflow: auto;
+  padding: 16px 18px 14px;
+  border: 1px solid var(--chrono-hud-border);
+  border-radius: 16px;
+  background: var(--chrono-hud-surface-strong);
+  box-shadow: var(--chrono-hud-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  pointer-events: auto;
+  animation: chrono-hud-help-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes chrono-hud-help-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chrono-help__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.chrono-help__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--chrono-accent, #6fd3ff);
+}
+
+.chrono-help__close {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--chrono-hud-border);
+  border-radius: 50%;
+  background: none;
+  color: var(--chrono-ink, #e8eef7);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.chrono-help__close:hover {
+  border-color: var(--chrono-hud-border-strong);
+  background: rgba(232, 238, 247, 0.08);
+}
+
+.chrono-help__close:focus-visible {
+  outline: 2px solid var(--chrono-accent, #6fd3ff);
+  outline-offset: 2px;
+}
+
+.chrono-help__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.chrono-help__section-title {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(232, 238, 247, 0.5);
+}
+
+.chrono-help__item {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.chrono-help__keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chrono-help__key {
+  display: inline-block;
+  min-width: 20px;
+  padding: 2px 6px;
+  border: 1px solid rgba(232, 238, 247, 0.2);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: rgba(232, 238, 247, 0.06);
+  color: var(--chrono-ink, #e8eef7);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.chrono-help__action {
+  color: rgba(232, 238, 247, 0.74);
+}
+
+.chrono-help__hint {
+  margin: 14px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(232, 238, 247, 0.4);
+}
+
+/* ------------------------------------------------------------------------- *
+ * Responsive + motion
+ * ------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .chrono-timeline {
+    width: clamp(280px, 62vw, 520px);
+  }
+
+  .chrono-hud__wordmark {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .chrono-hud__top {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    justify-items: center;
+  }
+
+  .chrono-hud__brand,
+  .chrono-hud__actions {
+    display: none;
+  }
+
+  .chrono-timeline {
+    width: min(94vw, 460px);
+  }
+
+  .chrono-timeline__tooltip-copy {
+    display: none;
+  }
+
+  .chrono-timeline__tooltip {
+    /* Centre the bubble on the panel: edge stops would clip it otherwise. */
+    left: 50% !important;
+  }
+
+  .chrono-help {
+    top: calc(env(safe-area-inset-top, 0px) + 180px);
+    left: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrono-timeline__fill,
+  .chrono-timeline__thumb,
+  .chrono-hud__toast,
+  .chrono-help__panel {
+    animation: none;
+    transition: none;
+  }
+}
