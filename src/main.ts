@@ -17,6 +17,7 @@ import {
   type SceneContextApp,
   type SceneContextOptions,
 } from './core/sceneContext';
+import { startChronoCityExperience } from './integration/startupSequence';
 
 /** Currently booted app, if any. */
 let activeApp: SceneContextApp | null = null;
@@ -137,3 +138,10 @@ if (import.meta.hot) {
     stopChronoCity();
   });
 }
+
+// Era-transition integration: compose every produced system onto the live shell
+// behind the loading screen and self-start the composed city. The call is
+// append-only so the foundation boot path above stays untouched; it waits for
+// `chrono-city:ready`, so it is safe whether the shell is already up or still
+// parsing.
+startChronoCityExperience();
