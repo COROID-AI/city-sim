@@ -152,6 +152,16 @@ export class EraTransitionController {
 
   /** Force the scene into a single era with no animation (boot / deep link). */
   applyImmediate(year: Year): void {
+    this.settle(year);
+  }
+
+  /**
+   * Put one era on screen instantly, pristine and fully visible.
+   *
+   * This is the only state that can never leave the viewport empty: exactly one
+   * layer group is visible, and every one of its categories is untransformed.
+   */
+  settle(year: Year): void {
     this.from = year;
     this.to = year;
     this.committed = year;
@@ -163,20 +173,35 @@ export class EraTransitionController {
     this.resetCategoryTransforms(year);
   }
 
+  /**
+   * Abort a scrub without committing: settle on whichever of the two blended
+   * eras dominates the frame, so releasing the handle never snaps back to a
+   * layer the user has already scrubbed past.
+   */
+  cancelPreview(): void {
+    if (!this.previewing) return;
+    this.settle(this.previewWeight >= 0.5 ? this.to : this.from);
+  }
+
   /** Begin the animated transformation to `year`. */
   selectYear(year: Year): void {
     if (!this.layers.has(year)) return;
+    if (this.previewing) {
+      // A drag left a blended frame on screen: carry on from the era that is
+      // actually visible there instead of jumping back to the committed layer.
+      this.committed = this.previewWeight >= 0.5 ? this.to : this.from;
+      this.previewing = false;
+      this.previewWeight = 0;
+    }
     const dominant = this.dominantYear();
-    if (!this.previewing && dominant === year && !this.active) {
-      this.from = year;
-      this.to = year;
-      this.committed = year;
-      this.progress = 1;
-      this.setVisibility(year, null, 1);
-      this.resetCategoryTransforms(year);
+    if (dominant === year) {
+      // Already on screen - or already the target of the running change: settle
+      // without animating. Starting a change from an era to itself would hand
+      // each category over to itself, which hides the only visible layer and
+      // leaves the viewport showing nothing but fog.
+      this.settle(year);
       return;
     }
-    this.previewing = false;
     this.from = dominant;
     this.to = year;
     this.progress = 0;
@@ -217,7 +242,7 @@ export class EraTransitionController {
       fromLayer.group.scale.setScalar(1);
       fromLayer.group.position.y = 0;
     }
-    if (toLayer) {
+    if (toLayer && toYear !== fromYear) {
       toLayer.group.scale.setScalar(0.965 + 0.035 * weight);
       toLayer.group.position.y = -1.4 * (1 - weight);
     }
@@ -378,6 +403,14 @@ export class EraTransitionController {
 
   /** Apply visibility + per-category transforms for a given progress. */
   private applyProgress(p: number): void {
+    if (this.from === this.to) {
+      // Degenerate change (an era to itself): keep that single era visible and
+      // pristine instead of handing every category over to itself, which would
+      // hide them all and leave the frame empty.
+      this.setVisibility(this.to, null, 1);
+      this.resetCategoryTransforms(this.to);
+      return;
+    }
     this.setVisibility(this.from, this.to, p);
     const fromLayer = this.layers.get(this.from);
     const toLayer = this.layers.get(this.to);
@@ -433,7 +466,7 @@ export class EraTransitionController {
         layer.group.scale.setScalar(1);
         layer.group.position.set(0, 0, 0);
       }
-      if (year === from && progress >= 1) layer.group.visible = false;
+      if (year === from && to !== from && progress >= 1) layer.group.visible = false;
     }
   }
 

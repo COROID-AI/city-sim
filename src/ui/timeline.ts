@@ -128,6 +128,11 @@ export class TimelineUI {
 
     const onPointerDown = (event: PointerEvent): void => {
       if (event.button !== 0) return;
+      // Stop buttons own their own click: pressing one must not start a drag
+      // scrub, which would cut straight to the target era instead of morphing
+      // the scene from the era currently on screen.
+      const origin = event.target as Element | null;
+      if (origin && typeof origin.closest === 'function' && origin.closest('.timeline-stop')) return;
       this.dragging = true;
       this.elements.handle.classList.add('dragging');
       root.setPointerCapture?.(event.pointerId);

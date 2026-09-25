@@ -12,7 +12,7 @@
  */
 
 import * as THREE from 'three';
-import type { OutfitSpec } from '../config/types';
+import { eraSubtitle, type OutfitSpec } from '../config/types';
 import type { PedestrianRig } from '../sim/crowds';
 import type { WorldKit } from './textures';
 
@@ -213,7 +213,15 @@ export function createPedestrian(kit: WorldKit, outfit: OutfitSpec): PedestrianB
   };
   addAccessory(kit, rig, outfit, { accent: accentMaterial, skin: skinMaterial, dark: darkMaterial });
 
-  root.userData.focus = { kind: 'pedestrian', label: outfit.label, id: outfit.id };
+  const silhouette = outfit.silhouette.replace(/-/g, ' ');
+  const accessory = outfit.accessory === 'none' ? 'no accessory' : `accessory: ${outfit.accessory.replace(/-/g, ' ')}`;
+  root.userData.focus = {
+    kind: 'pedestrian',
+    id: outfit.id,
+    label: outfit.label,
+    detail: `${outfit.label} in a ${silhouette} silhouette, ${accessory}, working the ${kit.era.year} sidewalk.`,
+    period: `${kit.era.year} · ${eraSubtitle(kit.era)}`,
+  };
 
   return { rig, outfit };
 }

@@ -213,4 +213,79 @@ describe('era transition controller', () => {
       expect(controller.visibleYears.length).toBeGreaterThanOrEqual(1);
     }
   });
+
+  it('never blanks the block when the chosen era is already the dominant one', () => {
+    const { controller, layers } = makeController();
+    controller.applyImmediate(1945);
+
+    // A pointer press used to start a scrub that made 1985 the visible era;
+    // committing that same stop then handed 1985 over to itself, hid every
+    // category and left the viewport showing nothing but fog. The scene must
+    // always end up with a single, fully visible era.
+    controller.preview(2);
+    controller.selectYear(1985);
+    expect(controller.state.active).toBe(false);
+    expect(controller.visibleYears).toEqual([1985]);
+    expect(layers.get(1985)?.group.visible).toBe(true);
+    for (const category of CATEGORY_ORDER) {
+      expect(layers.get(1985)?.categories[category].visible, category).toBe(true);
+    }
+
+    // Selecting the era the change is already heading to must settle it there
+    // rather than re-targeting it onto itself.
+    controller.selectYear(2025);
+    for (let step = 0; step < 3; step += 1) controller.update(0.25);
+    expect(controller.state.active).toBe(true);
+    expect(controller.state.progress).toBeGreaterThan(0.5);
+    expect(controller.state.to).toBe(2025);
+    controller.selectYear(2025);
+    expect(controller.state.active).toBe(false);
+    expect(controller.visibleYears).toEqual([2025]);
+    for (const category of CATEGORY_ORDER) {
+      expect(layers.get(2025)?.categories[category].visible, category).toBe(true);
+    }
+
+    // Retargeting mid-change keeps both layers alive and settles on the new era.
+    controller.selectYear(1945);
+    controller.update(0.3);
+    expect(controller.visibleYears.slice().sort()).toEqual([1945, 2025]);
+    runToCompletion(controller);
+    expect(controller.visibleYears).toEqual([1945]);
+  });
+
+  it('leaves one complete era on screen after every selection', () => {
+    const { controller, layers } = makeController();
+    for (const year of YEARS) {
+      controller.applyImmediate(1945);
+      controller.selectYear(year);
+      runToCompletion(controller);
+      expect(controller.visibleYears, `selecting ${year}`).toEqual([year]);
+      const layer = layers.get(year);
+      expect(layer?.group.visible).toBe(true);
+      for (const category of CATEGORY_ORDER) {
+        expect(layer?.categories[category].visible, `${year} ${category}`).toBe(true);
+        expect(layer?.categories[category].scale.x).toBeCloseTo(1, 6);
+        expect(layer?.categories[category].position.y).toBeCloseTo(0, 6);
+      }
+      expect(controller.state.progress).toBe(1);
+      expect(controller.state.committed).toBe(year);
+    }
+  });
+
+  it('settles a released scrub on the era that was on screen', () => {
+    const { controller } = makeController();
+    controller.applyImmediate(1945);
+
+    controller.preview(1.15);
+    expect(controller.state.previewing).toBe(true);
+    controller.cancelPreview();
+    expect(controller.state.previewing).toBe(false);
+    expect(controller.state.committed).toBe(1965);
+    expect(controller.visibleYears).toEqual([1965]);
+
+    controller.preview(3.6);
+    controller.cancelPreview();
+    expect(controller.state.committed).toBe(2025);
+    expect(controller.visibleYears).toEqual([2025]);
+  });
 });

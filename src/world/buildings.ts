@@ -14,7 +14,7 @@
  */
 
 import * as THREE from 'three';
-import { STOREY_HEIGHT, type FacadeStyle, type Hex } from '../config/types';
+import { STOREY_HEIGHT, eraSubtitle, type FacadeStyle, type Hex } from '../config/types';
 import { buildingSlots, type BuildingSlot } from './roads';
 import type { TextureKind, WorldKit } from './textures';
 
@@ -427,7 +427,25 @@ export function createBuildings(kit: WorldKit): BuildingsBuild {
       hasSolarArray,
     };
     const buildingId = `${slot.x}:${slot.z}`;
-    building.userData.focus = { kind: 'building', label: record.label, id: buildingId };
+    const roofFurniture = [
+      hasWaterTower ? 'a cedar water tower' : null,
+      hasFireEscape ? 'cast-iron fire escapes' : null,
+      hasRoofBillboard ? 'a hoisted billboard' : null,
+      hasSolarArray ? 'roof gardens and solar panels' : null,
+    ].filter((entry): entry is string => entry !== null);
+    building.userData.focus = {
+      kind: 'building',
+      id: buildingId,
+      label: record.label,
+      detail:
+        `${floors} storeys of ${record.label} put up around ${builtYear}, ` +
+        (isGlass(style)
+          ? 'sheathed in curtain-wall glazing'
+          : `punched ${kit.era.architecture.windowStyle} windows`) +
+        `${slot.landmark ? ', the tallest address on the block' : ''}` +
+        `${roofFurniture.length > 0 ? `, carrying ${roofFurniture.join(' and ')}` : ''}.`,
+      period: `${kit.era.year} · ${eraSubtitle(kit.era)}`,
+    };
     if (hasWaterTower) waterTowers += 1;
     if (hasFireEscape) fireEscapes += 1;
     if (hasRoofBillboard) roofBillboards += 1;

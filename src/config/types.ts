@@ -350,6 +350,11 @@ export interface EraDefinition {
 
 /* ---------------------------------------------------------- scene graph ---- */
 
+/** Era caption without its leading year, e.g. `Victory Over Broadway`. */
+export function eraSubtitle(era: EraDefinition): string {
+  return era.title.split('·')[1]?.trim() ?? era.title;
+}
+
 /** Category buckets of an era layer; each one is swapped independently. */
 export type SceneCategory =
   | 'roads'

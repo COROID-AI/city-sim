@@ -117,6 +117,18 @@ describe('era layer construction (headless three.js scene graphs)', () => {
       expect(focusables).toContain('prop');
       expect(focusables).toContain('storefront');
       expect(focusables).toContain('advertisement');
+
+      // The info card writes `detail` and `period` straight into two paragraphs,
+      // so every focus target must carry period-aware copy for both of them.
+      layer.group.traverse((object) => {
+        const focus = object.userData?.focus as
+          | { kind?: string; detail?: string; period?: string }
+          | undefined;
+        if (!focus?.kind) return;
+        expect(focus.detail ?? '', `${year} ${focus.kind} detail`).not.toBe('');
+        expect(focus.period ?? '', `${year} ${focus.kind} period`).not.toBe('');
+        expect(focus.period ?? '', `${year} ${focus.kind} period mentions the year`).toContain(String(year));
+      });
     }
   });
 

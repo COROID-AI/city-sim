@@ -12,7 +12,7 @@
  */
 
 import * as THREE from 'three';
-import type { VehicleSpec, VehicleType } from '../config/types';
+import { eraSubtitle, type VehicleSpec, type VehicleType } from '../config/types';
 import { createLaneGraph, type LanePath, type TrafficVehicle } from '../sim/traffic';
 import type { WorldKit } from './textures';
 
@@ -254,7 +254,16 @@ export function createVehicle(kit: WorldKit, spec: VehicleSpec, moving: boolean)
 
   for (const light of brakeLights) light.visible = true;
 
-  group.userData.focus = { kind: 'vehicle', label: spec.label, id: spec.id };
+  group.userData.focus = {
+    kind: 'vehicle',
+    id: spec.id,
+    label: spec.label,
+    detail:
+      `A ${spec.length.toFixed(1)} m ${spec.label.toLowerCase()}, ` +
+      `${moving ? 'rolling through the block' : 'parked at the kerb'}; ` +
+      `${kit.era.year} bodywork with an engine note around ${Math.round(spec.engineHz)} Hz.`,
+    period: `${kit.era.year} · ${eraSubtitle(kit.era)}`,
+  };
   group.userData.moving = moving;
   group.userData.brakeLights = brakeLights;
   group.userData.turnSignals = turnSignals;

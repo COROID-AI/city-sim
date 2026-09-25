@@ -150,7 +150,12 @@ async function boot(): Promise<void> {
     },
     {
       onPreview: (index) => {
-        if (index === null) return;
+        if (index === null) {
+          // Drag released (or a stop was clicked): drop the scrub and settle the
+          // blended frame onto the era that was actually on screen.
+          transition.cancelPreview();
+          return;
+        }
         transition.preview(index);
       },
       onCommit: (index) => {
@@ -216,10 +221,15 @@ async function boot(): Promise<void> {
   }
 
   function selectYear(year: Year, source: 'ui' | 'external'): void {
-    if (distanceOf(store.getState().year, year) === 0 && !transition.state.active && source === 'ui') {
-      // Re-selecting the live era is a no-op beyond the click tick.
-      audio.playClick();
-      return;
+    const state = transition.state;
+    if (source === 'ui' && !state.previewing && distanceOf(store.getState().year, year) === 0) {
+      // Already there - or already animating there (a stop click reports itself
+      // through both the pointer release and the button click): never begin a
+      // second change towards an era the scene already shows or is heading to.
+      if (!state.active || state.to === year) {
+        audio.playClick();
+        return;
+      }
     }
     store.setYear(year);
     transition.selectYear(year);
@@ -382,7 +392,9 @@ async function boot(): Promise<void> {
       engine.setFlash(Math.sin(Math.PI * p) * 0.4);
       hud.setTransitionProgress(p);
       audio.update(dt);
-    } else if (engine.qualityTier !== 'low') {
+    } else {
+      // A change can be aborted mid-flight (scrub, retarget), and low quality
+      // tiers skip the bloom pass entirely, so always clear the flash.
       engine.setFlash(0);
     }
 
