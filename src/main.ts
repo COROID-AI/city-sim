@@ -1,5 +1,6 @@
 import "./styles.css";
 
+import { createSfxEngine, type SfxEngine } from "./audio/sfx";
 import { FixedStepLoop } from "./core/loop";
 import {
   MAX_PIXEL_RATIO,
@@ -8,14 +9,21 @@ import {
   type CityView,
   type Viewport,
 } from "./core/renderer";
+import {
+  createChronoCityScene,
+  mountChronoCityUi,
+  type ChronoCityScene,
+  type ChronoCityUi,
+} from "./scene/scene";
 
 /**
  * Application entry point (loaded by `index.html` as a module).
  *
- * Deliberately thin: resolve the shell roots declared in `index.html`, build
- * the WebGL view, wire it to the shared fixed-step loop and resize handling, and
- * drive the loading overlay. Scene composition, navigation and UI systems are
- * layered on top without restructuring this file.
+ * The shell is resolved here, the WebGL view is created here, and then the real
+ * work is delegated to the composition root in `./scene/scene`: the block, its
+ * systems, the transition driver, the post-processing pipeline, the navigation
+ * rig and the timeline/HUD are all assembled there. This file only owns the
+ * lifecycle - resolve, boot, resize, tear down - and the loading overlay.
  */
 
 /** Ids of the shell roots owned by `index.html`. */
@@ -39,12 +47,25 @@ export interface ShellRoots {
 }
 
 export interface ChronoCityApp {
-  /** Shared fixed-step loop; later systems hook their updates in here. */
+  /** Shared fixed-step loop; the composed scene updates and renders in here. */
   readonly loop: FixedStepLoop;
   /** WebGL view, or `null` when the browser refused a WebGL context. */
   readonly view: CityView | null;
+  /** Composed block, or `null` on the WebGL failure path. */
+  readonly scene: ChronoCityScene | null;
+  /** Mounted timeline + HUD, or `null` on the WebGL failure path. */
+  readonly ui: ChronoCityUi | null;
+  /** Audio engine owned by the app, or `null` on the WebGL failure path. */
+  readonly sfx: SfxEngine | null;
   /** Stops the loop, drops listeners and releases GPU resources. */
   destroy(): void;
+}
+
+declare global {
+  interface Window {
+    /** Debug/verification handle published by the entry point. */
+    __chronoCity?: ChronoCityApp;
+  }
 }
 
 /** Resolves the required shell roots, or throws when the shell is incomplete. */
@@ -68,8 +89,9 @@ export function readViewport(): Viewport {
 }
 
 /**
- * Boots Chrono City into `root`: builds the view, starts the render loop and
- * reports readiness (or a WebGL failure) through the loading root.
+ * Boots Chrono City into `root`: builds the view, composes the block, mounts the
+ * timeline and HUD, starts the render loop and reports readiness (or a WebGL
+ * failure) through the loading root.
  */
 export function bootstrap(root: ParentNode = document): ChronoCityApp {
   const roots = resolveShellRoots(root);
@@ -85,6 +107,9 @@ export function bootstrap(root: ParentNode = document): ChronoCityApp {
   };
 
   let view: CityView | null = null;
+  let scene: ChronoCityScene | null = null;
+  let ui: ChronoCityUi | null = null;
+  let sfx: SfxEngine | null = null;
   let ready = false;
   let detachResize: () => void = () => {};
 
@@ -92,17 +117,45 @@ export function bootstrap(root: ParentNode = document): ChronoCityApp {
     const activeView = createCityView({ canvas: roots.canvas, viewport: readViewport() });
     view = activeView;
 
+    // Keyboard navigation and camera hotkeys need a focusable surface.
+    if (roots.canvas.tabIndex < 0) {
+      roots.canvas.tabIndex = 0;
+    }
+
+    const engine = createSfxEngine();
+    sfx = engine;
+
+    const activeScene = createChronoCityScene({
+      renderer: activeView.renderer,
+      scene: activeView.scene,
+      camera: activeView.camera,
+      viewport: activeView.viewport,
+      element: roots.canvas,
+      sfx: engine,
+    });
+    scene = activeScene;
+
+    ui = mountChronoCityUi(activeScene, {
+      timeline: roots.timelineRoot,
+      hud: roots.hudRoot,
+    });
+
     const handleResize = (): void => {
-      activeView.resize(readViewport());
+      const viewport = readViewport();
+      activeView.resize(viewport);
+      activeScene.resize(viewport);
     };
     window.addEventListener("resize", handleResize);
     detachResize = () => window.removeEventListener("resize", handleResize);
 
     const loop = new FixedStepLoop({
       hooks: {
-        update: (delta) => activeView.update(delta),
+        // One fixed simulation step: the transition driver, every scene system
+        // and the camera rig advance together.
+        update: (delta) => activeScene.update(delta),
+        // One draw per frame, through the cinematic post-processing chain.
         render: () => {
-          activeView.render();
+          activeScene.render();
           if (!ready) {
             ready = true;
             setStatus("Ready", "ready");
@@ -115,9 +168,15 @@ export function bootstrap(root: ParentNode = document): ChronoCityApp {
     return {
       loop,
       view,
+      scene,
+      ui,
+      sfx,
       destroy() {
         loop.stop();
         detachResize();
+        ui?.dispose();
+        activeScene.dispose();
+        engine.dispose();
         activeView.dispose();
       },
     };
@@ -130,6 +189,9 @@ export function bootstrap(root: ParentNode = document): ChronoCityApp {
     return {
       loop: idleLoop,
       view: null,
+      scene: null,
+      ui: null,
+      sfx: null,
       destroy() {
         idleLoop.stop();
         detachResize();
@@ -149,5 +211,9 @@ function requireElement(root: ParentNode, selector: string): HTMLElement {
 // `index.html` loads this module as the app entry: boot as soon as the shell is
 // present. Guarded so importing the module (unit tests, tooling) stays inert.
 if (typeof document !== "undefined" && document.querySelector(SHELL_SELECTORS.canvas)) {
-  bootstrap(document);
+  const app = bootstrap(document);
+  if (typeof window !== "undefined") {
+    // Published for browser probes and manual inspection; harmless otherwise.
+    window.__chronoCity = app;
+  }
 }
