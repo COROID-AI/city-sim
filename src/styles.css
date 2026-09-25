@@ -1,0 +1,157 @@
+/*
+ * Chrono City base shell.
+ *
+ * Layer order (lowest -> highest):
+ *   0   #city-canvas    WebGL scene surface
+ *   20  #timeline-root  top-pinned timelapse transport
+ *   20  #hud-root       bottom-left city readouts
+ *   30  #loading-root   boot / failure overlay
+ *
+ * Overlay roots never swallow pointer events by default, so orbiting and
+ * picking on the canvas keep working; interactive children opt back in through
+ * the `.timeline-root > *` / `.hud-root > *` rules below.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --cc-bg: #05070d;
+  --cc-sky: #0d1626;
+  --cc-ink: #e8eefb;
+  --cc-ink-dim: #9fb0cc;
+  --cc-danger: #ff9c9c;
+  --cc-panel: rgba(8, 14, 26, 0.72);
+  --cc-border: rgba(127, 215, 255, 0.24);
+  --cc-font: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --cc-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+  --cc-timeline-height: 64px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: var(--cc-bg);
+  color: var(--cc-ink);
+  font-family: var(--cc-font);
+  overflow: hidden;
+}
+
+.app-shell {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+}
+
+/* ---- WebGL surface ---------------------------------------------------- */
+
+#city-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 0;
+  background-color: var(--cc-sky);
+  /* Pointer gestures belong to camera navigation, not to page scrolling. */
+  touch-action: none;
+}
+
+/* ---- Overlay roots ---------------------------------------------------- */
+
+.timeline-root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  min-height: var(--cc-timeline-height);
+  padding: 10px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  pointer-events: none;
+  background-image: linear-gradient(to bottom, rgba(5, 7, 13, 0.88), rgba(5, 7, 13, 0));
+}
+
+.timeline-root > * {
+  pointer-events: auto;
+}
+
+.hud-root {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  z-index: 20;
+  padding: 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(420px, 92vw);
+  pointer-events: none;
+}
+
+.hud-root > * {
+  pointer-events: auto;
+}
+
+/* ---- Boot / failure overlay ------------------------------------------ */
+
+.loading-root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  background-color: var(--cc-bg);
+  background-image: radial-gradient(120% 90% at 50% 8%, #1a3254 0%, var(--cc-bg) 72%);
+  transition: opacity 320ms ease-out;
+}
+
+.loading-root[hidden] {
+  display: none;
+}
+
+#loading-status {
+  margin: 0;
+  font-size: 0.9rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cc-ink-dim);
+}
+
+.loading-root[data-state="error"] {
+  background-image: radial-gradient(120% 90% at 50% 8%, #3a1420 0%, var(--cc-bg) 72%);
+}
+
+.loading-root[data-state="error"] #loading-status {
+  color: var(--cc-danger);
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  max-width: 48ch;
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-root {
+    transition: none;
+  }
+}

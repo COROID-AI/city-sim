@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Chrono City - a polished, browser-based 3D timelapse of a single city block."
+    />
+    <title>Chrono City</title>
+    <!-- Inline SVG icon: keeps the shell asset-free (no binary or CDN requests). -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230d1626'/><path d='M6 26V15h6v11zm7 0V7h6v19zm7 0v-8h6v8z' fill='%237fd7ff'/></svg>"
+    />
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <!-- WebGL surface: the renderer draws into this canvas, never creates one. -->
+      <canvas
+        id="city-canvas"
+        data-role="scene-canvas"
+        aria-label="Chrono City 3D city block viewport"
+      ></canvas>
+
+      <!-- Top-pinned timelapse transport (playback, era slider) is mounted here. -->
+      <div id="timeline-root" class="timeline-root" data-role="timeline" aria-label="Timelapse timeline"></div>
+
+      <!-- Bottom-left readouts (population, era, focus target) are mounted here. -->
+      <div id="hud-root" class="hud-root" data-role="hud" aria-label="City readouts"></div>
+
+      <!-- Boot / failure overlay; hidden once the first frame has been rendered. -->
+      <div
+        id="loading-root"
+        class="loading-root"
+        data-role="loading"
+        data-state="loading"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <p id="loading-status" data-role="loading-status">Loading Chrono City</p>
+      </div>
+    </div>
+
+    <noscript>Chrono City renders in WebGL and needs JavaScript enabled.</noscript>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
