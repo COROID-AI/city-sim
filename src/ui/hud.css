@@ -1,0 +1,494 @@
+/*
+ * Chrono City overlay chrome.
+ *
+ * Carries the styles of the two UI modules that mount into the overlay roots
+ * declared by `index.html` (see `src/styles.css` for the shell itself, which
+ * pins `#timeline-root` to the top edge and `#hud-root` to the bottom-left):
+ *
+ *   .cc-timeline   top-pinned timelapse transport: five era stops + playhead
+ *   .cc-hud        bottom-left readouts, sound toggle, controls help, info card
+ *
+ * Legibility contract: both surfaces sit on their own dark scrim (near-opaque
+ * `rgba` panel plus a backdrop blur), so the light chrome text keeps a high
+ * contrast ratio over the pale 1945 noon scene and the neon 2025 night scene
+ * alike - the chrome never relies on the colour of the block behind it.
+ *
+ * Every interactive control exposes a `:focus-visible` ring, and all motion is
+ * disabled under `prefers-reduced-motion: reduce`.
+ */
+
+/* -------------------------------------------------------------------------- */
+/* Shared chrome tokens                                                        */
+/* -------------------------------------------------------------------------- */
+
+:where(.cc-timeline, .cc-hud) {
+  --cc-chrome-surface: rgba(6, 11, 22, 0.86);
+  --cc-chrome-surface-strong: rgba(6, 11, 22, 0.94);
+  --cc-chrome-border: rgba(127, 215, 255, 0.26);
+  --cc-chrome-border-soft: rgba(159, 176, 204, 0.22);
+  --cc-chrome-ink: #f2f6ff;
+  --cc-chrome-ink-dim: #b9c6df;
+  --cc-chrome-accent: #7fd7ff;
+  --cc-chrome-alert: #ff9c9c;
+  --cc-focus-ring: #7fd7ff;
+  --cc-radius: 14px;
+  --cc-rail-axis: 16px;
+  --cc-dot-size: 12px;
+  --cc-thumb-size: 20px;
+
+  color: var(--cc-chrome-ink);
+  font-family: var(--cc-font, "Inter", "Segoe UI", system-ui, -apple-system, Arial, sans-serif);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.cc-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Timeline panel                                                             */
+/* -------------------------------------------------------------------------- */
+
+.cc-timeline {
+  display: block;
+}
+
+.cc-timeline__bar {
+  display: grid;
+  grid-template-columns: minmax(150px, max-content) minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: 8px 18px 12px;
+  border: 1px solid var(--cc-chrome-border);
+  border-radius: var(--cc-radius);
+  background-color: var(--cc-chrome-surface);
+  background-image: linear-gradient(180deg, rgba(127, 215, 255, 0.1), rgba(127, 215, 255, 0) 62%);
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  box-shadow: 0 16px 36px rgba(2, 4, 10, 0.42);
+}
+
+.cc-timeline__readout {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  min-width: 0;
+}
+
+.cc-timeline__year {
+  font-family: var(--cc-mono, ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace);
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--cc-chrome-ink);
+}
+
+.cc-timeline__era {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cc-chrome-ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- rail ---------------------------------------------------------------- */
+
+.cc-timeline__rail {
+  position: relative;
+  height: 56px;
+  /* Inset so the first and last labels stay inside the panel. */
+  margin-inline: 22px;
+  cursor: pointer;
+  /* Drag gestures belong to the slider, never to page scrolling. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.cc-timeline__line,
+.cc-timeline__fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--cc-rail-axis) - 2px);
+  height: 4px;
+  border-radius: 999px;
+}
+
+.cc-timeline__line {
+  background-color: rgba(159, 176, 204, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(5, 7, 13, 0.4);
+}
+
+.cc-timeline__fill {
+  right: auto;
+  width: var(--cc-timeline-progress, 0%);
+  background-image: linear-gradient(90deg, rgba(127, 215, 255, 0.5), var(--cc-chrome-accent));
+}
+
+.cc-timeline__playhead {
+  position: absolute;
+  top: calc(var(--cc-rail-axis) - var(--cc-thumb-size) / 2);
+  left: 0;
+  width: var(--cc-thumb-size);
+  height: var(--cc-thumb-size);
+  margin-left: calc(var(--cc-thumb-size) / -2);
+  border: 2px solid var(--cc-chrome-surface-strong);
+  border-radius: 50%;
+  background-color: var(--cc-chrome-accent);
+  box-shadow:
+    0 0 0 2px rgba(127, 215, 255, 0.35),
+    0 6px 14px rgba(2, 4, 10, 0.55);
+  transition: left 240ms ease-out;
+}
+
+.cc-timeline__stops {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc-timeline__stop-item {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  transform: translateX(-50%);
+}
+
+.cc-timeline__stop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  min-width: 44px;
+  height: 100%;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--cc-chrome-ink-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cc-timeline__stop:hover,
+.cc-timeline__stop[data-state="active"] {
+  color: var(--cc-chrome-ink);
+}
+
+.cc-timeline__dot {
+  width: var(--cc-dot-size);
+  height: var(--cc-dot-size);
+  margin-top: calc(var(--cc-rail-axis) - var(--cc-dot-size) / 2);
+  border-radius: 50%;
+  background-color: rgba(226, 236, 255, 0.72);
+  box-shadow: 0 0 0 3px rgba(6, 11, 22, 0.55);
+  transition:
+    background-color 200ms ease,
+    transform 200ms ease;
+}
+
+.cc-timeline__stop[data-state="active"] .cc-timeline__dot {
+  background-color: var(--cc-chrome-accent);
+  transform: scale(1.12);
+}
+
+.cc-timeline__stop-label {
+  font-family: var(--cc-mono, ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  color: inherit;
+}
+
+.cc-timeline__stop[data-state="active"] .cc-timeline__stop-label {
+  text-shadow: 0 0 12px rgba(127, 215, 255, 0.55);
+}
+
+/* While a drag is in flight the thumb must track the finger, not tween. */
+.cc-timeline[data-dragging] .cc-timeline__playhead {
+  transition: none;
+}
+
+/* -------------------------------------------------------------------------- */
+/* HUD panel                                                                  */
+/* -------------------------------------------------------------------------- */
+
+.cc-hud {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.cc-hud__readout {
+  padding: 9px 14px 11px;
+  border: 1px solid var(--cc-chrome-border-soft);
+  border-radius: var(--cc-radius);
+  background-color: var(--cc-chrome-surface);
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  box-shadow: 0 12px 28px rgba(2, 4, 10, 0.38);
+}
+
+.cc-hud__year {
+  margin: 0;
+  font-family: var(--cc-mono, ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace);
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--cc-chrome-ink);
+}
+
+.cc-hud__era {
+  margin: 2px 0 0;
+  font-size: 0.84rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cc-chrome-ink-dim);
+}
+
+.cc-hud__tagline {
+  margin: 6px 0 0;
+  max-width: 34ch;
+  font-size: 0.78rem;
+  color: var(--cc-chrome-ink-dim);
+}
+
+.cc-hud__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cc-hud__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 1px solid var(--cc-chrome-border);
+  border-radius: 999px;
+  background-color: var(--cc-chrome-surface);
+  color: var(--cc-chrome-ink);
+  font: inherit;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.cc-hud__button:hover {
+  border-color: var(--cc-chrome-accent);
+  background-color: var(--cc-chrome-surface-strong);
+}
+
+.cc-hud__button[aria-pressed="true"] {
+  border-color: rgba(255, 156, 156, 0.55);
+  color: #ffd9d9;
+}
+
+.cc-hud__icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+}
+
+.cc-hud__icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- controls help ------------------------------------------------------- */
+
+.cc-hud__help {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--cc-chrome-border);
+  border-radius: var(--cc-radius);
+  background-color: var(--cc-chrome-surface-strong);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.cc-hud__help[hidden] {
+  display: none;
+}
+
+.cc-hud__help-title {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--cc-chrome-ink-dim);
+}
+
+.cc-hud__help-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 12px;
+  margin: 0;
+}
+
+.cc-hud__help-keys {
+  font-family: var(--cc-mono, ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace);
+  font-size: 0.74rem;
+  color: var(--cc-chrome-accent);
+  white-space: nowrap;
+}
+
+.cc-hud__help-text {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--cc-chrome-ink-dim);
+}
+
+/* ---- inspection card ---------------------------------------------------- */
+
+.cc-hud__info-card {
+  width: 100%;
+  border: 1px solid var(--cc-info-accent, var(--cc-chrome-border));
+  border-radius: var(--cc-radius);
+  background-color: var(--cc-chrome-surface-strong);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  overflow: hidden;
+}
+
+.cc-hud__info-card[hidden] {
+  display: none;
+}
+
+.cc-hud__info-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 14px;
+  border-bottom: 1px solid rgba(159, 176, 204, 0.18);
+}
+
+.cc-hud__info-title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 0.88rem;
+  letter-spacing: 0.04em;
+  color: var(--cc-chrome-ink);
+}
+
+.cc-hud__info-close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--cc-chrome-ink-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cc-hud__info-close:hover {
+  border-color: var(--cc-chrome-border);
+  color: var(--cc-chrome-ink);
+}
+
+.cc-hud__info-subtitle {
+  margin: 0;
+  padding: 10px 14px 0;
+  font-size: 0.78rem;
+  color: var(--cc-chrome-ink-dim);
+}
+
+.cc-hud__info-subtitle[hidden] {
+  display: none;
+}
+
+.cc-hud__info-rows {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 10px 14px 12px;
+}
+
+.cc-hud__info-rows dt {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cc-chrome-ink-dim);
+}
+
+.cc-hud__info-rows dd {
+  margin: 0;
+  font-family: var(--cc-mono, ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace);
+  font-size: 0.78rem;
+  color: var(--cc-chrome-ink);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Focus visibility                                                           */
+/* -------------------------------------------------------------------------- */
+
+.cc-timeline__playhead:focus-visible,
+.cc-timeline__stop:focus-visible,
+.cc-hud__button:focus-visible,
+.cc-hud__info-close:focus-visible,
+.cc-hud__help:focus-visible {
+  outline: 2px solid var(--cc-focus-ring);
+  outline-offset: 3px;
+  border-radius: 10px;
+}
+
+.cc-timeline__playhead:focus-visible {
+  outline-offset: 4px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Responsive and motion preferences                                          */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .cc-timeline__bar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 8px 14px 10px;
+  }
+
+  .cc-timeline__rail {
+    margin-inline: 18px;
+  }
+
+  .cc-timeline__era {
+    font-size: 0.72rem;
+  }
+
+  .cc-hud__tagline {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-timeline__playhead,
+  .cc-timeline__dot {
+    transition: none;
+  }
+}
