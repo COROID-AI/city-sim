@@ -1254,8 +1254,10 @@ export function buildRoofEquipmentGroup(options: RoofEquipmentOptions): RoofEqui
   kinds.forEach((kind, index) => {
     const column = index % 2;
     const row = Math.floor(index / 2);
-    const x = (column === 0 ? -1 : 1) * options.roofWidth * 0.22;
-    const z = ((row + 0.5) / rows - 0.5) * options.roofDepth * 0.72;
+    const x = (column === 0 ? -1 : 1) * options.roofWidth * 0.22
+      + (seedSample(options.seed, `roof-x-${index}`) - 0.5) * options.roofWidth * 0.08;
+    const z = ((row + 0.5) / rows - 0.5) * options.roofDepth * 0.72
+      + (seedSample(options.seed, `roof-z-${index}`) - 0.5) * options.roofDepth * 0.06;
     parts.push(...buildRoofEquipment(kind, { x, y: options.y, z, scale, seed: options.seed + index * 17 }));
   });
 

@@ -220,8 +220,8 @@ interface PlannedBuilding {
   readonly parts: readonly PartDescriptor[];
 }
 
-/** Frontage bays per 3.2 m of street width, matching the storefront module. */
-const STOREY_PER_BAY = 3.2;
+/** Frontage metres per storefront bay, matching the retail module. */
+const FRONTAGE_PER_BAY = 3.2;
 /** Fire-escape landings stop climbing after this many storeys. */
 const MAX_ESCAPE_LANDINGS = 6;
 /** Largest footprint share any era may claim, so lots never bleed together. */
@@ -340,7 +340,7 @@ export function planBuilding(lot: BuildingLot, era: EraConfig, seed: number): Pl
   });
 
   const base = massing.steps[0]!;
-  const bays = clamp(Math.round(lot.frontageWidth / STOREY_PER_BAY), 1, 5);
+  const bays = clamp(Math.round(lot.frontageWidth / FRONTAGE_PER_BAY), 1, 5);
   const storefront = buildStorefrontBays({
     width: base.width,
     depth: base.depth,
