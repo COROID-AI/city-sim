@@ -775,6 +775,7 @@ describe("registration", () => {
     expect(late.lastEra).toBe("2025");
     expect(late.lastBlend).toBeCloseTo(expectedBlend("2025", stageOf("buildings"), 60 / 150), 6);
     expect(driver.blendFor(late)).toBe(late.lastBlend);
+    expect(driver.registered.map((entry) => entry.era)).toEqual(["2025", "2025"]);
 
     runToIdle(driver);
     expect(late.lastBlend).toBe(1);
@@ -788,7 +789,9 @@ describe("registration", () => {
 
     expect(handle.stage).toBe("retail");
     expect(handle.id).toBe("storefronts");
-    expect(driver.registered.map((entry) => [entry.id, entry.stage])).toEqual([["storefronts", "retail"]]);
+    expect(
+      driver.registered.map((entry) => [entry.id, entry.stage, entry.era, entry.blend]),
+    ).toEqual([["storefronts", "retail", "1945", 1]]);
     expect(() => driver.register(system, { stage: "retail" })).toThrow(/already registered/);
     expect(() => driver.register(new RecordingSystem("engine"), { stage: "engine" })).toThrow(
       /Unknown era transition stage/,

@@ -552,6 +552,7 @@ export class EraTransitionDriver {
       id: options.id,
       stage,
       handle,
+      era: this.leg ? this.leg.target : this.settled,
       blend: 0,
       startBlend: 0,
     };
@@ -559,6 +560,7 @@ export class EraTransitionDriver {
 
     const leg = this.leg;
     if (!leg) {
+      registration.era = this.settled;
       registration.blend = 1;
       registration.startBlend = 1;
       system.applyEra(this.settled, 1);
@@ -568,6 +570,7 @@ export class EraTransitionDriver {
     const state = leg.stages.find((candidate) => candidate.entry.id === stage)!;
     const local = stageProgress(legProgress(leg), state.entry.start, state.entry.end);
     const blend = local >= 1 ? 1 : state.easing(local);
+    registration.era = leg.target;
     registration.blend = blend;
     registration.startBlend = 0;
     system.applyEra(leg.target, blend);
@@ -622,9 +625,10 @@ export class EraTransitionDriver {
    *
    * Idempotent for the era already being travelled to (and for the settled era
    * when idle): scrubbing the slider back onto the same stop does not restart a
-   * leg. A retarget supersedes the running leg, carries every system's current
-   * blend into the new leg so nothing jumps backwards, and restarts the stage
-   * windows so the new choreography still staggers.
+   * leg. A retarget supersedes the running leg, re-aims every system from the
+   * state it is showing (stages still in flight continue from their exact blend,
+   * finished stages fade in again from their current variant) and restarts the
+   * stage windows so the new choreography still staggers.
    *
    * @throws when `era` is not one of the contract's era ids.
    */
