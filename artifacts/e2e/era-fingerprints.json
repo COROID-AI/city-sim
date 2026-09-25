@@ -1,0 +1,615 @@
+{
+  "viewport": {
+    "width": 800,
+    "height": 450
+  },
+  "pixelThresholds": {
+    "MAX_SAME_ERA_DISTANCE": 1.5,
+    "MIN_CROSS_ERA_DISTANCE": 4
+  },
+  "captures": [
+    {
+      "era": "1945",
+      "year": 1945,
+      "steps": 1,
+      "screenshot": "era-1945.png",
+      "bytes": 314438,
+      "signature": {
+        "grid": [
+          170.711,
+          179.434,
+          180.453,
+          180.325,
+          180.462,
+          180.447,
+          179.491,
+          170.763,
+          182.501,
+          182.628,
+          181.491,
+          182.173,
+          182.505,
+          181.77,
+          182.557,
+          182.459,
+          184.687,
+          182.936,
+          181.59,
+          183.134,
+          183.064,
+          182.781,
+          183.169,
+          183.512,
+          188.395,
+          187.814,
+          184.505,
+          183.25,
+          183.274,
+          185.201,
+          187.192,
+          188.174,
+          177.675,
+          186.316,
+          187.418,
+          187.071,
+          187.112,
+          187.205,
+          186.302,
+          177.581
+        ],
+        "mean": [
+          188.924,
+          184.974,
+          174.317
+        ]
+      },
+      "domains": [
+        {
+          "name": "era-environment",
+          "label": "sky, lighting and street furniture",
+          "meshes": 326,
+          "vertices": 13121,
+          "materials": 79,
+          "colorDigest": "5ae8208c",
+          "lights": "AmbientLight:6a7180:0.23,DirectionalLight:4c4636:0.15,DirectionalLight:ffe9c4:0.61,HemisphereLight:6a7180:0.66,PointLight:ffd9a0:0.78,PointLight:ffd9a0:0.85,PointLight:ffd9a0:0.90,PointLight:ffd9a0:0.99"
+        },
+        {
+          "name": "buildings",
+          "label": "buildings",
+          "meshes": 140,
+          "vertices": 388032,
+          "materials": 7,
+          "colorDigest": "dfb784ff",
+          "lights": ""
+        },
+        {
+          "name": "storefronts",
+          "label": "storefronts",
+          "meshes": 951,
+          "vertices": 21530,
+          "materials": 506,
+          "colorDigest": "9468a9b3",
+          "lights": ""
+        },
+        {
+          "name": "era-advertising-system",
+          "label": "advertising",
+          "meshes": 80,
+          "vertices": 1600,
+          "materials": 32,
+          "colorDigest": "f0e3456b",
+          "lights": "PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00,PointLight:000000:0.00"
+        },
+        {
+          "name": "era-vehicle-traffic",
+          "label": "vehicles",
+          "meshes": 240,
+          "vertices": 11904,
+          "materials": 108,
+          "colorDigest": "4246b894",
+          "lights": "PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00"
+        },
+        {
+          "name": "pedestrian-crowd",
+          "label": "pedestrians",
+          "meshes": 1207,
+          "vertices": 63750,
+          "materials": 357,
+          "colorDigest": "b051472",
+          "lights": ""
+        }
+      ]
+    },
+    {
+      "era": "1965",
+      "year": 1965,
+      "steps": 25,
+      "screenshot": "era-1965.png",
+      "bytes": 381764,
+      "signature": {
+        "grid": [
+          168.43,
+          179.508,
+          181.366,
+          182.451,
+          183.994,
+          181.498,
+          179.457,
+          168.431,
+          192.979,
+          193.341,
+          189.108,
+          185.612,
+          194.928,
+          188.204,
+          193.255,
+          192.935,
+          207.178,
+          203.711,
+          182.557,
+          187.983,
+          201.982,
+          188.115,
+          202.416,
+          204.951,
+          218.103,
+          217.192,
+          199.064,
+          199.658,
+          204.124,
+          207.263,
+          209.33,
+          217.875,
+          207.79,
+          215.577,
+          215.616,
+          203.675,
+          209.113,
+          214.187,
+          215.599,
+          207.804
+        ],
+        "mean": [
+          191.068,
+          198.794,
+          202.365
+        ]
+      },
+      "domains": [
+        {
+          "name": "era-environment",
+          "label": "sky, lighting and street furniture",
+          "meshes": 342,
+          "vertices": 14369,
+          "materials": 80,
+          "colorDigest": "ea491287",
+          "lights": "AmbientLight:7b8697:0.42,DirectionalLight:53594a:0.27,DirectionalLight:fff4d9:2.31,HemisphereLight:7b8697:1.21,PointLight:cfe4ff:0.35,PointLight:cfe4ff:0.36,PointLight:cfe4ff:0.38,PointLight:cfe4ff:0.39,PointLight:ffb46a:0.22"
+        },
+        {
+          "name": "buildings",
+          "label": "buildings",
+          "meshes": 160,
+          "vertices": 455940,
+          "materials": 8,
+          "colorDigest": "3d003593",
+          "lights": ""
+        },
+        {
+          "name": "storefronts",
+          "label": "storefronts",
+          "meshes": 959,
+          "vertices": 22136,
+          "materials": 506,
+          "colorDigest": "4b251d05",
+          "lights": ""
+        },
+        {
+          "name": "era-advertising-system",
+          "label": "advertising",
+          "meshes": 80,
+          "vertices": 1600,
+          "materials": 32,
+          "colorDigest": "b97c2ab",
+          "lights": "PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16,PointLight:e0562f:0.16"
+        },
+        {
+          "name": "era-vehicle-traffic",
+          "label": "vehicles",
+          "meshes": 255,
+          "vertices": 12264,
+          "materials": 108,
+          "colorDigest": "899ba317",
+          "lights": "PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00"
+        },
+        {
+          "name": "pedestrian-crowd",
+          "label": "pedestrians",
+          "meshes": 1207,
+          "vertices": 63750,
+          "materials": 357,
+          "colorDigest": "332bc591",
+          "lights": ""
+        }
+      ]
+    },
+    {
+      "era": "1985",
+      "year": 1985,
+      "steps": 25,
+      "screenshot": "era-1985.png",
+      "bytes": 449902,
+      "signature": {
+        "grid": [
+          67.992,
+          79.694,
+          82.911,
+          83.339,
+          83.524,
+          82.776,
+          79.436,
+          67.766,
+          82.277,
+          83.514,
+          83.346,
+          83.024,
+          83.435,
+          83.273,
+          83.591,
+          82.45,
+          93.771,
+          83.471,
+          82.501,
+          82.802,
+          83.478,
+          82.817,
+          83.531,
+          85.845,
+          121.841,
+          109.239,
+          82.463,
+          83.143,
+          83.95,
+          91.618,
+          102.522,
+          120.344,
+          99.843,
+          111.535,
+          87.968,
+          96.026,
+          93.314,
+          98.283,
+          101.043,
+          99.072
+        ],
+        "mean": [
+          95.933,
+          75.26,
+          95.265
+        ]
+      },
+      "domains": [
+        {
+          "name": "era-environment",
+          "label": "sky, lighting and street furniture",
+          "meshes": 362,
+          "vertices": 13889,
+          "materials": 84,
+          "colorDigest": "41b52e2f",
+          "lights": "AmbientLight:5a4a72:0.13,DirectionalLight:3a3444:0.08,DirectionalLight:ffc48a:0.14,HemisphereLight:5a4a72:0.37,PointLight:ffb057:0.85,PointLight:ffb057:0.87,PointLight:ffb057:0.95,PointLight:ffb057:0.98"
+        },
+        {
+          "name": "buildings",
+          "label": "buildings",
+          "meshes": 160,
+          "vertices": 314508,
+          "materials": 8,
+          "colorDigest": "89a640db",
+          "lights": ""
+        },
+        {
+          "name": "storefronts",
+          "label": "storefronts",
+          "meshes": 940,
+          "vertices": 20506,
+          "materials": 503,
+          "colorDigest": "eaa52fb",
+          "lights": ""
+        },
+        {
+          "name": "era-advertising-system",
+          "label": "advertising",
+          "meshes": 80,
+          "vertices": 1600,
+          "materials": 32,
+          "colorDigest": "d056eb2b",
+          "lights": "PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27,PointLight:2ad4d4:0.27"
+        },
+        {
+          "name": "era-vehicle-traffic",
+          "label": "vehicles",
+          "meshes": 254,
+          "vertices": 12240,
+          "materials": 108,
+          "colorDigest": "b44dc3f7",
+          "lights": "PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00"
+        },
+        {
+          "name": "pedestrian-crowd",
+          "label": "pedestrians",
+          "meshes": 1207,
+          "vertices": 63750,
+          "materials": 357,
+          "colorDigest": "64163f0",
+          "lights": ""
+        }
+      ]
+    },
+    {
+      "era": "2005",
+      "year": 2005,
+      "steps": 25,
+      "screenshot": "era-2005.png",
+      "bytes": 348238,
+      "signature": {
+        "grid": [
+          179.474,
+          188.842,
+          190.164,
+          190.638,
+          191.367,
+          190.106,
+          188.83,
+          179.486,
+          199.187,
+          199.297,
+          194.656,
+          193.58,
+          200.965,
+          194.869,
+          199.3,
+          199.121,
+          207.551,
+          203.996,
+          186.01,
+          197.065,
+          205.306,
+          196.984,
+          205.314,
+          206.453,
+          212.033,
+          198.846,
+          191.491,
+          203.42,
+          203.756,
+          198.91,
+          201.722,
+          211.908,
+          201.287,
+          187.544,
+          209.135,
+          199.696,
+          199.534,
+          203.932,
+          184.858,
+          201.251
+        ],
+        "mean": [
+          191.69,
+          196.984,
+          203.667
+        ]
+      },
+      "domains": [
+        {
+          "name": "era-environment",
+          "label": "sky, lighting and street furniture",
+          "meshes": 366,
+          "vertices": 14099,
+          "materials": 99,
+          "colorDigest": "f74ff85f",
+          "lights": "AmbientLight:8f98a6:0.40,DirectionalLight:4b4f52:0.25,DirectionalLight:fff6e2:1.77,HemisphereLight:8f98a6:1.16,PointLight:9fd0ff:0.35,PointLight:9fd0ff:0.35,PointLight:9fd0ff:0.35,PointLight:9fd0ff:0.35,PointLight:dfeaff:0.46,PointLight:dfeaff:0.46,PointLight:dfeaff:0.47,PointLight:dfeaff:0.48"
+        },
+        {
+          "name": "buildings",
+          "label": "buildings",
+          "meshes": 160,
+          "vertices": 289620,
+          "materials": 8,
+          "colorDigest": "c19d2323",
+          "lights": ""
+        },
+        {
+          "name": "storefronts",
+          "label": "storefronts",
+          "meshes": 940,
+          "vertices": 19852,
+          "materials": 512,
+          "colorDigest": "f1384bdc",
+          "lights": ""
+        },
+        {
+          "name": "era-advertising-system",
+          "label": "advertising",
+          "meshes": 96,
+          "vertices": 1984,
+          "materials": 48,
+          "colorDigest": "ff1e4bab",
+          "lights": "PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22,PointLight:2f8fd8:0.22"
+        },
+        {
+          "name": "era-vehicle-traffic",
+          "label": "vehicles",
+          "meshes": 253,
+          "vertices": 12216,
+          "materials": 108,
+          "colorDigest": "fbea4a1d",
+          "lights": "PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00"
+        },
+        {
+          "name": "pedestrian-crowd",
+          "label": "pedestrians",
+          "meshes": 1207,
+          "vertices": 63750,
+          "materials": 357,
+          "colorDigest": "1a51bca",
+          "lights": ""
+        }
+      ]
+    },
+    {
+      "era": "2025",
+      "year": 2025,
+      "steps": 25,
+      "screenshot": "era-2025.png",
+      "bytes": 442422,
+      "signature": {
+        "grid": [
+          157.445,
+          159.9,
+          160.946,
+          169.095,
+          171.982,
+          163.793,
+          160.429,
+          157.701,
+          176.188,
+          176.431,
+          175.15,
+          182.809,
+          194.381,
+          179.543,
+          176.886,
+          176.373,
+          200.786,
+          190.856,
+          165.837,
+          184.649,
+          199.688,
+          172.525,
+          192.915,
+          195.738,
+          226.923,
+          198.647,
+          155.755,
+          187.75,
+          195.654,
+          172.254,
+          200.81,
+          226.399,
+          224.772,
+          187.68,
+          137.513,
+          195.678,
+          189.38,
+          186.861,
+          178.141,
+          224.779
+        ],
+        "mean": [
+          178.583,
+          188.676,
+          182.569
+        ]
+      },
+      "domains": [
+        {
+          "name": "era-environment",
+          "label": "sky, lighting and street furniture",
+          "meshes": 426,
+          "vertices": 16343,
+          "materials": 137,
+          "colorDigest": "25be65fd",
+          "lights": "AmbientLight:93a29c:0.46,DirectionalLight:4f5a4c:0.29,DirectionalLight:fff7ea:2.45,HemisphereLight:93a29c:1.30,PointLight:8fe6d6:0.35,PointLight:8fe6d6:0.35,PointLight:8fe6d6:0.35,PointLight:8fe6d6:0.35,PointLight:eaf6ff:0.30,PointLight:eaf6ff:0.30,PointLight:eaf6ff:0.30,PointLight:eaf6ff:0.30"
+        },
+        {
+          "name": "buildings",
+          "label": "buildings",
+          "meshes": 180,
+          "vertices": 336426,
+          "materials": 9,
+          "colorDigest": "d0385f67",
+          "lights": ""
+        },
+        {
+          "name": "storefronts",
+          "label": "storefronts",
+          "meshes": 941,
+          "vertices": 21646,
+          "materials": 524,
+          "colorDigest": "9306c732",
+          "lights": ""
+        },
+        {
+          "name": "era-advertising-system",
+          "label": "advertising",
+          "meshes": 96,
+          "vertices": 1984,
+          "materials": 48,
+          "colorDigest": "1e5bcfab",
+          "lights": "PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18,PointLight:54d69a:0.18"
+        },
+        {
+          "name": "era-vehicle-traffic",
+          "label": "vehicles",
+          "meshes": 242,
+          "vertices": 12004,
+          "materials": 108,
+          "colorDigest": "719f51e8",
+          "lights": "PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00,PointLight:ffe7b3:0.00"
+        },
+        {
+          "name": "pedestrian-crowd",
+          "label": "pedestrians",
+          "meshes": 1207,
+          "vertices": 63750,
+          "materials": 357,
+          "colorDigest": "a9bf477f",
+          "lights": ""
+        }
+      ]
+    }
+  ],
+  "crossEraDistances": [
+    {
+      "pair": "1945-1965",
+      "distance": 14.903150000000005
+    },
+    {
+      "pair": "1945-1985",
+      "distance": 93.91899999999997
+    },
+    {
+      "pair": "1945-2005",
+      "distance": 14.781099999999999
+    },
+    {
+      "pair": "1945-2025",
+      "distance": 14.52515
+    },
+    {
+      "pair": "1965-1985",
+      "distance": 108.58979999999997
+    },
+    {
+      "pair": "1965-2005",
+      "distance": 7.858550000000003
+    },
+    {
+      "pair": "1965-2025",
+      "distance": 16.698
+    },
+    {
+      "pair": "1985-2005",
+      "distance": 108.62789999999998
+    },
+    {
+      "pair": "1985-2025",
+      "distance": 94.45684999999999
+    },
+    {
+      "pair": "2005-2025",
+      "distance": 17.99755
+    }
+  ],
+  "sameEraControlDistance": 0.249
+}
