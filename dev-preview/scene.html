@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#05060f" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23040a12'/%3E%3Cpath d='M16 5l10 6v10l-10 6-10-6V11z' stroke='%2335f0ff' stroke-width='2.2' fill='none'/%3E%3C/svg%3E"
+    />
+    <title>Coroid — Factory Floor: World, Camera Rig &amp; Post Processing</title>
+    <meta
+      name="description"
+      content="Coroid dev preview: the neon holographic factory floor with an emissive grid, volumetric god rays, bloom on emissive elements, depth fog, quality presets and a cinematic orbit camera rig for the Brief, Plan, Execute, Verify, Repair and Release states."
+    />
+    <style>
+      /*
+       * Page-local chrome only. The canvas and the shared style tokens come from
+       * src/styles/base.css, which the page module imports.
+       *
+       * One four-step type ramp, every step at least 1.3x the one below it and
+       * none below the 11px legibility floor: label 0.72rem (11.5px), body
+       * 0.95rem (15.2px), hint 1.5rem (24px), wordmark 1.9rem (30.4px).
+       */
+      body {
+        font-size: 0.95rem;
+      }
+
+      #scene {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        background: radial-gradient(circle at 50% 30%, #0b1026 0%, var(--coroid-deep) 46%, #05060f 100%);
+      }
+
+      .scene__title {
+        position: absolute;
+        top: 0.9rem;
+        right: 1rem;
+        z-index: 2;
+        display: grid;
+        gap: 0.2rem;
+        justify-items: end;
+        text-align: right;
+        pointer-events: none;
+        user-select: none;
+      }
+
+      .scene__title strong {
+        font-size: 1.9rem;
+        font-weight: 400;
+        letter-spacing: 0.34em;
+        color: var(--coroid-ink);
+      }
+
+      .scene__title span {
+        font-family: var(--coroid-font-mono);
+        font-size: 0.95rem;
+        color: var(--coroid-muted);
+      }
+
+      .scene__panel {
+        position: absolute;
+        z-index: 3;
+        margin: 0;
+        padding: 0.7rem 0.85rem;
+        border: 1px solid rgba(184, 233, 245, 0.22);
+        border-radius: 0.45rem;
+        background: rgba(5, 6, 15, 0.62);
+        backdrop-filter: blur(6px);
+        font-family: var(--coroid-font-mono);
+        font-size: 0.95rem;
+        line-height: 1.5;
+        color: rgba(223, 246, 255, 0.86);
+        white-space: pre;
+        user-select: none;
+      }
+
+      .scene__panel h2 {
+        margin: 0 0 0.35rem;
+        font-family: var(--coroid-font-display);
+        font-size: 0.72rem;
+        font-weight: 500;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--coroid-muted);
+        white-space: normal;
+      }
+
+      .scene__ticker {
+        left: 1rem;
+        bottom: 1rem;
+        min-width: 30rem;
+        pointer-events: none;
+      }
+
+      .scene__legend {
+        top: 1rem;
+        left: 1rem;
+        max-width: 24rem;
+        pointer-events: none;
+      }
+
+      .scene__legend dl {
+        display: grid;
+        grid-template-columns: 5.4rem 1fr;
+        gap: 0.25rem 0.6rem;
+        margin: 0;
+        white-space: normal;
+      }
+
+      .scene__legend dt {
+        color: var(--coroid-signal);
+      }
+
+      .scene__legend dd {
+        margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
+        color: rgba(223, 246, 255, 0.72);
+      }
+
+      .scene__controls {
+        position: absolute;
+        left: 50%;
+        bottom: 1rem;
+        z-index: 4;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem 0.5rem;
+        justify-content: center;
+        max-width: min(56rem, calc(100vw - 2rem));
+        transform: translateX(-50%);
+      }
+
+      .scene__controls button {
+        padding: 0.45rem 0.8rem;
+        border: 1px solid rgba(184, 233, 245, 0.34);
+        border-radius: 0.35rem;
+        background: rgba(5, 6, 15, 0.72);
+        color: var(--coroid-ink);
+        font-family: var(--coroid-font-mono);
+        font-size: 0.95rem;
+        line-height: 1.2;
+        cursor: pointer;
+      }
+
+      .scene__controls button:hover {
+        border-color: var(--coroid-cyan);
+      }
+
+      .scene__controls button[data-active='true'] {
+        border-color: var(--coroid-cyan);
+        background: rgba(53, 240, 255, 0.16);
+        color: #eafcff;
+      }
+
+      .scene__controls button:focus-visible {
+        outline: 2px solid var(--coroid-cyan);
+        outline-offset: 2px;
+      }
+
+      .scene__controls fieldset {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem 0.5rem;
+        margin: 0;
+        padding: 0.3rem 0.5rem 0.4rem;
+        border: 1px solid rgba(184, 233, 245, 0.18);
+        border-radius: 0.4rem;
+      }
+
+      .scene__controls legend {
+        padding: 0 0.35rem;
+        font-family: var(--coroid-font-mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--coroid-muted);
+      }
+
+      .scene__hint {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        z-index: 2;
+        transform: translate(-50%, -50%);
+        margin: 0;
+        font-family: var(--coroid-font-mono);
+        font-size: 1.5rem;
+        letter-spacing: 0.04em;
+        color: rgba(223, 246, 255, 0.42);
+        pointer-events: none;
+        user-select: none;
+      }
+
+      @media (max-width: 960px) {
+        .scene__legend,
+        .scene__hint {
+          display: none;
+        }
+
+        .scene__ticker {
+          min-width: 0;
+          max-width: 62vw;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- The harness mounts the WebGL canvas in here and falls back to a headless adapter. -->
+    <div id="scene" class="scene">
+      <div class="scene__title">
+        <strong>COROID</strong>
+        <span>factory floor · camera rig · bloom + god rays</span>
+      </div>
+
+      <div id="scene-ticker" class="scene__panel scene__ticker" role="status" aria-live="off">
+        waiting for the first frame…
+      </div>
+
+      <aside class="scene__panel scene__legend">
+        <h2>Camera states</h2>
+        <dl>
+          <dt>1 · Brief</dt>
+          <dd>wide establishing push-in over the whole floor</dd>
+          <dt>2 · Plan</dt>
+          <dd>three-quarter view down the lane pylon row</dd>
+          <dt>3 · Execute</dt>
+          <dd>low, close tracking shot of the holo core</dd>
+          <dt>4 · Verify</dt>
+          <dd>crane behind the gate beacons looking back</dd>
+          <dt>5 · Repair</dt>
+          <dd>tilted close pass over the west service bay</dd>
+          <dt>6 · Release</dt>
+          <dd>high hero shot holding the god rays</dd>
+        </dl>
+      </aside>
+
+      <div class="scene__controls">
+        <fieldset>
+          <legend>Screen state</legend>
+          <button type="button" data-coroid-camera-state="brief">1 Brief</button>
+          <button type="button" data-coroid-camera-state="plan">2 Plan</button>
+          <button type="button" data-coroid-camera-state="execute">3 Execute</button>
+          <button type="button" data-coroid-camera-state="verify">4 Verify</button>
+          <button type="button" data-coroid-camera-state="repair">5 Repair</button>
+          <button type="button" data-coroid-camera-state="release">6 Release</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>Post quality</legend>
+          <button type="button" data-coroid-quality="low">Low</button>
+          <button type="button" data-coroid-quality="medium">Medium</button>
+          <button type="button" data-coroid-quality="high">High</button>
+          <button type="button" data-coroid-quality="ultra">Ultra</button>
+        </fieldset>
+
+        <button type="button" data-coroid-cinematic="true">Cinematic run: on</button>
+      </div>
+
+      <p class="scene__hint">drag to orbit · shift-drag to pan · wheel to zoom</p>
+    </div>
+    <noscript>
+      Coroid renders a live holographic factory floor and needs JavaScript and WebGL enabled.
+    </noscript>
+    <script type="module" src="/dev-preview/scene.ts"></script>
+  </body>
+</html>
